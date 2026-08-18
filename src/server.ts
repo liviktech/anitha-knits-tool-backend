@@ -1,6 +1,7 @@
 import { app } from './app.js';
 import { env } from './config/env.js';
 import { pool } from './config/db.js';
+import { prisma } from './config/prisma.js';
 import { logger } from './utils/logger.js';
 
 const server = app.listen(env.PORT, () => {
@@ -21,6 +22,14 @@ async function shutdown(signal: string): Promise<void> {
             logger.info('Database pool closed');
         } catch (poolErr) {
             logger.error('Error while closing database pool', poolErr);
+            process.exitCode = 1;
+        }
+
+        try {
+            await prisma.$disconnect();
+            logger.info('Prisma client disconnected');
+        } catch (prismaErr) {
+            logger.error('Error while disconnecting Prisma client', prismaErr);
             process.exitCode = 1;
         }
 

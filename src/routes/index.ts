@@ -1,11 +1,10 @@
 import { Router } from 'express';
 import healthRoutes from './routes.js';
+import extruderProductionRoutes from './extruderProduction.js';
 
 const router = Router();
 
 router.use('/health', healthRoutes);
-
-// Mount additional feature routers here, e.g.:
-// router.use('/users', userRoutes);
+router.use('/extruder-productions', extruderProductionRoutes);
 
 export default router;
