@@ -122,7 +122,7 @@ export async function listExtruderProductions(query: ListExtruderProductionQuery
         ...(query.colorId ? { colorId: query.colorId } : {}),
     };
 
-    const [items, total] = await prisma.$transaction([
+    const [items, total] = await Promise.all([
         prisma.extruderProcess.findMany({
             where,
             include,
@@ -208,7 +208,7 @@ export async function updateExtruderProduction(id: string, input: UpdateExtruder
         });
 
         return toDto(updated);
-    });
+    }, { maxWait: 15000, timeout: 20000 });
 }
 
 export async function deleteExtruderProduction(id: string): Promise<void> {
