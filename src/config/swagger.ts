@@ -47,6 +47,10 @@ const definition: swaggerJsdoc.OAS3Definition = {
                 'Base path is /api/v1/fabric-checking, not nested under /production. ' +
                 'Only create/list/get are implemented so far; edit/approve/reject, FW/BW wastage, and GSM are a follow-up.',
         },
+        {
+            name: 'Lookups',
+            description: 'Master data for populating dropdowns across the production entry forms.',
+        },
     ],
     components: {
         schemas: {
@@ -313,6 +317,16 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     success: { type: 'boolean', example: true },
                     data: { type: 'array', items: { $ref: '#/components/schemas/FabricCheckingRecord' } },
                     meta: { $ref: '#/components/schemas/PaginationMeta' },
+                },
+            },
+            LookupsResponse: {
+                type: 'object',
+                description: 'Not wrapped in success/data like the other endpoints — returned as-is.',
+                properties: {
+                    brands: { type: 'array', items: { $ref: '#/components/schemas/MasterDataRef' } },
+                    colors: { type: 'array', items: { $ref: '#/components/schemas/MasterDataRef' } },
+                    chemicals: { type: 'array', items: { $ref: '#/components/schemas/MasterDataRef' } },
+                    sizes: { type: 'array', items: { $ref: '#/components/schemas/MasterDataRef' } },
                 },
             },
         },

@@ -6,8 +6,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "prisma:generate": "dotenv -e .env -- npx prisma generate",
-    "prisma:migrate": "dotenv -e .env -- npx prisma migrate dev",
+    "prisma:generate": "npx prisma generate",
+    "prisma:migrate": "npx prisma migrate dev",
     "prisma:seed": "npx prisma db seed",
     "build": "tsc",
     "start": "node dist/server.js",
