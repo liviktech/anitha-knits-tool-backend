@@ -2,6 +2,8 @@ import { Prisma, ProductionStage, ProductionStatus, ApprovalEntityType } from '@
 import { prisma } from '../config/prisma.js';
 import { NotFoundError, ConflictError, ValidationError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
+import { buildProductionWhere } from '../utils/productionFilters.js';
+import { assertBrandExists, assertChemicalExists, assertColorExists, assertSizeExists } from './masterDataService.js';
 import type { CreateExtruderInput, UpdateExtruderInput, ListExtruderQuery } from '../validations/extruderValidation.js';
 
 /**
@@ -63,26 +65,6 @@ function mapExtruderRecord(record: ExtruderRecordRow) {
               }
             : null,
     };
-}
-
-async function assertColorExists(id: string): Promise<void> {
-    const found = await prisma.color.findUnique({ where: { id }, select: { id: true } });
-    if (!found) throw new NotFoundError('Color not found', 'COLOR_NOT_FOUND', { colorId: id });
-}
-
-async function assertSizeExists(id: string): Promise<void> {
-    const found = await prisma.size.findUnique({ where: { id }, select: { id: true } });
-    if (!found) throw new NotFoundError('Size not found', 'SIZE_NOT_FOUND', { sizeId: id });
-}
-
-async function assertBrandExists(id: string): Promise<void> {
-    const found = await prisma.brand.findUnique({ where: { id }, select: { id: true } });
-    if (!found) throw new NotFoundError('Brand not found', 'BRAND_NOT_FOUND', { brandId: id });
-}
-
-async function assertChemicalExists(id: string): Promise<void> {
-    const found = await prisma.chemical.findUnique({ where: { id }, select: { id: true } });
-    if (!found) throw new NotFoundError('Chemical not found', 'CHEMICAL_NOT_FOUND', { chemicalId: id });
 }
 
 function roundKg(value: number): number {
@@ -196,21 +178,7 @@ export async function createExtruderProduction(input: CreateExtruderInput, actor
 
 export async function listExtruderProductions(query: ListExtruderQuery) {
     const { skip, take } = toSkipTake(query);
-
-    const where: Prisma.ProductionRecordWhereInput = {
-        stage: ProductionStage.EXTRUDER,
-        ...(query.color_id ? { colorId: query.color_id } : {}),
-        ...(query.size ? { sizeId: query.size } : {}),
-        ...(query.status ? { status: query.status } : {}),
-        ...(query.date_from || query.date_to
-            ? {
-                  productionDate: {
-                      ...(query.date_from ? { gte: query.date_from } : {}),
-                      ...(query.date_to ? { lte: query.date_to } : {}),
-                  },
-              }
-            : {}),
-    };
+    const where = buildProductionWhere(ProductionStage.EXTRUDER, query);
 
     const [rows, total] = await prisma.$transaction([
         prisma.productionRecord.findMany({

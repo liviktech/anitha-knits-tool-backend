@@ -34,6 +34,19 @@ const definition: swaggerJsdoc.OAS3Definition = {
                 'PRD §16.3. No separate "submit" step: a created record starts PENDING_APPROVAL directly ' +
                 'and is editable only in that state; approve/reject resolve it from there.',
         },
+        {
+            name: 'Looms',
+            description:
+                'Looms production records — stage 2 of the production flow (yarn → fabric). PRD §16.4. ' +
+                'Only create/list/get are implemented so far; edit/approve/reject are a follow-up.',
+        },
+        {
+            name: 'Fabric Checking',
+            description:
+                'Fabric Checking records — the QA stage (fabric → First Grade/Second Grade). PRD §16.7. ' +
+                'Base path is /api/v1/fabric-checking, not nested under /production. ' +
+                'Only create/list/get are implemented so far; edit/approve/reject, FW/BW wastage, and GSM are a follow-up.',
+        },
     ],
     components: {
         schemas: {
@@ -184,6 +197,124 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     },
                 },
             },
+            LoomDetail: {
+                type: 'object',
+                properties: {
+                    yarnInputKg: { type: 'number', format: 'decimal', example: 500 },
+                    fabricOutputKg: { type: 'number', format: 'decimal', example: 470 },
+                },
+            },
+            LoomsProduction: {
+                type: 'object',
+                description: 'A production record for the Looms stage, with its LoomDetail embedded.',
+                properties: {
+                    id: { type: 'string', format: 'uuid' },
+                    stage: { type: 'string', enum: ['LOOMS'] },
+                    productionDate: { type: 'string', format: 'date-time' },
+                    status: {
+                        type: 'string',
+                        enum: ['DRAFT', 'SUBMITTED', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED'],
+                    },
+                    statusChangedAt: { type: 'string', format: 'date-time' },
+                    remarks: { type: 'string', nullable: true },
+                    color: { $ref: '#/components/schemas/MasterDataRef' },
+                    size: { $ref: '#/components/schemas/MasterDataRef' },
+                    loom: { $ref: '#/components/schemas/LoomDetail' },
+                    createdAt: { type: 'string', format: 'date-time' },
+                    createdBy: { type: 'string' },
+                    updatedAt: { type: 'string', format: 'date-time' },
+                    updatedBy: { type: 'string', nullable: true },
+                },
+            },
+            LoomsCreateRequest: {
+                type: 'object',
+                required: ['productionDate', 'colorId', 'sizeId', 'yarnInputKg', 'fabricOutputKg'],
+                additionalProperties: false,
+                properties: {
+                    productionDate: { type: 'string', format: 'date', example: '2026-08-19' },
+                    colorId: { type: 'string', format: 'uuid' },
+                    sizeId: { type: 'string', format: 'uuid' },
+                    yarnInputKg: { type: 'number', exclusiveMinimum: 0, example: 500 },
+                    fabricOutputKg: { type: 'number', exclusiveMinimum: 0, example: 470 },
+                    remarks: { type: 'string', maxLength: 500 },
+                },
+            },
+            LoomsResponse: {
+                type: 'object',
+                properties: {
+                    success: { type: 'boolean', example: true },
+                    data: { $ref: '#/components/schemas/LoomsProduction' },
+                },
+            },
+            LoomsListResponse: {
+                type: 'object',
+                properties: {
+                    success: { type: 'boolean', example: true },
+                    data: { type: 'array', items: { $ref: '#/components/schemas/LoomsProduction' } },
+                    meta: { $ref: '#/components/schemas/PaginationMeta' },
+                },
+            },
+            FabricCheckDetail: {
+                type: 'object',
+                properties: {
+                    fabricInputKg: { type: 'number', format: 'decimal', example: 192, description: 'Total fabric weight received for checking.' },
+                    pieceCount: { type: 'integer', example: 20 },
+                    firstGradeKg: { type: 'number', format: 'decimal', example: 170 },
+                    secondGradeKg: { type: 'number', format: 'decimal', example: 18 },
+                },
+            },
+            FabricCheckingRecord: {
+                type: 'object',
+                description: 'A production record for the Fabric Checking stage, with its FabricCheckDetail embedded.',
+                properties: {
+                    id: { type: 'string', format: 'uuid' },
+                    stage: { type: 'string', enum: ['FABRIC_CHECKING'] },
+                    productionDate: { type: 'string', format: 'date-time' },
+                    status: {
+                        type: 'string',
+                        enum: ['DRAFT', 'SUBMITTED', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED'],
+                    },
+                    statusChangedAt: { type: 'string', format: 'date-time' },
+                    remarks: { type: 'string', nullable: true },
+                    color: { $ref: '#/components/schemas/MasterDataRef' },
+                    size: { $ref: '#/components/schemas/MasterDataRef' },
+                    fabricCheck: { $ref: '#/components/schemas/FabricCheckDetail' },
+                    createdAt: { type: 'string', format: 'date-time' },
+                    createdBy: { type: 'string' },
+                    updatedAt: { type: 'string', format: 'date-time' },
+                    updatedBy: { type: 'string', nullable: true },
+                },
+            },
+            FabricCheckingCreateRequest: {
+                type: 'object',
+                required: ['productionDate', 'colorId', 'sizeId', 'fabricInputKg', 'pieceCount', 'firstGradeKg', 'secondGradeKg'],
+                additionalProperties: false,
+                properties: {
+                    productionDate: { type: 'string', format: 'date', example: '2026-08-19' },
+                    colorId: { type: 'string', format: 'uuid' },
+                    sizeId: { type: 'string', format: 'uuid' },
+                    fabricInputKg: { type: 'number', exclusiveMinimum: 0, example: 192 },
+                    pieceCount: { type: 'integer', exclusiveMinimum: 0, example: 20 },
+                    firstGradeKg: { type: 'number', minimum: 0, example: 170 },
+                    secondGradeKg: { type: 'number', minimum: 0, example: 18 },
+                    remarks: { type: 'string', maxLength: 500 },
+                },
+            },
+            FabricCheckingResponse: {
+                type: 'object',
+                properties: {
+                    success: { type: 'boolean', example: true },
+                    data: { $ref: '#/components/schemas/FabricCheckingRecord' },
+                },
+            },
+            FabricCheckingListResponse: {
+                type: 'object',
+                properties: {
+                    success: { type: 'boolean', example: true },
+                    data: { type: 'array', items: { $ref: '#/components/schemas/FabricCheckingRecord' } },
+                    meta: { $ref: '#/components/schemas/PaginationMeta' },
+                },
+            },
         },
         parameters: {
             ExtruderId: {
@@ -192,6 +323,20 @@ const definition: swaggerJsdoc.OAS3Definition = {
                 required: true,
                 schema: { type: 'string', format: 'uuid' },
                 description: 'ProductionRecord id (stage=EXTRUDER).',
+            },
+            LoomsId: {
+                name: 'id',
+                in: 'path',
+                required: true,
+                schema: { type: 'string', format: 'uuid' },
+                description: 'ProductionRecord id (stage=LOOMS).',
+            },
+            FabricCheckingId: {
+                name: 'id',
+                in: 'path',
+                required: true,
+                schema: { type: 'string', format: 'uuid' },
+                description: 'ProductionRecord id (stage=FABRIC_CHECKING).',
             },
         },
         responses: {
