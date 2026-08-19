@@ -8,252 +8,363 @@ datasource db {
   provider = "postgresql"
 }
 
-model Brand {
-  id   String @id @default(uuid()) @db.Uuid
-  name String @unique @db.VarChar(100)
+enum ProductionStage {
+  EXTRUDER
 
-  extruderRawProducts ExtruderRawProduct[]
+  LOOMS
+
+  FABRIC_CHECKING
+}
+
+enum ProductionStatus {
+  DRAFT
+
+  SUBMITTED
+
+  PENDING_APPROVAL
+
+  APPROVED
+
+  REJECTED
+}
+
+enum ApprovalMode {
+  AUTO_APPROVAL
+
+  MANAGER_APPROVAL
+}
+
+enum ProductionRecordType {
+  NORMAL
+
+  ADJUSTMENT
+
+  REVERSAL
+}
+
+enum ApprovalEntityType {
+  PRODUCTION_RECORD
+
+  WASTAGE_RECORD
+}
+
+model ProductionSetting {
+  id String @id @default(uuid()) @db.Uuid
+
+  singleton Boolean @unique @default(true)
+
+  approvalMode ApprovalMode @default(MANAGER_APPROVAL) @map("approval_mode")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  createdBy String?  @map("created_by") @db.VarChar(100)
+
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  updatedBy String?  @map("updated_by") @db.VarChar(100)
+
+  updatedBy String? @map("updated_by") @db.VarChar(100)
+
+  @@map("production_settings")
+}
+
+model Brand {
+  id String @id @default(uuid()) @db.Uuid
+
+  name String @unique @db.VarChar(100)
+
+  extruderDetails ExtruderDetail[]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  createdBy String? @map("created_by") @db.VarChar(100)
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  updatedBy String? @map("updated_by") @db.VarChar(100)
 
   @@map("brands")
 }
 
-model Color {
-  id   String @id @default(uuid()) @db.Uuid
-  name String @unique @db.VarChar(50)
-
-  extruderProcesses ExtruderProcess[]
-  loomProductions   LoomProduction[]
-  fabricCheckings   FabricChecking[]
-
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  createdBy String?  @map("created_by") @db.VarChar(100)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  updatedBy String?  @map("updated_by") @db.VarChar(100)
-
-  @@map("colors")
-}
-
 model Chemical {
-  id   String @id @default(uuid()) @db.Uuid
+  id String @id @default(uuid()) @db.Uuid
+
   name String @unique @db.VarChar(100)
 
-  extruderChemicals ExtruderChemical[]
+  extruderDetails ExtruderDetail[]
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  createdBy String?  @map("created_by") @db.VarChar(100)
+
+  createdBy String? @map("created_by") @db.VarChar(100)
+
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  updatedBy String?  @map("updated_by") @db.VarChar(100)
+
+  updatedBy String? @map("updated_by") @db.VarChar(100)
 
   @@map("chemicals")
 }
 
-model Size {
-  id   String @id @default(uuid()) @db.Uuid
-  name String @unique @db.VarChar(30)
+model Color {
+  id String @id @default(uuid()) @db.Uuid
 
-  extruderProcesses ExtruderProcess[]
-  loomProductions   LoomProduction[]
-  fabricCheckings   FabricChecking[]
+  name String @unique @db.VarChar(50)
+
+  productionRecords ProductionRecord[]
+
+  wastageRecords WastageRecord[]
+
+  consumptionStandard ColorConsumptionStandard?
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  createdBy String?  @map("created_by") @db.VarChar(100)
+
+  createdBy String? @map("created_by") @db.VarChar(100)
+
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  updatedBy String?  @map("updated_by") @db.VarChar(100)
+
+  updatedBy String? @map("updated_by") @db.VarChar(100)
+
+  @@map("colors")
+}
+
+model Size {
+  id String @id @default(uuid()) @db.Uuid
+
+  name String @unique @db.VarChar(30)
+
+  productionRecords ProductionRecord[]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  createdBy String? @map("created_by") @db.VarChar(100)
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  updatedBy String? @map("updated_by") @db.VarChar(100)
 
   @@map("sizes")
 }
 
-model ExtruderProcess {
+model ColorConsumptionStandard {
   id String @id @default(uuid()) @db.Uuid
+
+  colorId String @unique @map("color_id") @db.Uuid
+
+  color Color @relation(fields: [colorId], references: [id])
+
+  gramsPerBasis Decimal @map("grams_per_basis") @db.Decimal(10, 3)
+
+  basisWeightKg Decimal @default(25) @map("basis_weight_kg") @db.Decimal(10, 3)
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  createdBy String? @map("created_by") @db.VarChar(100)
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  updatedBy String? @map("updated_by") @db.VarChar(100)
+
+  @@map("color_consumption_standards")
+}
+
+model ProductionRecord {
+  id String @id @default(uuid()) @db.Uuid
+
+  stage ProductionStage
 
   productionDate DateTime @map("production_date") @db.Date
 
   colorId String @map("color_id") @db.Uuid
-  color   Color  @relation(fields: [colorId], references: [id])
+
+  color Color @relation(fields: [colorId], references: [id])
 
   sizeId String @map("size_id") @db.Uuid
-  size   Size   @relation(fields: [sizeId], references: [id])
 
-  colorWeightKg Decimal @map("color_weight_kg") @db.Decimal(12, 3)
+  size Size @relation(fields: [sizeId], references: [id])
 
-  totalWeightKg Decimal @map("total_weight_kg") @db.Decimal(12, 3)
+  recordType ProductionRecordType @default(NORMAL) @map("record_type")
 
-  loomsWeightKg Decimal @map("looms_weight_kg") @db.Decimal(12, 3)
+  reversesRecordId String? @map("reverses_record_id") @db.Uuid
 
-  rawProduct ExtruderRawProduct?
-  chemical   ExtruderChemical?
-  waste      ExtruderWaste?
+  reversesRecord ProductionRecord? @relation("ProductionCorrection", fields: [reversesRecordId], references: [id])
+
+  corrections ProductionRecord[] @relation("ProductionCorrection")
+
+  status ProductionStatus @default(DRAFT)
+
+  statusChangedAt DateTime @default(now()) @map("status_changed_at") @db.Timestamptz(6)
+
+  remarks String? @db.VarChar(500)
+
+  extruder ExtruderDetail?
+
+  loom LoomDetail?
+
+  fabricCheck FabricCheckDetail?
+
+  wastages WastageRecord[]
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  createdBy String   @map("created_by") @db.VarChar(100)
+
+  createdBy String @map("created_by") @db.VarChar(100)
+
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  updatedBy String?  @map("updated_by") @db.VarChar(100)
+
+  updatedBy String? @map("updated_by") @db.VarChar(100)
 
   @@index([productionDate])
-  @@index([sizeId, colorId])
-  @@map("extruder_process")
+  @@index([stage, productionDate])
+  @@index([colorId, sizeId])
+  @@index([status])
+  @@index([reversesRecordId])
+  @@map("production_records")
 }
 
-model ExtruderRawProduct {
+model ExtruderDetail {
   id String @id @default(uuid()) @db.Uuid
 
-  extruderProcessId String @unique @map("extruder_process_id") @db.Uuid
+  productionRecordId String @unique @map("production_record_id") @db.Uuid
 
-  extruderProcess ExtruderProcess @relation(fields: [extruderProcessId], references: [id], onDelete: Cascade)
+  productionRecord ProductionRecord @relation(fields: [productionRecordId], references: [id], onDelete: Cascade)
 
   brandId String @map("brand_id") @db.Uuid
 
   brand Brand @relation(fields: [brandId], references: [id])
 
-  bagCount Int @map("bag_count")
-
-  weightKg Decimal @map("weight_kg") @db.Decimal(12, 3)
-
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  createdBy String   @map("created_by") @db.VarChar(100)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  updatedBy String?  @map("updated_by") @db.VarChar(100)
-
-  @@index([brandId])
-  @@map("extruder_raw_product")
-}
-
-model ExtruderChemical {
-  id String @id @default(uuid()) @db.Uuid
-
-  extruderProcessId String @unique @map("extruder_process_id") @db.Uuid
-
-  extruderProcess ExtruderProcess @relation(fields: [extruderProcessId], references: [id], onDelete: Cascade)
+  rawMaterialKg Decimal @map("raw_material_kg") @db.Decimal(12, 3)
 
   chemicalId String @map("chemical_id") @db.Uuid
 
   chemical Chemical @relation(fields: [chemicalId], references: [id])
 
-  weightKg Decimal @map("weight_kg") @db.Decimal(12, 3)
+  chemicalKg Decimal @map("chemical_kg") @db.Decimal(12, 3)
 
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  createdBy String   @map("created_by") @db.VarChar(100)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  updatedBy String?  @map("updated_by") @db.VarChar(100)
+  colorConsumedKg Decimal @map("color_consumed_kg") @db.Decimal(12, 3)
 
+  yarnOutputKg Decimal @map("yarn_output_kg") @db.Decimal(12, 3)
+
+  isRecipeOverridden Boolean @default(false) @map("is_recipe_overridden")
+
+  overrideReason String? @map("override_reason") @db.VarChar(500)
+
+  @@index([brandId])
   @@index([chemicalId])
-  @@map("extruder_chemical")
+  @@map("extruder_details")
 }
 
-model ExtruderWaste {
+model LoomDetail {
   id String @id @default(uuid()) @db.Uuid
 
-  extruderProcessId String @unique @map("extruder_process_id") @db.Uuid
+  productionRecordId String @unique @map("production_record_id") @db.Uuid
 
-  extruderProcess ExtruderProcess @relation(fields: [extruderProcessId], references: [id], onDelete: Cascade)
+  productionRecord ProductionRecord @relation(fields: [productionRecordId], references: [id], onDelete: Cascade)
 
-  looseWasteKg Decimal @map("loose_waste_kg") @db.Decimal(12, 3)
+  yarnInputKg Decimal @map("yarn_input_kg") @db.Decimal(12, 3)
 
-  lumsWasteKg Decimal @map("lums_waste_kg") @db.Decimal(12, 3)
+  fabricOutputKg Decimal @map("fabric_output_kg") @db.Decimal(12, 3)
 
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  createdBy String   @map("created_by") @db.VarChar(100)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  updatedBy String?  @map("updated_by") @db.VarChar(100)
-
-  @@map("extruder_waste")
+  @@map("loom_details")
 }
 
-model LoomProduction {
+model FabricCheckDetail {
   id String @id @default(uuid()) @db.Uuid
 
-  productionDate DateTime @map("production_date") @db.Date
+  productionRecordId String @unique @map("production_record_id") @db.Uuid
 
-  colorId String @map("color_id") @db.Uuid
+  productionRecord ProductionRecord @relation(fields: [productionRecordId], references: [id], onDelete: Cascade)
 
-  color Color @relation(fields: [colorId], references: [id])
+  fabricInputKg Decimal @map("fabric_input_kg") @db.Decimal(12, 3)
 
-  sizeId String @map("size_id") @db.Uuid
+  pieceCount Int @map("piece_count")
 
-  size Size @relation(fields: [sizeId], references: [id])
+  firstGradeKg Decimal @map("first_grade_kg") @db.Decimal(12, 3)
 
-  loomsWeightKg Decimal @map("looms_weight_kg") @db.Decimal(12, 3)
+  secondGradeKg Decimal @map("second_grade_kg") @db.Decimal(12, 3)
 
-  fabricWeightKg Decimal @map("fabric_weight_kg") @db.Decimal(12, 3)
-
-  waste LoomWaste?
-
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  createdBy String   @map("created_by") @db.VarChar(100)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  updatedBy String?  @map("updated_by") @db.VarChar(100)
-
-  @@index([productionDate])
-  @@index([sizeId, colorId])
-  @@map("loom_production")
+  @@map("fabric_check_details")
 }
 
-model LoomWaste {
+model WastageType {
   id String @id @default(uuid()) @db.Uuid
 
-  loomProductionId String @unique @map("loom_production_id") @db.Uuid
+  stage ProductionStage
 
-  loomProduction LoomProduction @relation(fields: [loomProductionId], references: [id], onDelete: Cascade)
+  code String @db.VarChar(50)
 
-  wasteWeightKg Decimal @map("waste_weight_kg") @db.Decimal(12, 3)
+  name String @db.VarChar(100)
+
+  isColorTracked Boolean @default(false) @map("is_color_tracked")
+
+  isActive Boolean @default(true) @map("is_active")
+
+  wastageRecords WastageRecord[]
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  createdBy String   @map("created_by") @db.VarChar(100)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  updatedBy String?  @map("updated_by") @db.VarChar(100)
 
-  @@map("loom_waste")
+  createdBy String? @map("created_by") @db.VarChar(100)
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  updatedBy String? @map("updated_by") @db.VarChar(100)
+
+  @@unique([stage, code])
+  @@index([stage, isActive])
+  @@map("wastage_types")
 }
 
-model FabricChecking {
+model WastageRecord {
   id String @id @default(uuid()) @db.Uuid
 
-  productionDate DateTime @map("production_date") @db.Date
+  productionRecordId String @map("production_record_id") @db.Uuid
 
-  colorId String @map("color_id") @db.Uuid
+  productionRecord ProductionRecord @relation(fields: [productionRecordId], references: [id])
 
-  color Color @relation(fields: [colorId], references: [id])
+  wastageTypeId String @map("wastage_type_id") @db.Uuid
 
-  sizeId String @map("size_id") @db.Uuid
+  wastageType WastageType @relation(fields: [wastageTypeId], references: [id])
 
-  size Size @relation(fields: [sizeId], references: [id])
+  colorId String? @map("color_id") @db.Uuid
 
-  fabricWeightKg Decimal @map("fabric_weight_kg") @db.Decimal(12, 3)
+  color Color? @relation(fields: [colorId], references: [id])
 
-  fiveMeterFabricWeightKg Decimal @map("five_meter_fabric_weight_kg") @db.Decimal(12, 3)
+  quantityKg Decimal @map("quantity_kg") @db.Decimal(12, 3)
 
-  wastage FabricWastage?
+  reason String? @db.VarChar(500)
+
+  status ProductionStatus @default(DRAFT)
+
+  statusChangedAt DateTime @default(now()) @map("status_changed_at") @db.Timestamptz(6)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  createdBy String   @map("created_by") @db.VarChar(100)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  updatedBy String?  @map("updated_by") @db.VarChar(100)
 
-  @@index([productionDate])
-  @@index([sizeId, colorId])
-  @@map("fabric_checking")
+  createdBy String @map("created_by") @db.VarChar(100)
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  updatedBy String? @map("updated_by") @db.VarChar(100)
+
+  @@index([productionRecordId])
+  @@index([wastageTypeId])
+  @@index([colorId])
+  @@index([status])
+  @@map("wastage_records")
 }
 
-model FabricWastage {
+model ApprovalEvent {
   id String @id @default(uuid()) @db.Uuid
 
-  fabricCheckingId String @unique @map("fabric_checking_id") @db.Uuid
+  entityType ApprovalEntityType @map("entity_type")
 
-  fabricChecking FabricChecking @relation(fields: [fabricCheckingId], references: [id], onDelete: Cascade)
+  entityId String @map("entity_id") @db.Uuid
 
-  fwWastageKg Decimal @map("fw_wastage_kg") @db.Decimal(12, 3)
+  fromStatus ProductionStatus @map("from_status")
 
-  bitWastageKg Decimal @map("bit_wastage_kg") @db.Decimal(12, 3)
+  toStatus ProductionStatus @map("to_status")
+
+  reason String? @db.VarChar(500)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  createdBy String   @map("created_by") @db.VarChar(100)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  updatedBy String?  @map("updated_by") @db.VarChar(100)
 
-  @@map("fabric_wastage")
+  createdBy String @map("created_by") @db.VarChar(100)
+
+  @@index([entityType, entityId, createdAt])
+  @@index([toStatus, createdAt])
+  @@map("approval_events")
 }
