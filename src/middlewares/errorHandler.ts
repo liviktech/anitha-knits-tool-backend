@@ -12,7 +12,9 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     }
 
     res.status(statusCode).json({
+        success: false,
         error: {
+            code: err instanceof ApiError && err.code ? err.code : 'INTERNAL_ERROR',
             message,
             ...(err instanceof ApiError && err.details ? { details: err.details } : {}),
             ...(isProduction ? {} : { stack: err.stack }),
