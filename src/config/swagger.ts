@@ -55,6 +55,14 @@ const definition: swaggerJsdoc.OAS3Definition = {
             name: 'Dashboard',
             description: 'Aggregated KPIs for management-facing dashboards (PRD §16.10).',
         },
+        {
+            name: 'Inventory',
+            description: 'Inventory stock records (raw material/chemical/yarn/fabric on hand). Full CRUD.',
+        },
+        {
+            name: 'Load Sent',
+            description: 'Load Sent records — the outward-load operation (PRD terminology "Load Sent"). Full CRUD.',
+        },
     ],
     components: {
         schemas: {
@@ -435,6 +443,113 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     data: { $ref: '#/components/schemas/DashboardProductionData' },
                 },
             },
+            InventoryRecord: {
+                type: 'object',
+                properties: {
+                    id: { type: 'string', format: 'uuid' },
+                    date: { type: 'string', format: 'date-time' },
+                    type: { type: 'string', enum: ['RAW_MATERIAL', 'CHEMICAL', 'YARN', 'FABRIC'] },
+                    name: { type: 'string', example: 'White Chips' },
+                    weightKg: { type: 'number', format: 'decimal', example: 250 },
+                    createdAt: { type: 'string', format: 'date-time' },
+                    createdBy: { type: 'string' },
+                    updatedAt: { type: 'string', format: 'date-time' },
+                    updatedBy: { type: 'string', nullable: true },
+                },
+            },
+            InventoryCreateRequest: {
+                type: 'object',
+                required: ['type', 'name', 'weightKg'],
+                additionalProperties: false,
+                properties: {
+                    date: { type: 'string', format: 'date', description: 'Optional. Defaults to now.' },
+                    type: { type: 'string', enum: ['RAW_MATERIAL', 'CHEMICAL', 'YARN', 'FABRIC'] },
+                    name: { type: 'string', maxLength: 150, example: 'White Chips' },
+                    weightKg: { type: 'number', exclusiveMinimum: 0, example: 250 },
+                },
+            },
+            InventoryUpdateRequest: {
+                type: 'object',
+                description: 'Every field is optional, but at least one must be present.',
+                minProperties: 1,
+                additionalProperties: false,
+                properties: {
+                    date: { type: 'string', format: 'date' },
+                    type: { type: 'string', enum: ['RAW_MATERIAL', 'CHEMICAL', 'YARN', 'FABRIC'] },
+                    name: { type: 'string', maxLength: 150 },
+                    weightKg: { type: 'number', exclusiveMinimum: 0 },
+                },
+            },
+            InventoryResponse: {
+                type: 'object',
+                properties: {
+                    success: { type: 'boolean', example: true },
+                    data: { $ref: '#/components/schemas/InventoryRecord' },
+                },
+            },
+            InventoryListResponse: {
+                type: 'object',
+                properties: {
+                    success: { type: 'boolean', example: true },
+                    data: { type: 'array', items: { $ref: '#/components/schemas/InventoryRecord' } },
+                    meta: { $ref: '#/components/schemas/PaginationMeta' },
+                },
+            },
+            LoadSentRecord: {
+                type: 'object',
+                properties: {
+                    id: { type: 'string', format: 'uuid' },
+                    date: { type: 'string', format: 'date-time' },
+                    color: { $ref: '#/components/schemas/MasterDataRef' },
+                    size: { $ref: '#/components/schemas/MasterDataRef' },
+                    pieceCount: { type: 'integer', example: 20 },
+                    weightKg: { type: 'number', format: 'decimal', example: 470 },
+                    createdAt: { type: 'string', format: 'date-time' },
+                    createdBy: { type: 'string' },
+                    updatedAt: { type: 'string', format: 'date-time' },
+                    updatedBy: { type: 'string', nullable: true },
+                },
+            },
+            LoadSentCreateRequest: {
+                type: 'object',
+                required: ['colorId', 'sizeId', 'pieceCount', 'weightKg'],
+                additionalProperties: false,
+                properties: {
+                    date: { type: 'string', format: 'date', description: 'Optional. Defaults to now.' },
+                    colorId: { type: 'string', format: 'uuid' },
+                    sizeId: { type: 'string', format: 'uuid' },
+                    pieceCount: { type: 'integer', exclusiveMinimum: 0, example: 20 },
+                    weightKg: { type: 'number', exclusiveMinimum: 0, example: 470 },
+                },
+            },
+            LoadSentUpdateRequest: {
+                type: 'object',
+                description: 'Every field is optional, but at least one must be present.',
+                minProperties: 1,
+                additionalProperties: false,
+                properties: {
+                    date: { type: 'string', format: 'date' },
+                    colorId: { type: 'string', format: 'uuid' },
+                    sizeId: { type: 'string', format: 'uuid' },
+                    pieceCount: { type: 'integer', exclusiveMinimum: 0 },
+                    weightKg: { type: 'number', exclusiveMinimum: 0 },
+                },
+            },
+            LoadSentResponse: {
+                type: 'object',
+                properties: {
+                    success: { type: 'boolean', example: true },
+                    data: { $ref: '#/components/schemas/LoadSentRecord' },
+                },
+            },
+            LoadSentListResponse: {
+                type: 'object',
+                properties: {
+                    success: { type: 'boolean', example: true },
+                    data: { type: 'array', items: { $ref: '#/components/schemas/LoadSentRecord' } },
+                    meta: { $ref: '#/components/schemas/PaginationMeta' },
+                },
+            },
         },
         parameters: {
             ExtruderId: {
@@ -457,6 +572,20 @@ const definition: swaggerJsdoc.OAS3Definition = {
                 required: true,
                 schema: { type: 'string', format: 'uuid' },
                 description: 'ProductionRecord id (stage=FABRIC_CHECKING).',
+            },
+            InventoryId: {
+                name: 'id',
+                in: 'path',
+                required: true,
+                schema: { type: 'string', format: 'uuid' },
+                description: 'Inventory record id.',
+            },
+            LoadSentId: {
+                name: 'id',
+                in: 'path',
+                required: true,
+                schema: { type: 'string', format: 'uuid' },
+                description: 'Load Sent record id.',
             },
         },
         responses: {

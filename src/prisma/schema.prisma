@@ -48,6 +48,16 @@ enum ApprovalEntityType {
   WASTAGE_RECORD
 }
 
+enum InventoryType {
+  RAW_MATERIAL
+
+  CHEMICAL
+
+  YARN
+
+  FABRIC
+}
+
 model ProductionSetting {
   id String @id @default(uuid()) @db.Uuid
 
@@ -109,6 +119,8 @@ model Color {
 
   wastageRecords WastageRecord[]
 
+  loadSents LoadSent[]
+
   consumptionStandard ColorConsumptionStandard?
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -128,6 +140,8 @@ model Size {
   name String @unique @db.VarChar(30)
 
   productionRecords ProductionRecord[]
+
+  loadSents LoadSent[]
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -367,4 +381,48 @@ model ApprovalEvent {
   @@index([entityType, entityId, createdAt])
   @@index([toStatus, createdAt])
   @@map("approval_events")
+}
+
+model Inventory {
+  id        String        @id @default(uuid()) @db.Uuid
+  date      DateTime      @default(now())
+  type      InventoryType
+  name      String        @db.VarChar(150)
+  weightKg  Decimal       @map("weight_kg") @db.Decimal(12, 3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy String @map("created_by") @db.VarChar(100)
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy String? @map("updated_by") @db.VarChar(100)
+
+  @@index([date])
+  @@index([type])
+  @@index([name])
+  @@map("inventory")
+}
+
+model LoadSent {
+  id        String   @id @default(uuid()) @db.Uuid
+  date      DateTime @default(now())
+
+  colorId String @map("color_id") @db.Uuid
+  color   Color  @relation(fields: [colorId], references: [id])
+
+  sizeId String @map("size_id") @db.Uuid
+  size   Size   @relation(fields: [sizeId], references: [id])
+
+  pieceCount Int     @map("piece_count")
+  weightKg  Decimal  @map("weight_kg") @db.Decimal(12, 3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy String @map("created_by") @db.VarChar(100)
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy String? @map("updated_by") @db.VarChar(100)
+
+  @@index([date])
+  @@index([colorId])
+  @@index([sizeId])
+  @@map("load_sent")
 }
