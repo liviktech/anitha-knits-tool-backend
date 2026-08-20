@@ -10,3 +10,4 @@ export const getReadiness = asyncHandler(async (req: Request, res: Response) => 
     const db = await checkDatabaseConnection();
     res.status(200).json({ status: 'ok', db });
 });
+
