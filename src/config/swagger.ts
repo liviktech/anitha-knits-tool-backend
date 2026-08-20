@@ -51,6 +51,10 @@ const definition: swaggerJsdoc.OAS3Definition = {
             name: 'Lookups',
             description: 'Master data for populating dropdowns across the production entry forms.',
         },
+        {
+            name: 'Dashboard',
+            description: 'Aggregated KPIs for management-facing dashboards (PRD §16.10).',
+        },
     ],
     components: {
         schemas: {
@@ -327,6 +331,71 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     colors: { type: 'array', items: { $ref: '#/components/schemas/MasterDataRef' } },
                     chemicals: { type: 'array', items: { $ref: '#/components/schemas/MasterDataRef' } },
                     sizes: { type: 'array', items: { $ref: '#/components/schemas/MasterDataRef' } },
+                },
+            },
+            DashboardStageDaily: {
+                type: 'object',
+                description: 'One stage\'s totals for a single day.',
+                properties: {
+                    inputKg: { type: 'number', example: 500 },
+                    outputKg: { type: 'number', example: 470 },
+                    wastageKg: { type: 'number', example: 0, description: 'Summed from WastageRecord; 0 until the Wastage API is in use.' },
+                    wastePct: { type: 'number', example: 0 },
+                },
+            },
+            DashboardStageSummary: {
+                type: 'object',
+                description: 'One stage\'s totals across the whole requested date range.',
+                allOf: [
+                    { $ref: '#/components/schemas/DashboardStageDaily' },
+                    {
+                        type: 'object',
+                        properties: {
+                            efficiencyPct: { type: 'number', example: 94, description: 'outputKg / inputKg * 100.' },
+                        },
+                    },
+                ],
+            },
+            DashboardDailyEntry: {
+                type: 'object',
+                properties: {
+                    date: { type: 'string', format: 'date' },
+                    extruder: { $ref: '#/components/schemas/DashboardStageDaily' },
+                    looms: { $ref: '#/components/schemas/DashboardStageDaily' },
+                    fabricChecking: { $ref: '#/components/schemas/DashboardStageDaily' },
+                },
+            },
+            DashboardProductionData: {
+                type: 'object',
+                properties: {
+                    range: {
+                        type: 'object',
+                        properties: {
+                            dateFrom: { type: 'string', format: 'date' },
+                            dateTo: { type: 'string', format: 'date' },
+                        },
+                    },
+                    summary: {
+                        type: 'object',
+                        description: 'Backs the three summary cards.',
+                        properties: {
+                            extruder: { $ref: '#/components/schemas/DashboardStageSummary' },
+                            looms: { $ref: '#/components/schemas/DashboardStageSummary' },
+                            fabricChecking: { $ref: '#/components/schemas/DashboardStageSummary' },
+                        },
+                    },
+                    daily: {
+                        type: 'array',
+                        description: 'Backs the day-wise table. Only days with at least one production record appear here.',
+                        items: { $ref: '#/components/schemas/DashboardDailyEntry' },
+                    },
+                },
+            },
+            DashboardProductionResponse: {
+                type: 'object',
+                properties: {
+                    success: { type: 'boolean', example: true },
+                    data: { $ref: '#/components/schemas/DashboardProductionData' },
                 },
             },
         },

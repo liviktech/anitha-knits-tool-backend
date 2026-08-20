@@ -4,6 +4,7 @@ import extruderRoutes from './extruderRoutes.js';
 import loomsRoutes from './loomsRoutes.js';
 import fabricCheckingRoutes from './fabricCheckingRoutes.js';
 import lookupRoutes from './lookup.js';
+import dashboardRoutes from './dashboardRoutes.js';
 
 const router = Router();
 
@@ -13,6 +14,7 @@ router.use('/production/looms', loomsRoutes);
 // PRD §16.7: base path is /api/v1/fabric-checking, not nested under /production.
 router.use('/fabric-checking', fabricCheckingRoutes);
 router.use('/lookups', lookupRoutes);
+router.use('/dashboard', dashboardRoutes);
 
 // Mount additional feature routers here, e.g.:
 // router.use('/users', userRoutes);
