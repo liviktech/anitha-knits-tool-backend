@@ -4,6 +4,8 @@ import { NotFoundError, ConflictError, ValidationError } from '../utils/errors.j
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import { buildProductionWhere } from '../utils/productionFilters.js';
 import { assertBrandExists, assertChemicalExists, assertColorExists, assertSizeExists } from './masterDataService.js';
+import { buildWastageCreates, mapWastageRecord, wastageSelect } from './wastageService.js';
+import { WASTAGE_CODES } from '../constants/wastageCodes.js';
 import type { CreateExtruderInput, UpdateExtruderInput, ListExtruderQuery } from '../validations/extruderValidation.js';
 
 /**
@@ -40,6 +42,7 @@ const extruderSelect = {
             overrideReason: true,
         },
     },
+    wastages: { select: wastageSelect },
     createdAt: true,
     createdBy: true,
     updatedAt: true,
@@ -49,7 +52,7 @@ const extruderSelect = {
 type ExtruderRecordRow = Prisma.ProductionRecordGetPayload<{ select: typeof extruderSelect }>;
 
 function mapExtruderRecord(record: ExtruderRecordRow) {
-    const { extruder, ...rest } = record;
+    const { extruder, wastages, ...rest } = record;
     return {
         ...rest,
         extruder: extruder
@@ -64,6 +67,7 @@ function mapExtruderRecord(record: ExtruderRecordRow) {
                   overrideReason: extruder.overrideReason,
               }
             : null,
+        wastages: wastages.map(mapWastageRecord),
     };
 }
 
@@ -148,6 +152,11 @@ export async function createExtruderProduction(input: CreateExtruderInput, actor
         input.overrideReason,
     );
 
+    const wastageCreates = await buildWastageCreates(ProductionStage.EXTRUDER, actor, [
+        { code: WASTAGE_CODES.YARN_WASTE, quantityKg: input.yarnWasteKg },
+        { code: WASTAGE_CODES.LUMPS, quantityKg: input.lumpsKg },
+    ]);
+
     const record = await prisma.productionRecord.create({
         data: {
             stage: ProductionStage.EXTRUDER,
@@ -169,6 +178,7 @@ export async function createExtruderProduction(input: CreateExtruderInput, actor
                     overrideReason: consumption.overrideReason,
                 },
             },
+            ...(wastageCreates.length > 0 ? { wastages: { create: wastageCreates } } : {}),
         },
         select: extruderSelect,
     });

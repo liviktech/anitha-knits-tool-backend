@@ -4,6 +4,8 @@ import { NotFoundError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import { buildProductionWhere } from '../utils/productionFilters.js';
 import { assertColorExists, assertSizeExists } from './masterDataService.js';
+import { buildWastageCreates, mapWastageRecord, wastageSelect } from './wastageService.js';
+import { WASTAGE_CODES } from '../constants/wastageCodes.js';
 import type { CreateLoomsInput, ListLoomsQuery } from '../validations/loomsValidation.js';
 
 /**
@@ -32,6 +34,7 @@ const loomsSelect = {
             fabricOutputKg: true,
         },
     },
+    wastages: { select: wastageSelect },
     createdAt: true,
     createdBy: true,
     updatedAt: true,
@@ -41,7 +44,7 @@ const loomsSelect = {
 type LoomsRecordRow = Prisma.ProductionRecordGetPayload<{ select: typeof loomsSelect }>;
 
 function mapLoomsRecord(record: LoomsRecordRow) {
-    const { loom, ...rest } = record;
+    const { loom, wastages, ...rest } = record;
     return {
         ...rest,
         loom: loom
@@ -50,11 +53,16 @@ function mapLoomsRecord(record: LoomsRecordRow) {
                   fabricOutputKg: loom.fabricOutputKg.toNumber(),
               }
             : null,
+        wastages: wastages.map(mapWastageRecord),
     };
 }
 
 export async function createLoomsProduction(input: CreateLoomsInput, actor: string) {
     await Promise.all([assertColorExists(input.colorId), assertSizeExists(input.sizeId)]);
+
+    const wastageCreates = await buildWastageCreates(ProductionStage.LOOMS, actor, [
+        { code: WASTAGE_CODES.LOOMS_WASTE, quantityKg: input.loomsWasteKg },
+    ]);
 
     const record = await prisma.productionRecord.create({
         data: {
@@ -71,6 +79,7 @@ export async function createLoomsProduction(input: CreateLoomsInput, actor: stri
                     fabricOutputKg: input.fabricOutputKg,
                 },
             },
+            ...(wastageCreates.length > 0 ? { wastages: { create: wastageCreates } } : {}),
         },
         select: loomsSelect,
     });

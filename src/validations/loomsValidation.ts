@@ -9,6 +9,7 @@ export const loomsIdParamsSchema = z
     .strict();
 
 const kg = z.coerce.number().positive('must be a positive number');
+const wastageKg = z.coerce.number().nonnegative('must not be negative').optional();
 
 export const createLoomsSchema = z
     .object({
@@ -18,6 +19,9 @@ export const createLoomsSchema = z
         yarnInputKg: kg,
         fabricOutputKg: kg,
         remarks: z.string().trim().max(500).optional(),
+        // Wastage entered alongside this production record (PRD §9): optional,
+        // and only turns into a WastageRecord when > 0 — see wastageService.ts.
+        loomsWasteKg: wastageKg,
     })
     .strict();
 

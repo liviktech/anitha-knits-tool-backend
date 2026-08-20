@@ -45,7 +45,7 @@ const definition: swaggerJsdoc.OAS3Definition = {
             description:
                 'Fabric Checking records — the QA stage (fabric → First Grade/Second Grade). PRD §16.7. ' +
                 'Base path is /api/v1/fabric-checking, not nested under /production. ' +
-                'Only create/list/get are implemented so far; edit/approve/reject, FW/BW wastage, and GSM are a follow-up.',
+                'Only create/list/get are implemented so far; edit/approve/reject and GSM are a follow-up.',
         },
         {
             name: 'Lookups',
@@ -108,6 +108,7 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     color: { $ref: '#/components/schemas/MasterDataRef' },
                     size: { $ref: '#/components/schemas/MasterDataRef' },
                     extruder: { $ref: '#/components/schemas/ExtruderDetail' },
+                    wastages: { type: 'array', items: { $ref: '#/components/schemas/WastageRecordSummary' } },
                     createdAt: { type: 'string', format: 'date-time' },
                     createdBy: { type: 'string' },
                     updatedAt: { type: 'string', format: 'date-time' },
@@ -138,6 +139,8 @@ const definition: swaggerJsdoc.OAS3Definition = {
                         maxLength: 500,
                         description: 'Required only if colorConsumedKg deviates from the configured standard.',
                     },
+                    yarnWasteKg: { type: 'number', minimum: 0, description: 'Optional. Creates a WastageRecord (code YARN_WASTE) only if > 0.' },
+                    lumpsKg: { type: 'number', minimum: 0, description: 'Optional. Creates a WastageRecord (code LUMPS) only if > 0.' },
                 },
             },
             ExtruderUpdateRequest: {
@@ -205,6 +208,31 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     },
                 },
             },
+            WastageRecordSummary: {
+                type: 'object',
+                description: 'A WastageRecord created alongside its parent production record (PRD §9/§26).',
+                properties: {
+                    id: { type: 'string', format: 'uuid' },
+                    wastageType: {
+                        type: 'object',
+                        properties: {
+                            id: { type: 'string', format: 'uuid' },
+                            code: { type: 'string', example: 'YARN_WASTE' },
+                            name: { type: 'string', example: 'Yarn Waste' },
+                        },
+                    },
+                    color: {
+                        allOf: [{ $ref: '#/components/schemas/MasterDataRef' }],
+                        nullable: true,
+                        description: 'Set only for colour-tracked wastage types (currently BW / "Bit Wastage").',
+                    },
+                    quantityKg: { type: 'number', example: 2.5 },
+                    status: {
+                        type: 'string',
+                        enum: ['DRAFT', 'SUBMITTED', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED'],
+                    },
+                },
+            },
             LoomDetail: {
                 type: 'object',
                 properties: {
@@ -228,6 +256,7 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     color: { $ref: '#/components/schemas/MasterDataRef' },
                     size: { $ref: '#/components/schemas/MasterDataRef' },
                     loom: { $ref: '#/components/schemas/LoomDetail' },
+                    wastages: { type: 'array', items: { $ref: '#/components/schemas/WastageRecordSummary' } },
                     createdAt: { type: 'string', format: 'date-time' },
                     createdBy: { type: 'string' },
                     updatedAt: { type: 'string', format: 'date-time' },
@@ -245,6 +274,7 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     yarnInputKg: { type: 'number', exclusiveMinimum: 0, example: 500 },
                     fabricOutputKg: { type: 'number', exclusiveMinimum: 0, example: 470 },
                     remarks: { type: 'string', maxLength: 500 },
+                    loomsWasteKg: { type: 'number', minimum: 0, description: 'Optional. Creates a WastageRecord (code LOOMS_WASTE) only if > 0.' },
                 },
             },
             LoomsResponse: {
@@ -287,6 +317,7 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     color: { $ref: '#/components/schemas/MasterDataRef' },
                     size: { $ref: '#/components/schemas/MasterDataRef' },
                     fabricCheck: { $ref: '#/components/schemas/FabricCheckDetail' },
+                    wastages: { type: 'array', items: { $ref: '#/components/schemas/WastageRecordSummary' } },
                     createdAt: { type: 'string', format: 'date-time' },
                     createdBy: { type: 'string' },
                     updatedAt: { type: 'string', format: 'date-time' },
@@ -306,6 +337,12 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     firstGradeKg: { type: 'number', minimum: 0, example: 170 },
                     secondGradeKg: { type: 'number', minimum: 0, example: 18 },
                     remarks: { type: 'string', maxLength: 500 },
+                    fwKg: { type: 'number', minimum: 0, description: 'Optional. Creates a WastageRecord (code FW) only if > 0.' },
+                    bwKg: {
+                        type: 'number',
+                        minimum: 0,
+                        description: 'Optional. Creates a colour-tracked WastageRecord (code BW, colorId = this record\'s colorId) only if > 0.',
+                    },
                 },
             },
             FabricCheckingResponse: {

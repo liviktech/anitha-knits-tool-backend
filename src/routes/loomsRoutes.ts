@@ -14,6 +14,8 @@ const router = Router();
  *       transaction. Validates that colorId/sizeId exist. Starts at status
  *       PENDING_APPROVAL (this module has no separate "submit" step).
  *       Edit/approve/reject are not implemented yet — only create/list/get.
+ *       Optionally accepts loomsWasteKg; becomes a WastageRecord (code
+ *       LOOMS_WASTE) in the same transaction, but only when > 0.
  *     requestBody:
  *       required: true
  *       content:

@@ -15,9 +15,12 @@ const router = Router();
  *       exist. Starts at status PENDING_APPROVAL (no separate "submit" step).
  *       firstGradeKg/secondGradeKg are not validated against fabricInputKg —
  *       reconciliation variances are surfaced for review, not blocked here.
- *       FW/BW wastage and GSM are recorded through separate APIs (not yet
- *       implemented). Edit/approve/reject are not implemented yet — only
- *       create/list/get.
+ *       Optionally accepts fwKg/bwKg; each becomes a WastageRecord (codes
+ *       FW/BW) in the same transaction, but only when > 0. BW is colour-
+ *       tracked (PRD "B White"/"B Blue"), so its WastageRecord.colorId is set
+ *       to this record's own colorId; FW's is not. GSM is a separate API (not
+ *       yet implemented). Edit/approve/reject are not implemented yet either —
+ *       only create/list/get.
  *     requestBody:
  *       required: true
  *       content:
