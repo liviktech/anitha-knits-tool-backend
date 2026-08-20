@@ -4,6 +4,8 @@ import { NotFoundError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import { buildProductionWhere } from '../utils/productionFilters.js';
 import { assertColorExists, assertSizeExists } from './masterDataService.js';
+import { buildWastageCreates, mapWastageRecord, wastageSelect } from './wastageService.js';
+import { WASTAGE_CODES } from '../constants/wastageCodes.js';
 import type { CreateFabricCheckingInput, ListFabricCheckingQuery } from '../validations/fabricCheckingValidation.js';
 
 /**
@@ -12,8 +14,11 @@ import type { CreateFabricCheckingInput, ListFabricCheckingQuery } from '../vali
  * "submit" step — same reasoning as Extruder/Looms. A created record is
  * therefore stored PENDING_APPROVAL directly.
  *
- * FW/BW wastage (PRD §10) is recorded through the separate WastageRecord/
- * Wastage API, not embedded here — same pattern as Extruder's Yarn Waste.
+ * FW/BW wastage (PRD §10) is accepted via optional fwKg/bwKg on create and
+ * turned into WastageRecord rows in the same transaction (see
+ * wastageService.ts) — there's no separate Wastage API yet to enter it
+ * through, so this is the only way it gets recorded today. BW is colour-
+ * tracked (PRD "B White"/"B Blue"); FW is not.
  * GSM (PRD §11) is intentionally out of scope: no GSMCheck model exists in
  * schema.prisma yet.
  *
@@ -40,6 +45,7 @@ const fabricCheckingSelect = {
             secondGradeKg: true,
         },
     },
+    wastages: { select: wastageSelect },
     createdAt: true,
     createdBy: true,
     updatedAt: true,
@@ -49,7 +55,7 @@ const fabricCheckingSelect = {
 type FabricCheckingRecordRow = Prisma.ProductionRecordGetPayload<{ select: typeof fabricCheckingSelect }>;
 
 function mapFabricCheckingRecord(record: FabricCheckingRecordRow) {
-    const { fabricCheck, ...rest } = record;
+    const { fabricCheck, wastages, ...rest } = record;
     return {
         ...rest,
         fabricCheck: fabricCheck
@@ -60,11 +66,19 @@ function mapFabricCheckingRecord(record: FabricCheckingRecordRow) {
                   secondGradeKg: fabricCheck.secondGradeKg.toNumber(),
               }
             : null,
+        wastages: wastages.map(mapWastageRecord),
     };
 }
 
 export async function createFabricCheckingRecord(input: CreateFabricCheckingInput, actor: string) {
     await Promise.all([assertColorExists(input.colorId), assertSizeExists(input.sizeId)]);
+
+    // BW ("Bit Wastage") is colour-tracked (PRD "B White"/"B Blue"), so it's
+    // stored against this record's own colour; FW ("Fabric Wastage") is not.
+    const wastageCreates = await buildWastageCreates(ProductionStage.FABRIC_CHECKING, actor, [
+        { code: WASTAGE_CODES.FW, quantityKg: input.fwKg },
+        { code: WASTAGE_CODES.BW, quantityKg: input.bwKg, colorId: input.colorId },
+    ]);
 
     const record = await prisma.productionRecord.create({
         data: {
@@ -83,6 +97,7 @@ export async function createFabricCheckingRecord(input: CreateFabricCheckingInpu
                     secondGradeKg: input.secondGradeKg,
                 },
             },
+            ...(wastageCreates.length > 0 ? { wastages: { create: wastageCreates } } : {}),
         },
         select: fabricCheckingSelect,
     });

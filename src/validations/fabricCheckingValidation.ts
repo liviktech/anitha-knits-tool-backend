@@ -8,6 +8,8 @@ export const fabricCheckingIdParamsSchema = z
     })
     .strict();
 
+const wastageKg = z.coerce.number().nonnegative('must not be negative').optional();
+
 export const createFabricCheckingSchema = z
     .object({
         productionDate: z.coerce.date(),
@@ -18,6 +20,12 @@ export const createFabricCheckingSchema = z
         firstGradeKg: z.coerce.number().nonnegative(),
         secondGradeKg: z.coerce.number().nonnegative(),
         remarks: z.string().trim().max(500).optional(),
+        // Wastage entered alongside this record (PRD §9/§10): optional, and
+        // only turns into a WastageRecord when > 0 — see wastageService.ts.
+        // BW ("Bit Wastage") is colour-tracked (PRD "B White"/"B Blue"), so it
+        // is stored against this record's own colorId; FW is not.
+        fwKg: wastageKg,
+        bwKg: wastageKg,
     })
     .strict();
 

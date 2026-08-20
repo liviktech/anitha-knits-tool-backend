@@ -25,6 +25,9 @@ const router = Router();
  *       isRecipeOverridden=true and overrideReason becomes mandatory.
  *       The record starts at status PENDING_APPROVAL (this module has no
  *       separate "submit" step — see the tag description).
+ *       Optionally accepts yarnWasteKg/lumpsKg; each becomes a WastageRecord
+ *       (codes YARN_WASTE/LUMPS) in the same transaction, but only when > 0 —
+ *       omitting them or sending 0 creates no wastage record for that type.
  *     requestBody:
  *       required: true
  *       content:
