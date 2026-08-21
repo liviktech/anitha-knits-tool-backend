@@ -8,53 +8,175 @@ datasource db {
   provider = "postgresql"
 }
 
+/**
+ * |--------------------------------------------------------------------------
+ * | ENUMS
+ * |--------------------------------------------------------------------------
+ */
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  SUPERVISOR
+  EMPLOYEE
+}
+
 enum ProductionStage {
   EXTRUDER
-
   LOOMS
-
   FABRIC_CHECKING
 }
 
 enum ProductionStatus {
   DRAFT
-
   SUBMITTED
-
   PENDING_APPROVAL
-
   APPROVED
-
   REJECTED
 }
 
 enum ApprovalMode {
   AUTO_APPROVAL
-
   MANAGER_APPROVAL
 }
 
 enum ProductionRecordType {
   NORMAL
-
   ADJUSTMENT
-
   REVERSAL
 }
 
 enum ApprovalEntityType {
   PRODUCTION_RECORD
-
   WASTAGE_RECORD
 }
 
 enum InventoryType {
   RAW_MATERIAL
-
   CHEMICAL
-
   COLOR
 }
+
+/**
+ * |--------------------------------------------------------------------------
+ * | COMPANY
+ * |--------------------------------------------------------------------------
+ * |
+ * | One Company represents one tenant/company in the system.
+ * |
+ * | When a company is created:
+ * | 1. Company record is created.
+ * | 2. Admin credentials are provided.
+ * | 3. An ADMIN User is created for that company.
+ * |
+ */
+
+model Company {
+  id String @id @default(uuid()) @db.Uuid
+
+  /**
+   * Human-readable company name
+   */
+  name String @db.VarChar(150)
+
+  address String? @db.VarChar(500)
+
+  gst String? @unique @db.VarChar(20)
+
+  /**
+   * Company-level admin credentials used during
+   * initial company creation.
+   * Store a HASH, never the plain password.
+   */
+  adminMobile String @unique @map("admin_mobile") @db.VarChar(15)
+
+  adminPasswordHash String @map("admin_password_hash") @db.VarChar(255)
+
+  /**
+   * Public/company identifier used for company login/
+   * identification if required by the application.
+   * Example:
+   * AK001
+   * AK002
+   */
+  companyCode String @unique @map("company_code") @db.VarChar(50)
+
+  isActive Boolean @default(true) @map("is_active")
+
+  users User[]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([name])
+  @@index([isActive])
+  @@map("companies")
+}
+
+/**
+ * |--------------------------------------------------------------------------
+ * | USER
+ * |--------------------------------------------------------------------------
+ * |
+ * | Every person who logs into the application is a User.
+ * |
+ * | The first User created for a Company has:
+ * |
+ * | role = ADMIN
+ * |
+ * | The Admin can then create:
+ * |
+ * | MANAGER
+ * | SUPERVISOR
+ * | EMPLOYEE
+ * |
+ */
+
+model User {
+  id String @id @default(uuid()) @db.Uuid
+
+  companyId String @map("company_id") @db.Uuid
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  name String? @db.VarChar(150)
+
+  mobile String @db.VarChar(15)
+
+  passwordHash String @map("password_hash") @db.VarChar(255)
+
+  role UserRole @default(EMPLOYEE)
+
+  isActive Boolean @default(true) @map("is_active")
+
+  lastLoginAt DateTime? @map("last_login_at") @db.Timestamptz(6)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  createdBy String? @map("created_by") @db.VarChar(100)
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  updatedBy String? @map("updated_by") @db.VarChar(100)
+
+  /**
+   * A mobile number should be unique within a company.
+   * The same mobile number can technically belong
+   * to another company.
+   */
+  @@unique([companyId, mobile])
+  @@index([companyId])
+  @@index([companyId, role])
+  @@index([companyId, isActive])
+  @@map("users")
+}
+
+/**
+ * |--------------------------------------------------------------------------
+ * | PRODUCTION SETTINGS
+ * |--------------------------------------------------------------------------
+ */
 
 model ProductionSetting {
   id String @id @default(uuid()) @db.Uuid
@@ -71,6 +193,12 @@ model ProductionSetting {
 
   @@map("production_settings")
 }
+
+/**
+ * |--------------------------------------------------------------------------
+ * | BRAND
+ * |--------------------------------------------------------------------------
+ */
 
 model Brand {
   id String @id @default(uuid()) @db.Uuid
@@ -90,6 +218,12 @@ model Brand {
   @@map("brands")
 }
 
+/**
+ * |--------------------------------------------------------------------------
+ * | CHEMICAL
+ * |--------------------------------------------------------------------------
+ */
+
 model Chemical {
   id String @id @default(uuid()) @db.Uuid
 
@@ -107,6 +241,12 @@ model Chemical {
 
   @@map("chemicals")
 }
+
+/**
+ * |--------------------------------------------------------------------------
+ * | COLOR
+ * |--------------------------------------------------------------------------
+ */
 
 model Color {
   id String @id @default(uuid()) @db.Uuid
@@ -132,6 +272,12 @@ model Color {
   @@map("colors")
 }
 
+/**
+ * |--------------------------------------------------------------------------
+ * | SIZE
+ * |--------------------------------------------------------------------------
+ */
+
 model Size {
   id String @id @default(uuid()) @db.Uuid
 
@@ -151,6 +297,12 @@ model Size {
 
   @@map("sizes")
 }
+
+/**
+ * |--------------------------------------------------------------------------
+ * | COLOR CONSUMPTION STANDARD
+ * |--------------------------------------------------------------------------
+ */
 
 model ColorConsumptionStandard {
   id String @id @default(uuid()) @db.Uuid
@@ -175,6 +327,12 @@ model ColorConsumptionStandard {
 
   @@map("color_consumption_standards")
 }
+
+/**
+ * |--------------------------------------------------------------------------
+ * | PRODUCTION RECORD
+ * |--------------------------------------------------------------------------
+ */
 
 model ProductionRecord {
   id String @id @default(uuid()) @db.Uuid
@@ -229,6 +387,12 @@ model ProductionRecord {
   @@map("production_records")
 }
 
+/**
+ * |--------------------------------------------------------------------------
+ * | EXTRUDER DETAIL
+ * |--------------------------------------------------------------------------
+ */
+
 model ExtruderDetail {
   id String @id @default(uuid()) @db.Uuid
 
@@ -261,6 +425,12 @@ model ExtruderDetail {
   @@map("extruder_details")
 }
 
+/**
+ * |--------------------------------------------------------------------------
+ * | LOOM DETAIL
+ * |--------------------------------------------------------------------------
+ */
+
 model LoomDetail {
   id String @id @default(uuid()) @db.Uuid
 
@@ -274,6 +444,12 @@ model LoomDetail {
 
   @@map("loom_details")
 }
+
+/**
+ * |--------------------------------------------------------------------------
+ * | FABRIC CHECK DETAIL
+ * |--------------------------------------------------------------------------
+ */
 
 model FabricCheckDetail {
   id String @id @default(uuid()) @db.Uuid
@@ -292,6 +468,12 @@ model FabricCheckDetail {
 
   @@map("fabric_check_details")
 }
+
+/**
+ * |--------------------------------------------------------------------------
+ * | WASTAGE TYPE
+ * |--------------------------------------------------------------------------
+ */
 
 model WastageType {
   id String @id @default(uuid()) @db.Uuid
@@ -320,6 +502,12 @@ model WastageType {
   @@index([stage, isActive])
   @@map("wastage_types")
 }
+
+/**
+ * |--------------------------------------------------------------------------
+ * | WASTAGE RECORD
+ * |--------------------------------------------------------------------------
+ */
 
 model WastageRecord {
   id String @id @default(uuid()) @db.Uuid
@@ -359,6 +547,12 @@ model WastageRecord {
   @@map("wastage_records")
 }
 
+/**
+ * |--------------------------------------------------------------------------
+ * | APPROVAL EVENT
+ * |--------------------------------------------------------------------------
+ */
+
 model ApprovalEvent {
   id String @id @default(uuid()) @db.Uuid
 
@@ -381,18 +575,30 @@ model ApprovalEvent {
   @@map("approval_events")
 }
 
+/**
+ * |--------------------------------------------------------------------------
+ * | INVENTORY
+ * |--------------------------------------------------------------------------
+ */
+
 model Inventory {
-  id       String        @id @default(uuid()) @db.Uuid
-  date     DateTime      @default(now())
-  type     InventoryType
-  name     String        @db.VarChar(150)
-  weightKg Decimal       @map("weight_kg") @db.Decimal(12, 3)
+  id String @id @default(uuid()) @db.Uuid
+
+  date DateTime @default(now())
+
+  type InventoryType
+
+  name String @db.VarChar(150)
+
+  weightKg Decimal @map("weight_kg") @db.Decimal(12, 3)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  createdBy String   @map("created_by") @db.VarChar(100)
+
+  createdBy String @map("created_by") @db.VarChar(100)
 
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  updatedBy String?  @map("updated_by") @db.VarChar(100)
+
+  updatedBy String? @map("updated_by") @db.VarChar(100)
 
   @@index([date])
   @@index([type])
@@ -400,24 +606,36 @@ model Inventory {
   @@map("inventory")
 }
 
+/**
+ * |--------------------------------------------------------------------------
+ * | LOAD SENT
+ * |--------------------------------------------------------------------------
+ */
+
 model LoadSent {
-  id   String   @id @default(uuid()) @db.Uuid
+  id String @id @default(uuid()) @db.Uuid
+
   date DateTime @default(now())
 
   colorId String @map("color_id") @db.Uuid
-  color   Color  @relation(fields: [colorId], references: [id])
+
+  color Color @relation(fields: [colorId], references: [id])
 
   sizeId String @map("size_id") @db.Uuid
-  size   Size   @relation(fields: [sizeId], references: [id])
 
-  pieceCount Int     @map("piece_count")
-  weightKg   Decimal @map("weight_kg") @db.Decimal(12, 3)
+  size Size @relation(fields: [sizeId], references: [id])
+
+  pieceCount Int @map("piece_count")
+
+  weightKg Decimal @map("weight_kg") @db.Decimal(12, 3)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  createdBy String   @map("created_by") @db.VarChar(100)
+
+  createdBy String @map("created_by") @db.VarChar(100)
 
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  updatedBy String?  @map("updated_by") @db.VarChar(100)
+
+  updatedBy String? @map("updated_by") @db.VarChar(100)
 
   @@index([date])
   @@index([colorId])

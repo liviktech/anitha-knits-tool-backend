@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import healthRoutes from './routes.js';
+import authRoutes from './authRoutes.js';
 import extruderRoutes from './extruderRoutes.js';
 import loomsRoutes from './loomsRoutes.js';
 import fabricCheckingRoutes from './fabricCheckingRoutes.js';
@@ -11,6 +12,7 @@ import loadSentRoutes from './loadSentRoutes.js';
 const router = Router();
 
 router.use('/health', healthRoutes);
+router.use('/auth', authRoutes);
 router.use('/production/extruder', extruderRoutes);
 router.use('/production/looms', loomsRoutes);
 // PRD §16.7: base path is /api/v1/fabric-checking, not nested under /production.
