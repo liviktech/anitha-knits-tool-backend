@@ -24,7 +24,14 @@ const definition: swaggerJsdoc.OAS3Definition = {
             'Fabric Checking → First Grade/Second Grade/FW/BW → Load Sent. ' +
             'The Production Module PRD is the authoritative source for the business rules referenced below.',
     },
-    servers: [{ url: `http://localhost:${env.PORT}`, description: 'Local development' }],
+    servers: [
+        // Render sets RENDER_EXTERNAL_URL automatically on every web service; no manual
+        // config needed. Falls back to localhost when running outside Render.
+        ...(process.env.RENDER_EXTERNAL_URL
+            ? [{ url: process.env.RENDER_EXTERNAL_URL, description: 'Production (Render)' }]
+            : []),
+        { url: `http://localhost:${env.PORT}`, description: 'Local development' },
+    ],
     tags: [
         { name: 'Health', description: 'Process and database liveness checks' },
         {
