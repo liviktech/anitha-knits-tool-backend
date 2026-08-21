@@ -15,4 +15,15 @@ export const signupSchema = z
     })
     .strict();
 
+export const loginSchema = z
+    .object({
+        mobile: z
+            .string()
+            .trim()
+            .regex(/^[0-9]{10,15}$/, 'mobile must be 10-15 digits'),
+        password: z.string().min(1).max(128),
+    })
+    .strict();
+
 export type SignupInput = z.infer<typeof signupSchema>;
+export type LoginInput = z.infer<typeof loginSchema>;

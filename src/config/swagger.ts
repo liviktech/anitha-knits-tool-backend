@@ -122,6 +122,47 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     },
                 },
             },
+            LoginRequest: {
+                type: 'object',
+                required: ['mobile', 'password'],
+                additionalProperties: false,
+                properties: {
+                    mobile: { type: 'string', example: '9876543210', description: '10-15 digits.' },
+                    password: { type: 'string', format: 'password' },
+                },
+            },
+            UserSummary: {
+                type: 'object',
+                properties: {
+                    id: { type: 'string', format: 'uuid' },
+                    companyId: { type: 'string', format: 'uuid' },
+                    name: { type: 'string', nullable: true },
+                    mobile: { type: 'string' },
+                    role: { type: 'string', enum: ['ADMIN', 'MANAGER', 'SUPERVISOR', 'EMPLOYEE'] },
+                    isActive: { type: 'boolean' },
+                },
+            },
+            LoginCompanySummary: {
+                type: 'object',
+                properties: {
+                    id: { type: 'string', format: 'uuid' },
+                    name: { type: 'string' },
+                    companyCode: { type: 'string' },
+                },
+            },
+            LoginResponse: {
+                type: 'object',
+                properties: {
+                    success: { type: 'boolean', example: true },
+                    data: {
+                        type: 'object',
+                        properties: {
+                            user: { $ref: '#/components/schemas/UserSummary' },
+                            company: { $ref: '#/components/schemas/LoginCompanySummary' },
+                        },
+                    },
+                },
+            },
             MasterDataRef: {
                 type: 'object',
                 description: 'A resolved reference to a master-data record.',

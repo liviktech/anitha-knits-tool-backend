@@ -160,11 +160,7 @@ model User {
 
   updatedBy String? @map("updated_by") @db.VarChar(100)
 
-  /**
-   * A mobile number should be unique within a company.
-   * The same mobile number can technically belong
-   * to another company.
-   */
+  
   @@unique([companyId, mobile])
   @@index([companyId])
   @@index([companyId, role])
