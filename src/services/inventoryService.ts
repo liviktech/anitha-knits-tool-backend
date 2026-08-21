@@ -22,9 +22,10 @@ function mapInventoryRecord(record: InventoryRow) {
     return { ...record, weightKg: record.weightKg.toNumber() };
 }
 
-export async function createInventory(input: CreateInventoryInput, actor: string) {
+export async function createInventory(input: CreateInventoryInput, companyId: string, actor: string) {
     const record = await prisma.inventory.create({
         data: {
+            companyId,
             date: input.date,
             type: input.type,
             name: input.name,
@@ -37,10 +38,11 @@ export async function createInventory(input: CreateInventoryInput, actor: string
     return mapInventoryRecord(record);
 }
 
-export async function listInventory(query: ListInventoryQuery) {
+export async function listInventory(query: ListInventoryQuery, companyId: string) {
     const { skip, take } = toSkipTake(query);
 
     const where: Prisma.InventoryWhereInput = {
+        companyId,
         ...(query.date_from || query.date_to
             ? {
                   date: {
@@ -67,14 +69,14 @@ export async function listInventory(query: ListInventoryQuery) {
     return { items: rows.map(mapInventoryRecord), meta: toPageMeta(query, total) };
 }
 
-export async function getInventoryById(id: string) {
-    const record = await prisma.inventory.findUnique({ where: { id }, select: inventorySelect });
+export async function getInventoryById(id: string, companyId: string) {
+    const record = await prisma.inventory.findFirst({ where: { id, companyId }, select: inventorySelect });
     if (!record) throw new NotFoundError('Inventory record not found', 'INVENTORY_NOT_FOUND', { id });
     return mapInventoryRecord(record);
 }
 
-export async function updateInventory(id: string, input: UpdateInventoryInput, actor: string) {
-    const existing = await prisma.inventory.findUnique({ where: { id }, select: { id: true } });
+export async function updateInventory(id: string, input: UpdateInventoryInput, companyId: string, actor: string) {
+    const existing = await prisma.inventory.findFirst({ where: { id, companyId }, select: { id: true } });
     if (!existing) throw new NotFoundError('Inventory record not found', 'INVENTORY_NOT_FOUND', { id });
 
     const record = await prisma.inventory.update({
@@ -92,8 +94,8 @@ export async function updateInventory(id: string, input: UpdateInventoryInput, a
     return mapInventoryRecord(record);
 }
 
-export async function deleteInventory(id: string) {
-    const existing = await prisma.inventory.findUnique({ where: { id }, select: { id: true } });
+export async function deleteInventory(id: string, companyId: string) {
+    const existing = await prisma.inventory.findFirst({ where: { id, companyId }, select: { id: true } });
     if (!existing) throw new NotFoundError('Inventory record not found', 'INVENTORY_NOT_FOUND', { id });
 
     await prisma.inventory.delete({ where: { id } });

@@ -1,11 +1,13 @@
 /**
- * prisma/seed.ts — Layer 0 master data.
+ * prisma/seed.ts — Layer 0 master data, seeded per-company.
  *
- * Run once before any production entry exists, and safe to re-run: every
- * write is an upsert keyed on the natural unique (name / [stage, code]),
- * so re-running never creates a second copy.
+ * Master data is company-scoped, so seeding now happens per tenant after
+ * signup, not once globally. Every write is an upsert keyed on the natural
+ * per-company unique ([companyId, name] / [companyId, stage, code] /
+ * companyId), so re-running never creates a second copy.
  *
- *   npx prisma db seed
+ *   1. POST /api/v1/company/auth/signup to create a company.
+ *   2. SEED_COMPANY_ID=<company.id> npx prisma db seed
  *
  * Values marked TBD are placeholders — confirm with the client before
  * go-live (PRD §20).
@@ -16,16 +18,24 @@ import { prisma } from '../config/prisma.js'
 
 const SYSTEM = 'system:seed'
 
+// A ternary (not an `if` guard) so TypeScript keeps this narrowed to `string`
+// inside the closures below — control-flow narrowing on a bare `const` doesn't
+// survive being captured by a function declared later in the same module.
+const companyId: string = process.env.SEED_COMPANY_ID ?? (() => {
+  throw new Error(
+    'SEED_COMPANY_ID is required — sign up a company first, then run: SEED_COMPANY_ID=<company.id> npx prisma db seed',
+  )
+})()
+
 async function main() {
   // -------------------------------------------------------------------------
-  // 1. Settings — exactly one row, ever.
-  //    The `singleton` unique makes the upsert key stable.
+  // 1. Settings — exactly one row per company.
   // -------------------------------------------------------------------------
   await prisma.productionSetting.upsert({
-    where: { singleton: true },
+    where: { companyId },
     update: {},                       // never overwrite a live setting
     create: {
-      singleton: true,
+      companyId,
       approvalMode: ApprovalMode.MANAGER_APPROVAL,
       updatedBy: SYSTEM,
     },
@@ -43,9 +53,9 @@ async function main() {
   const brands = ['Reliance', 'Haldia / TATA', 'Opel / Bangalore', 'Ghail / Madurai']
   for (const name of brands) {
     await prisma.brand.upsert({
-      where: { name },
+      where: { companyId_name: { companyId, name } },
       update: {},
-      create: { name, createdBy: SYSTEM },
+      create: { companyId, name, createdBy: SYSTEM },
     })
   }
 
@@ -54,9 +64,9 @@ async function main() {
   // -------------------------------------------------------------------------
   for (const name of ['DN+MB', 'ACM']) {
     await prisma.chemical.upsert({
-      where: { name },
+      where: { companyId_name: { companyId, name } },
       update: {},
-      create: { name, createdBy: SYSTEM },
+      create: { companyId, name, createdBy: SYSTEM },
     })
   }
 
@@ -65,9 +75,9 @@ async function main() {
   // -------------------------------------------------------------------------
   for (const name of ['150mm', '160mm', '170mm', '180mm', '190mm']) {
     await prisma.size.upsert({
-      where: { name },
+      where: { companyId_name: { companyId, name } },
       update: {},
-      create: { name, createdBy: SYSTEM },
+      create: { companyId, name, createdBy: SYSTEM },
     })
   }
 
@@ -85,9 +95,9 @@ async function main() {
 
   for (const c of colors) {
     const color = await prisma.color.upsert({
-      where: { name: c.name },
+      where: { companyId_name: { companyId, name: c.name } },
       update: {},
-      create: { name: c.name, createdBy: SYSTEM },
+      create: { companyId, name: c.name, createdBy: SYSTEM },
     })
 
     if (c.gramsPerBasis !== null) {
@@ -95,6 +105,7 @@ async function main() {
         where: { colorId: color.id },
         update: {},                   // do not silently reset a tuned value
         create: {
+          companyId,
           colorId: color.id,
           gramsPerBasis: c.gramsPerBasis,
           basisWeightKg: 25,
@@ -119,9 +130,9 @@ async function main() {
 
   for (const wt of wastageTypes) {
     await prisma.wastageType.upsert({
-      where: { stage_code: { stage: wt.stage, code: wt.code } },
+      where: { companyId_stage_code: { companyId, stage: wt.stage, code: wt.code } },
       update: { name: wt.name, isColorTracked: wt.isColorTracked },
-      create: { ...wt, createdBy: SYSTEM },
+      create: { ...wt, companyId, createdBy: SYSTEM },
     })
   }
 

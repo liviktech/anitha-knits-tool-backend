@@ -23,3 +23,19 @@ export class ConflictError extends ApiError {
         this.name = 'ConflictError';
     }
 }
+
+/** 401 — no valid credentials were presented (missing/invalid/expired token). */
+export class UnauthorizedError extends ApiError {
+    constructor(message: string, code: string = 'AUTH_REQUIRED', details?: unknown) {
+        super(401, message, code, details);
+        this.name = 'UnauthorizedError';
+    }
+}
+
+/** 403 — the caller is authenticated but not allowed to perform this action. */
+export class ForbiddenError extends ApiError {
+    constructor(message: string, code: string = 'INSUFFICIENT_ROLE', details?: unknown) {
+        super(403, message, code, details);
+        this.name = 'ForbiddenError';
+    }
+}

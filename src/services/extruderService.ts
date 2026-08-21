@@ -137,12 +137,12 @@ async function resolveColorConsumption(
     };
 }
 
-export async function createExtruderProduction(input: CreateExtruderInput, actor: string) {
+export async function createExtruderProduction(input: CreateExtruderInput, companyId: string, actor: string) {
     await Promise.all([
-        assertColorExists(input.colorId),
-        assertSizeExists(input.sizeId),
-        assertBrandExists(input.brandId),
-        assertChemicalExists(input.chemicalId),
+        assertColorExists(input.colorId, companyId),
+        assertSizeExists(input.sizeId, companyId),
+        assertBrandExists(input.brandId, companyId),
+        assertChemicalExists(input.chemicalId, companyId),
     ]);
 
     const consumption = await resolveColorConsumption(
@@ -152,13 +152,14 @@ export async function createExtruderProduction(input: CreateExtruderInput, actor
         input.overrideReason,
     );
 
-    const wastageCreates = await buildWastageCreates(ProductionStage.EXTRUDER, actor, [
+    const wastageCreates = await buildWastageCreates(ProductionStage.EXTRUDER, companyId, actor, [
         { code: WASTAGE_CODES.YARN_WASTE, quantityKg: input.yarnWasteKg },
         { code: WASTAGE_CODES.LUMPS, quantityKg: input.lumpsKg },
     ]);
 
     const record = await prisma.productionRecord.create({
         data: {
+            companyId,
             stage: ProductionStage.EXTRUDER,
             productionDate: input.productionDate,
             colorId: input.colorId,
@@ -186,9 +187,9 @@ export async function createExtruderProduction(input: CreateExtruderInput, actor
     return mapExtruderRecord(record);
 }
 
-export async function listExtruderProductions(query: ListExtruderQuery) {
+export async function listExtruderProductions(query: ListExtruderQuery, companyId: string) {
     const { skip, take } = toSkipTake(query);
-    const where = buildProductionWhere(ProductionStage.EXTRUDER, query);
+    const where = buildProductionWhere(ProductionStage.EXTRUDER, query, companyId);
 
     const [rows, total] = await prisma.$transaction([
         prisma.productionRecord.findMany({
@@ -204,18 +205,18 @@ export async function listExtruderProductions(query: ListExtruderQuery) {
     return { items: rows.map(mapExtruderRecord), meta: toPageMeta(query, total) };
 }
 
-export async function getExtruderProductionById(id: string) {
+export async function getExtruderProductionById(id: string, companyId: string) {
     const record = await prisma.productionRecord.findFirst({
-        where: { id, stage: ProductionStage.EXTRUDER },
+        where: { id, companyId, stage: ProductionStage.EXTRUDER },
         select: extruderSelect,
     });
     if (!record) throw new NotFoundError('Extruder production not found', 'EXTRUDER_NOT_FOUND', { id });
     return mapExtruderRecord(record);
 }
 
-export async function updateExtruderProduction(id: string, input: UpdateExtruderInput, actor: string) {
+export async function updateExtruderProduction(id: string, input: UpdateExtruderInput, companyId: string, actor: string) {
     const existing = await prisma.productionRecord.findFirst({
-        where: { id, stage: ProductionStage.EXTRUDER },
+        where: { id, companyId, stage: ProductionStage.EXTRUDER },
         select: { id: true, status: true, colorId: true, extruder: { select: { rawMaterialKg: true } } },
     });
     if (!existing) throw new NotFoundError('Extruder production not found', 'EXTRUDER_NOT_FOUND', { id });
@@ -229,10 +230,10 @@ export async function updateExtruderProduction(id: string, input: UpdateExtruder
     }
 
     await Promise.all([
-        input.colorId ? assertColorExists(input.colorId) : undefined,
-        input.sizeId ? assertSizeExists(input.sizeId) : undefined,
-        input.brandId ? assertBrandExists(input.brandId) : undefined,
-        input.chemicalId ? assertChemicalExists(input.chemicalId) : undefined,
+        input.colorId ? assertColorExists(input.colorId, companyId) : undefined,
+        input.sizeId ? assertSizeExists(input.sizeId, companyId) : undefined,
+        input.brandId ? assertBrandExists(input.brandId, companyId) : undefined,
+        input.chemicalId ? assertChemicalExists(input.chemicalId, companyId) : undefined,
     ]);
 
     let consumption: ColorConsumptionResolution | undefined;
@@ -247,7 +248,7 @@ export async function updateExtruderProduction(id: string, input: UpdateExtruder
 
     const updated = await prisma.$transaction(async (tx) => {
         const result = await tx.productionRecord.updateMany({
-            where: { id, stage: ProductionStage.EXTRUDER, status: ProductionStatus.PENDING_APPROVAL },
+            where: { id, companyId, stage: ProductionStage.EXTRUDER, status: ProductionStatus.PENDING_APPROVAL },
             data: {
                 ...(input.productionDate ? { productionDate: input.productionDate } : {}),
                 ...(input.colorId ? { colorId: input.colorId } : {}),
@@ -291,12 +292,13 @@ export async function updateExtruderProduction(id: string, input: UpdateExtruder
 
 async function transitionExtruderStatus(
     id: string,
+    companyId: string,
     actor: string,
     toStatus: typeof ProductionStatus.APPROVED | typeof ProductionStatus.REJECTED,
     reason: string | undefined,
 ) {
     const existing = await prisma.productionRecord.findFirst({
-        where: { id, stage: ProductionStage.EXTRUDER },
+        where: { id, companyId, stage: ProductionStage.EXTRUDER },
         select: { id: true, status: true },
     });
     if (!existing) throw new NotFoundError('Extruder production not found', 'EXTRUDER_NOT_FOUND', { id });
@@ -311,7 +313,7 @@ async function transitionExtruderStatus(
 
     const updated = await prisma.$transaction(async (tx) => {
         const result = await tx.productionRecord.updateMany({
-            where: { id, stage: ProductionStage.EXTRUDER, status: ProductionStatus.PENDING_APPROVAL },
+            where: { id, companyId, stage: ProductionStage.EXTRUDER, status: ProductionStatus.PENDING_APPROVAL },
             data: { status: toStatus, statusChangedAt: new Date(), updatedBy: actor },
         });
 
@@ -325,6 +327,7 @@ async function transitionExtruderStatus(
 
         await tx.approvalEvent.create({
             data: {
+                companyId,
                 entityType: ApprovalEntityType.PRODUCTION_RECORD,
                 entityId: id,
                 fromStatus: ProductionStatus.PENDING_APPROVAL,
@@ -346,10 +349,10 @@ async function transitionExtruderStatus(
     return mapExtruderRecord(updated);
 }
 
-export function approveExtruderProduction(id: string, actor: string, reason: string | undefined) {
-    return transitionExtruderStatus(id, actor, ProductionStatus.APPROVED, reason);
+export function approveExtruderProduction(id: string, companyId: string, actor: string, reason: string | undefined) {
+    return transitionExtruderStatus(id, companyId, actor, ProductionStatus.APPROVED, reason);
 }
 
-export function rejectExtruderProduction(id: string, actor: string, reason: string | undefined) {
-    return transitionExtruderStatus(id, actor, ProductionStatus.REJECTED, reason);
+export function rejectExtruderProduction(id: string, companyId: string, actor: string, reason: string | undefined) {
+    return transitionExtruderStatus(id, companyId, actor, ProductionStatus.REJECTED, reason);
 }

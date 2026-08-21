@@ -171,6 +171,8 @@ If suitable functionality already exists:
 
 Consistency with the existing codebase is preferred over introducing a theoretically cleaner but unrelated pattern.
 
+Do this search before starting development on any task, not only before creating a brand-new utility — a task that looks new often overlaps an existing block (error class, middleware, cookie/token helper, response shape).
+
 ---
 
 ## 6. Architecture
@@ -594,7 +596,7 @@ Audit records should not be casually editable by normal users.
 
 Use the dedicated `performance` skill for detailed performance guidance.
 
-For non-trivial algorithms, consider:
+For every implementation, not only non-trivial algorithms, consider and prefer the most optimal correct approach:
 
 `Time: O(...)`
 
@@ -777,8 +779,9 @@ When asked to implement a feature:
 10. Include tests for important business logic.
 11. Include migrations when schema changes.
 12. State important assumptions.
-13. Mention time/space complexity for non-trivial logic.
+13. Mention time/space complexity, and prefer the most optimal correct approach, for every implementation.
 14. Provide verification commands.
+15. Keep code comments to a single crisp line explaining what a non-obvious block does — no multi-line/paragraph comment blocks.
 
 Do not rewrite unrelated code.
 

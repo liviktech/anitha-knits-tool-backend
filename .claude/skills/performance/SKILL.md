@@ -12,7 +12,7 @@ Optimize backend performance without sacrificing correctness.
 Do not optimize blindly.
 
 ## Time complexity
-For non-trivial algorithms state:
+For every algorithm, not only non-trivial ones, state and prioritize:
 `Time: O(...)`
 
 Examples:
@@ -76,7 +76,7 @@ Do not cache approval-sensitive or inventory-sensitive values without a clear co
 Prefer database/index optimization before Redis.
 
 ## Complexity reporting
-For non-trivial features report:
+For every feature, not only non-trivial ones, report and prefer the most optimal correct approach:
 - algorithmic time
 - algorithmic space
 - major queries

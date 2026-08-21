@@ -24,11 +24,12 @@ function mapLoadSentRecord(record: LoadSentRow) {
     return { ...record, weightKg: record.weightKg.toNumber() };
 }
 
-export async function createLoadSent(input: CreateLoadSentInput, actor: string) {
-    await Promise.all([assertColorExists(input.colorId), assertSizeExists(input.sizeId)]);
+export async function createLoadSent(input: CreateLoadSentInput, companyId: string, actor: string) {
+    await Promise.all([assertColorExists(input.colorId, companyId), assertSizeExists(input.sizeId, companyId)]);
 
     const record = await prisma.loadSent.create({
         data: {
+            companyId,
             date: input.date,
             colorId: input.colorId,
             sizeId: input.sizeId,
@@ -42,10 +43,11 @@ export async function createLoadSent(input: CreateLoadSentInput, actor: string) 
     return mapLoadSentRecord(record);
 }
 
-export async function listLoadSent(query: ListLoadSentQuery) {
+export async function listLoadSent(query: ListLoadSentQuery, companyId: string) {
     const { skip, take } = toSkipTake(query);
 
     const where: Prisma.LoadSentWhereInput = {
+        companyId,
         ...(query.date_from || query.date_to
             ? {
                   date: {
@@ -72,19 +74,19 @@ export async function listLoadSent(query: ListLoadSentQuery) {
     return { items: rows.map(mapLoadSentRecord), meta: toPageMeta(query, total) };
 }
 
-export async function getLoadSentById(id: string) {
-    const record = await prisma.loadSent.findUnique({ where: { id }, select: loadSentSelect });
+export async function getLoadSentById(id: string, companyId: string) {
+    const record = await prisma.loadSent.findFirst({ where: { id, companyId }, select: loadSentSelect });
     if (!record) throw new NotFoundError('Load Sent record not found', 'LOAD_SENT_NOT_FOUND', { id });
     return mapLoadSentRecord(record);
 }
 
-export async function updateLoadSent(id: string, input: UpdateLoadSentInput, actor: string) {
-    const existing = await prisma.loadSent.findUnique({ where: { id }, select: { id: true } });
+export async function updateLoadSent(id: string, input: UpdateLoadSentInput, companyId: string, actor: string) {
+    const existing = await prisma.loadSent.findFirst({ where: { id, companyId }, select: { id: true } });
     if (!existing) throw new NotFoundError('Load Sent record not found', 'LOAD_SENT_NOT_FOUND', { id });
 
     await Promise.all([
-        input.colorId ? assertColorExists(input.colorId) : undefined,
-        input.sizeId ? assertSizeExists(input.sizeId) : undefined,
+        input.colorId ? assertColorExists(input.colorId, companyId) : undefined,
+        input.sizeId ? assertSizeExists(input.sizeId, companyId) : undefined,
     ]);
 
     const record = await prisma.loadSent.update({
@@ -103,8 +105,8 @@ export async function updateLoadSent(id: string, input: UpdateLoadSentInput, act
     return mapLoadSentRecord(record);
 }
 
-export async function deleteLoadSent(id: string) {
-    const existing = await prisma.loadSent.findUnique({ where: { id }, select: { id: true } });
+export async function deleteLoadSent(id: string, companyId: string) {
+    const existing = await prisma.loadSent.findFirst({ where: { id, companyId }, select: { id: true } });
     if (!existing) throw new NotFoundError('Load Sent record not found', 'LOAD_SENT_NOT_FOUND', { id });
 
     await prisma.loadSent.delete({ where: { id } });
