@@ -2,12 +2,12 @@ import type { Response } from 'express';
 import { env, isProduction } from '../config/env.js';
 import { parseDurationMs } from './duration.js';
 
+// See authCookie.ts: frontend/backend are cross-site in prod (different
+// vercel.app subdomains), which requires SameSite=None + Secure for the
+// cookie to survive the cross-site fetch.
 const COOKIE_BASE_OPTIONS = {
     httpOnly: true,
     secure: isProduction,
-    // See authCookie.ts: frontend and backend are cross-site (different
-    // Vercel domains), so sameSite=none is required for the cookie to be
-    // sent at all; falls back to lax locally where secure=false.
     sameSite: isProduction ? ('none' as const) : ('lax' as const),
     path: '/',
 };

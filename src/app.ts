@@ -17,16 +17,23 @@ export const app = express();
 
 app.disable('x-powered-by');
 app.use(helmet());
+// In development, reflect whatever Origin the request sends (`origin: true`)
+// so the frontend is never blocked regardless of which local port it runs on.
+// In production, only trust origins in CORS_ORIGINS (comma-separated, see
+// .env.example) — `credentials: true` is what allows the auth cookie to be
+// sent/read cross-origin, so the allowlist is what stands between "any site"
+// and "only our frontend" for credentialed requests.
 app.use(
     cors({
-        origin(origin, callback) {
-            // Allow same-origin/non-browser requests (no Origin header, e.g. curl, server-to-server).
-            if (!origin || env.CORS_ORIGINS.includes(origin)) {
-                callback(null, true);
-                return;
-            }
-            callback(new Error(`Origin ${origin} is not allowed by CORS`));
-        },
+        origin: isProduction
+            ? (origin, callback) => {
+                  if (!origin || env.CORS_ORIGINS.includes(origin)) {
+                      callback(null, true);
+                  } else {
+                      callback(new Error(`Origin not allowed by CORS: ${origin}`));
+                  }
+              }
+            : true,
         credentials: true,
     }),
 );

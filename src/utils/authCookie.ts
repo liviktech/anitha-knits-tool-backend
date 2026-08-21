@@ -2,14 +2,13 @@ import type { Response } from 'express';
 import { env, isProduction } from '../config/env.js';
 import { parseDurationMs } from './duration.js';
 
+// Frontend and backend are deployed on different vercel.app subdomains, which
+// browsers treat as different sites — a cross-site fetch only carries the
+// cookie if it's SameSite=None (which in turn requires Secure). Locally both
+// run on localhost (same site regardless of port), so Lax + non-Secure works.
 const COOKIE_BASE_OPTIONS = {
     httpOnly: true,
     secure: isProduction,
-    // Frontend and backend are deployed on different Vercel domains (different
-    // sites), so the cookie must be sameSite=none to be sent on those
-    // cross-site requests at all — sameSite=none requires secure=true, which
-    // isProduction already guarantees. Locally (http, not "secure"), browsers
-    // ignore sameSite=none cookies without secure, so fall back to lax there.
     sameSite: isProduction ? ('none' as const) : ('lax' as const),
     path: '/',
 };
