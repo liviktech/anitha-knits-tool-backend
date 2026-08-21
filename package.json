@@ -4,6 +4,9 @@
   "description": "",
   "main": "dist/server.js",
   "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "postinstall": "prisma generate",

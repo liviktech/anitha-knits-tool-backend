@@ -5,7 +5,7 @@ import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import morgan from 'morgan';
 import swaggerUi from 'swagger-ui-express';
-import { isProduction } from './config/env.js';
+import { env, isProduction } from './config/env.js';
 import { swaggerSpec } from './config/swagger.js';
 import routes from './routes/index.js';
 import { notFoundHandler } from './middlewares/notFoundHandler.js';
@@ -17,16 +17,16 @@ export const app = express();
 
 app.disable('x-powered-by');
 app.use(helmet());
-// TEMPORARY: accept every origin so the frontend is never blocked while it's
-// still being wired up. `origin: true` reflects whatever Origin the request
-// sends (works with credentials too), unlike the previous config, which
-// blocked ALL cross-origin requests whenever CORS_ORIGINS was unset.
-// Before going to production, replace this with `env.CORS_ORIGINS` (a
-// comma-separated allowlist, see .env.example) so only known frontend
-// origins are trusted.
 app.use(
     cors({
-        origin: true,
+        origin(origin, callback) {
+            // Allow same-origin/non-browser requests (no Origin header, e.g. curl, server-to-server).
+            if (!origin || env.CORS_ORIGINS.includes(origin)) {
+                callback(null, true);
+                return;
+            }
+            callback(new Error(`Origin ${origin} is not allowed by CORS`));
+        },
         credentials: true,
     }),
 );
