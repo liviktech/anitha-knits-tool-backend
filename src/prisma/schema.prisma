@@ -8,17 +8,15 @@ datasource db {
   provider = "postgresql"
 }
 
-/**
- * |--------------------------------------------------------------------------
- * | ENUMS
- * |--------------------------------------------------------------------------
- */
-
 enum UserRole {
   ADMIN
   MANAGER
   SUPERVISOR
   EMPLOYEE
+}
+
+enum PlatformAdminRole {
+  SUPER_ADMIN
 }
 
 enum ProductionStage {
@@ -57,53 +55,49 @@ enum InventoryType {
   COLOR
 }
 
-/**
- * |--------------------------------------------------------------------------
- * | COMPANY
- * |--------------------------------------------------------------------------
- * |
- * | One Company represents one tenant/company in the system.
- * |
- * | When a company is created:
- * | 1. Company record is created.
- * | 2. Admin credentials are provided.
- * | 3. An ADMIN User is created for that company.
- * |
- */
+model PlatformAdmin {
+  id String @id @default(uuid()) @db.Uuid
+
+  name String @db.VarChar(150)
+
+  mobile       String @unique @db.VarChar(15)
+  passwordHash String @map("password_hash") @db.VarChar(255)
+
+  role     PlatformAdminRole @default(SUPER_ADMIN)
+  isActive Boolean           @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("platform_admins")
+}
 
 model Company {
   id String @id @default(uuid()) @db.Uuid
 
-  /**
-   * Human-readable company name
-   */
-  name String @db.VarChar(150)
-
+  name    String  @db.VarChar(150)
   address String? @db.VarChar(500)
+  gst     String? @unique @db.VarChar(20)
 
-  gst String? @unique @db.VarChar(20)
-
-  /**
-   * Company-level admin credentials used during
-   * initial company creation.
-   * Store a HASH, never the plain password.
-   */
-  adminMobile String @unique @map("admin_mobile") @db.VarChar(15)
-
+  adminMobile       String @unique @map("admin_mobile") @db.VarChar(15)
   adminPasswordHash String @map("admin_password_hash") @db.VarChar(255)
 
-  /**
-   * Public/company identifier used for company login/
-   * identification if required by the application.
-   * Example:
-   * AK001
-   * AK002
-   */
-  companyCode String @unique @map("company_code") @db.VarChar(50)
+  companyCode String  @unique @map("company_code") @db.VarChar(50)
+  isActive    Boolean @default(true) @map("is_active")
 
-  isActive Boolean @default(true) @map("is_active")
-
-  users User[]
+  users                     User[]
+  brands                    Brand[]
+  chemicals                 Chemical[]
+  colors                    Color[]
+  sizes                     Size[]
+  colorConsumptionStandards ColorConsumptionStandard[]
+  wastageTypes              WastageType[]
+  productionSetting         ProductionSetting?
+  productionRecords         ProductionRecord[]
+  wastageRecords            WastageRecord[]
+  approvalEvents            ApprovalEvent[]
+  inventories               Inventory[]
+  loadSents                 LoadSent[]
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -114,53 +108,25 @@ model Company {
   @@map("companies")
 }
 
-/**
- * |--------------------------------------------------------------------------
- * | USER
- * |--------------------------------------------------------------------------
- * |
- * | Every person who logs into the application is a User.
- * |
- * | The first User created for a Company has:
- * |
- * | role = ADMIN
- * |
- * | The Admin can then create:
- * |
- * | MANAGER
- * | SUPERVISOR
- * | EMPLOYEE
- * |
- */
-
 model User {
   id String @id @default(uuid()) @db.Uuid
 
-  companyId String @map("company_id") @db.Uuid
+  companyId String  @map("company_id") @db.Uuid
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name      String? @db.VarChar(150)
 
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-
-  name String? @db.VarChar(150)
-
-  mobile String @db.VarChar(15)
-
+  mobile       String @db.VarChar(15)
   passwordHash String @map("password_hash") @db.VarChar(255)
 
-  role UserRole @default(EMPLOYEE)
-
-  isActive Boolean @default(true) @map("is_active")
-
+  role        UserRole  @default(EMPLOYEE)
+  isActive    Boolean   @default(true) @map("is_active")
   lastLoginAt DateTime? @map("last_login_at") @db.Timestamptz(6)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  createdBy String? @map("created_by") @db.VarChar(100)
-
+  createdBy String?  @map("created_by") @db.VarChar(100)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy String?  @map("updated_by") @db.VarChar(100)
 
-  updatedBy String? @map("updated_by") @db.VarChar(100)
-
-  
   @@unique([companyId, mobile])
   @@index([companyId])
   @@index([companyId, role])
@@ -168,250 +134,179 @@ model User {
   @@map("users")
 }
 
-/**
- * |--------------------------------------------------------------------------
- * | PRODUCTION SETTINGS
- * |--------------------------------------------------------------------------
- */
-
 model ProductionSetting {
   id String @id @default(uuid()) @db.Uuid
 
-  singleton Boolean @unique @default(true)
-
+  companyId    String       @unique @map("company_id") @db.Uuid
+  company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
   approvalMode ApprovalMode @default(MANAGER_APPROVAL) @map("approval_mode")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  updatedBy String? @map("updated_by") @db.VarChar(100)
+  updatedBy String?  @map("updated_by") @db.VarChar(100)
 
   @@map("production_settings")
 }
 
-/**
- * |--------------------------------------------------------------------------
- * | BRAND
- * |--------------------------------------------------------------------------
- */
-
 model Brand {
   id String @id @default(uuid()) @db.Uuid
 
-  name String @unique @db.VarChar(100)
-
+  companyId       String           @map("company_id") @db.Uuid
+  company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name            String           @db.VarChar(100)
   extruderDetails ExtruderDetail[]
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  createdBy String? @map("created_by") @db.VarChar(100)
-
+  createdBy String?  @map("created_by") @db.VarChar(100)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy String?  @map("updated_by") @db.VarChar(100)
 
-  updatedBy String? @map("updated_by") @db.VarChar(100)
-
+  @@unique([companyId, name])
+  @@index([companyId])
   @@map("brands")
 }
-
-/**
- * |--------------------------------------------------------------------------
- * | CHEMICAL
- * |--------------------------------------------------------------------------
- */
 
 model Chemical {
   id String @id @default(uuid()) @db.Uuid
 
-  name String @unique @db.VarChar(100)
+  companyId String  @map("company_id") @db.Uuid
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name      String  @db.VarChar(100)
 
   extruderDetails ExtruderDetail[]
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  createdBy String? @map("created_by") @db.VarChar(100)
-
+  createdBy String?  @map("created_by") @db.VarChar(100)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy String?  @map("updated_by") @db.VarChar(100)
 
-  updatedBy String? @map("updated_by") @db.VarChar(100)
-
+  @@unique([companyId, name])
+  @@index([companyId])
   @@map("chemicals")
 }
-
-/**
- * |--------------------------------------------------------------------------
- * | COLOR
- * |--------------------------------------------------------------------------
- */
 
 model Color {
   id String @id @default(uuid()) @db.Uuid
 
-  name String @unique @db.VarChar(50)
+  companyId String  @map("company_id") @db.Uuid
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name      String  @db.VarChar(50)
 
-  productionRecords ProductionRecord[]
-
-  wastageRecords WastageRecord[]
-
-  loadSents LoadSent[]
-
+  productionRecords   ProductionRecord[]
+  wastageRecords      WastageRecord[]
+  loadSents           LoadSent[]
   consumptionStandard ColorConsumptionStandard?
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  createdBy String? @map("created_by") @db.VarChar(100)
-
+  createdBy String?  @map("created_by") @db.VarChar(100)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy String?  @map("updated_by") @db.VarChar(100)
 
-  updatedBy String? @map("updated_by") @db.VarChar(100)
-
+  @@unique([companyId, name])
+  @@index([companyId])
   @@map("colors")
 }
-
-/**
- * |--------------------------------------------------------------------------
- * | SIZE
- * |--------------------------------------------------------------------------
- */
 
 model Size {
   id String @id @default(uuid()) @db.Uuid
 
-  name String @unique @db.VarChar(30)
+  companyId String  @map("company_id") @db.Uuid
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  name      String  @db.VarChar(30)
 
   productionRecords ProductionRecord[]
-
-  loadSents LoadSent[]
+  loadSents         LoadSent[]
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  createdBy String? @map("created_by") @db.VarChar(100)
-
+  createdBy String?  @map("created_by") @db.VarChar(100)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy String?  @map("updated_by") @db.VarChar(100)
 
-  updatedBy String? @map("updated_by") @db.VarChar(100)
-
+  @@unique([companyId, name])
+  @@index([companyId])
   @@map("sizes")
 }
-
-/**
- * |--------------------------------------------------------------------------
- * | COLOR CONSUMPTION STANDARD
- * |--------------------------------------------------------------------------
- */
 
 model ColorConsumptionStandard {
   id String @id @default(uuid()) @db.Uuid
 
-  colorId String @unique @map("color_id") @db.Uuid
+  companyId String  @map("company_id") @db.Uuid
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  colorId   String  @unique @map("color_id") @db.Uuid
 
-  color Color @relation(fields: [colorId], references: [id])
-
+  color         Color   @relation(fields: [colorId], references: [id])
   gramsPerBasis Decimal @map("grams_per_basis") @db.Decimal(10, 3)
-
   basisWeightKg Decimal @default(25) @map("basis_weight_kg") @db.Decimal(10, 3)
-
-  isActive Boolean @default(true) @map("is_active")
+  isActive      Boolean @default(true) @map("is_active")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  createdBy String? @map("created_by") @db.VarChar(100)
-
+  createdBy String?  @map("created_by") @db.VarChar(100)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy String?  @map("updated_by") @db.VarChar(100)
 
-  updatedBy String? @map("updated_by") @db.VarChar(100)
-
+  @@index([companyId])
   @@map("color_consumption_standards")
 }
-
-/**
- * |--------------------------------------------------------------------------
- * | PRODUCTION RECORD
- * |--------------------------------------------------------------------------
- */
 
 model ProductionRecord {
   id String @id @default(uuid()) @db.Uuid
 
-  stage ProductionStage
-
-  productionDate DateTime @map("production_date") @db.Date
+  companyId      String          @map("company_id") @db.Uuid
+  company        Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  stage          ProductionStage
+  productionDate DateTime        @map("production_date") @db.Date
 
   colorId String @map("color_id") @db.Uuid
-
-  color Color @relation(fields: [colorId], references: [id])
+  color   Color  @relation(fields: [colorId], references: [id])
 
   sizeId String @map("size_id") @db.Uuid
+  size   Size   @relation(fields: [sizeId], references: [id])
 
-  size Size @relation(fields: [sizeId], references: [id])
+  recordType       ProductionRecordType @default(NORMAL) @map("record_type")
+  reversesRecordId String?              @map("reverses_record_id") @db.Uuid
+  reversesRecord   ProductionRecord?    @relation("ProductionCorrection", fields: [reversesRecordId], references: [id])
+  corrections      ProductionRecord[]   @relation("ProductionCorrection")
 
-  recordType ProductionRecordType @default(NORMAL) @map("record_type")
+  status          ProductionStatus @default(DRAFT)
+  statusChangedAt DateTime         @default(now()) @map("status_changed_at") @db.Timestamptz(6)
+  remarks         String?          @db.VarChar(500)
 
-  reversesRecordId String? @map("reverses_record_id") @db.Uuid
-
-  reversesRecord ProductionRecord? @relation("ProductionCorrection", fields: [reversesRecordId], references: [id])
-
-  corrections ProductionRecord[] @relation("ProductionCorrection")
-
-  status ProductionStatus @default(DRAFT)
-
-  statusChangedAt DateTime @default(now()) @map("status_changed_at") @db.Timestamptz(6)
-
-  remarks String? @db.VarChar(500)
-
-  extruder ExtruderDetail?
-
-  loom LoomDetail?
-
+  extruder    ExtruderDetail?
+  loom        LoomDetail?
   fabricCheck FabricCheckDetail?
-
-  wastages WastageRecord[]
+  wastages    WastageRecord[]
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  createdBy String @map("created_by") @db.VarChar(100)
-
+  createdBy String   @map("created_by") @db.VarChar(100)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy String?  @map("updated_by") @db.VarChar(100)
 
-  updatedBy String? @map("updated_by") @db.VarChar(100)
-
-  @@index([productionDate])
-  @@index([stage, productionDate])
+  @@index([companyId])
+  @@index([companyId, productionDate])
+  @@index([companyId, stage, productionDate])
+  @@index([companyId, status])
   @@index([colorId, sizeId])
-  @@index([status])
   @@index([reversesRecordId])
   @@map("production_records")
 }
 
-/**
- * |--------------------------------------------------------------------------
- * | EXTRUDER DETAIL
- * |--------------------------------------------------------------------------
- */
-
 model ExtruderDetail {
   id String @id @default(uuid()) @db.Uuid
 
-  productionRecordId String @unique @map("production_record_id") @db.Uuid
-
-  productionRecord ProductionRecord @relation(fields: [productionRecordId], references: [id], onDelete: Cascade)
+  productionRecordId String           @unique @map("production_record_id") @db.Uuid
+  productionRecord   ProductionRecord @relation(fields: [productionRecordId], references: [id], onDelete: Cascade)
 
   brandId String @map("brand_id") @db.Uuid
-
-  brand Brand @relation(fields: [brandId], references: [id])
+  brand   Brand  @relation(fields: [brandId], references: [id])
 
   rawMaterialKg Decimal @map("raw_material_kg") @db.Decimal(12, 3)
 
-  chemicalId String @map("chemical_id") @db.Uuid
+  chemicalId String   @map("chemical_id") @db.Uuid
+  chemical   Chemical @relation(fields: [chemicalId], references: [id])
+  chemicalKg Decimal  @map("chemical_kg") @db.Decimal(12, 3)
 
-  chemical Chemical @relation(fields: [chemicalId], references: [id])
-
-  chemicalKg Decimal @map("chemical_kg") @db.Decimal(12, 3)
-
-  colorConsumedKg Decimal @map("color_consumed_kg") @db.Decimal(12, 3)
-
-  yarnOutputKg Decimal @map("yarn_output_kg") @db.Decimal(12, 3)
-
+  colorConsumedKg    Decimal @map("color_consumed_kg") @db.Decimal(12, 3)
+  yarnOutputKg       Decimal @map("yarn_output_kg") @db.Decimal(12, 3)
   isRecipeOverridden Boolean @default(false) @map("is_recipe_overridden")
 
   overrideReason String? @map("override_reason") @db.VarChar(500)
@@ -421,121 +316,80 @@ model ExtruderDetail {
   @@map("extruder_details")
 }
 
-/**
- * |--------------------------------------------------------------------------
- * | LOOM DETAIL
- * |--------------------------------------------------------------------------
- */
-
 model LoomDetail {
   id String @id @default(uuid()) @db.Uuid
 
-  productionRecordId String @unique @map("production_record_id") @db.Uuid
-
-  productionRecord ProductionRecord @relation(fields: [productionRecordId], references: [id], onDelete: Cascade)
-
-  yarnInputKg Decimal @map("yarn_input_kg") @db.Decimal(12, 3)
-
-  fabricOutputKg Decimal @map("fabric_output_kg") @db.Decimal(12, 3)
+  productionRecordId String           @unique @map("production_record_id") @db.Uuid
+  productionRecord   ProductionRecord @relation(fields: [productionRecordId], references: [id], onDelete: Cascade)
+  yarnInputKg        Decimal          @map("yarn_input_kg") @db.Decimal(12, 3)
+  fabricOutputKg     Decimal          @map("fabric_output_kg") @db.Decimal(12, 3)
 
   @@map("loom_details")
 }
 
-/**
- * |--------------------------------------------------------------------------
- * | FABRIC CHECK DETAIL
- * |--------------------------------------------------------------------------
- */
-
 model FabricCheckDetail {
   id String @id @default(uuid()) @db.Uuid
 
-  productionRecordId String @unique @map("production_record_id") @db.Uuid
+  productionRecordId String           @unique @map("production_record_id") @db.Uuid
+  productionRecord   ProductionRecord @relation(fields: [productionRecordId], references: [id], onDelete: Cascade)
+  fabricInputKg      Decimal          @map("fabric_input_kg") @db.Decimal(12, 3)
+  pieceCount         Int              @map("piece_count")
 
-  productionRecord ProductionRecord @relation(fields: [productionRecordId], references: [id], onDelete: Cascade)
-
-  fabricInputKg Decimal @map("fabric_input_kg") @db.Decimal(12, 3)
-
-  pieceCount Int @map("piece_count")
-
-  firstGradeKg Decimal @map("first_grade_kg") @db.Decimal(12, 3)
-
+  firstGradeKg  Decimal @map("first_grade_kg") @db.Decimal(12, 3)
   secondGradeKg Decimal @map("second_grade_kg") @db.Decimal(12, 3)
 
   @@map("fabric_check_details")
 }
 
-/**
- * |--------------------------------------------------------------------------
- * | WASTAGE TYPE
- * |--------------------------------------------------------------------------
- */
-
 model WastageType {
   id String @id @default(uuid()) @db.Uuid
 
-  stage ProductionStage
+  companyId String  @map("company_id") @db.Uuid
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  code String @db.VarChar(50)
-
-  name String @db.VarChar(100)
-
-  isColorTracked Boolean @default(false) @map("is_color_tracked")
-
-  isActive Boolean @default(true) @map("is_active")
+  stage          ProductionStage
+  code           String          @db.VarChar(50)
+  name           String          @db.VarChar(100)
+  isColorTracked Boolean         @default(false) @map("is_color_tracked")
+  isActive       Boolean         @default(true) @map("is_active")
 
   wastageRecords WastageRecord[]
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  createdBy String? @map("created_by") @db.VarChar(100)
-
+  createdBy String?  @map("created_by") @db.VarChar(100)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy String?  @map("updated_by") @db.VarChar(100)
 
-  updatedBy String? @map("updated_by") @db.VarChar(100)
-
-  @@unique([stage, code])
-  @@index([stage, isActive])
+  @@unique([companyId, stage, code])
+  @@index([companyId, stage, isActive])
   @@map("wastage_types")
 }
-
-/**
- * |--------------------------------------------------------------------------
- * | WASTAGE RECORD
- * |--------------------------------------------------------------------------
- */
 
 model WastageRecord {
   id String @id @default(uuid()) @db.Uuid
 
-  productionRecordId String @map("production_record_id") @db.Uuid
+  companyId String  @map("company_id") @db.Uuid
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  productionRecord ProductionRecord @relation(fields: [productionRecordId], references: [id])
+  productionRecordId String           @map("production_record_id") @db.Uuid
+  productionRecord   ProductionRecord @relation(fields: [productionRecordId], references: [id])
+  wastageTypeId      String           @map("wastage_type_id") @db.Uuid
+  wastageType        WastageType      @relation(fields: [wastageTypeId], references: [id])
 
-  wastageTypeId String @map("wastage_type_id") @db.Uuid
-
-  wastageType WastageType @relation(fields: [wastageTypeId], references: [id])
-
-  colorId String? @map("color_id") @db.Uuid
-
-  color Color? @relation(fields: [colorId], references: [id])
-
+  colorId    String? @map("color_id") @db.Uuid
+  color      Color?  @relation(fields: [colorId], references: [id])
   quantityKg Decimal @map("quantity_kg") @db.Decimal(12, 3)
+  reason     String? @db.VarChar(500)
 
-  reason String? @db.VarChar(500)
-
-  status ProductionStatus @default(DRAFT)
-
-  statusChangedAt DateTime @default(now()) @map("status_changed_at") @db.Timestamptz(6)
+  status          ProductionStatus @default(DRAFT)
+  statusChangedAt DateTime         @default(now()) @map("status_changed_at") @db.Timestamptz(6)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  createdBy String @map("created_by") @db.VarChar(100)
-
+  createdBy String   @map("created_by") @db.VarChar(100)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy String?  @map("updated_by") @db.VarChar(100)
 
-  updatedBy String? @map("updated_by") @db.VarChar(100)
-
+  @@index([companyId])
   @@index([productionRecordId])
   @@index([wastageTypeId])
   @@index([colorId])
@@ -543,96 +397,69 @@ model WastageRecord {
   @@map("wastage_records")
 }
 
-/**
- * |--------------------------------------------------------------------------
- * | APPROVAL EVENT
- * |--------------------------------------------------------------------------
- */
-
 model ApprovalEvent {
   id String @id @default(uuid()) @db.Uuid
 
+  companyId  String             @map("company_id") @db.Uuid
+  company    Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
   entityType ApprovalEntityType @map("entity_type")
-
-  entityId String @map("entity_id") @db.Uuid
+  entityId   String             @map("entity_id") @db.Uuid
 
   fromStatus ProductionStatus @map("from_status")
-
-  toStatus ProductionStatus @map("to_status")
-
-  reason String? @db.VarChar(500)
+  toStatus   ProductionStatus @map("to_status")
+  reason     String?          @db.VarChar(500)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy String   @map("created_by") @db.VarChar(100)
 
-  createdBy String @map("created_by") @db.VarChar(100)
-
+  @@index([companyId])
   @@index([entityType, entityId, createdAt])
   @@index([toStatus, createdAt])
   @@map("approval_events")
 }
 
-/**
- * |--------------------------------------------------------------------------
- * | INVENTORY
- * |--------------------------------------------------------------------------
- */
-
 model Inventory {
   id String @id @default(uuid()) @db.Uuid
 
-  date DateTime @default(now())
+  companyId String  @map("company_id") @db.Uuid
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  type InventoryType
-
-  name String @db.VarChar(150)
-
-  weightKg Decimal @map("weight_kg") @db.Decimal(12, 3)
+  date     DateTime      @default(now())
+  type     InventoryType
+  name     String        @db.VarChar(150)
+  weightKg Decimal       @map("weight_kg") @db.Decimal(12, 3)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  createdBy String @map("created_by") @db.VarChar(100)
-
+  createdBy String   @map("created_by") @db.VarChar(100)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy String?  @map("updated_by") @db.VarChar(100)
 
-  updatedBy String? @map("updated_by") @db.VarChar(100)
-
+  @@index([companyId])
   @@index([date])
   @@index([type])
   @@index([name])
   @@map("inventory")
 }
 
-/**
- * |--------------------------------------------------------------------------
- * | LOAD SENT
- * |--------------------------------------------------------------------------
- */
-
 model LoadSent {
   id String @id @default(uuid()) @db.Uuid
 
-  date DateTime @default(now())
-
-  colorId String @map("color_id") @db.Uuid
-
-  color Color @relation(fields: [colorId], references: [id])
-
-  sizeId String @map("size_id") @db.Uuid
-
-  size Size @relation(fields: [sizeId], references: [id])
-
-  pieceCount Int @map("piece_count")
-
-  weightKg Decimal @map("weight_kg") @db.Decimal(12, 3)
+  companyId  String   @map("company_id") @db.Uuid
+  company    Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  date       DateTime @default(now())
+  colorId    String   @map("color_id") @db.Uuid
+  color      Color    @relation(fields: [colorId], references: [id])
+  sizeId     String   @map("size_id") @db.Uuid
+  size       Size     @relation(fields: [sizeId], references: [id])
+  pieceCount Int      @map("piece_count")
+  weightKg   Decimal  @map("weight_kg") @db.Decimal(12, 3)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-
-  createdBy String @map("created_by") @db.VarChar(100)
-
+  createdBy String   @map("created_by") @db.VarChar(100)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy String?  @map("updated_by") @db.VarChar(100)
 
-  updatedBy String? @map("updated_by") @db.VarChar(100)
-
+  @@index([companyId])
   @@index([date])
   @@index([colorId])
   @@index([sizeId])

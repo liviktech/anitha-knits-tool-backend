@@ -71,22 +71,22 @@ function resolveRange(query: DashboardProductionQuery): { dateFrom: Date; dateTo
     return { dateFrom, dateTo };
 }
 
-export async function getProductionDashboard(query: DashboardProductionQuery) {
+export async function getProductionDashboard(query: DashboardProductionQuery, companyId: string) {
     const { dateFrom, dateTo } = resolveRange(query);
     const productionDate = { gte: dateFrom, lte: dateTo };
     const statusFilter = query.status ? { status: query.status } : {};
 
     const [extruderRows, loomsRows, fabricRows, wastageRows] = await Promise.all([
         prisma.productionRecord.findMany({
-            where: { stage: ProductionStage.EXTRUDER, productionDate, ...statusFilter },
+            where: { companyId, stage: ProductionStage.EXTRUDER, productionDate, ...statusFilter },
             select: { productionDate: true, extruder: { select: { rawMaterialKg: true, yarnOutputKg: true } } },
         }),
         prisma.productionRecord.findMany({
-            where: { stage: ProductionStage.LOOMS, productionDate, ...statusFilter },
+            where: { companyId, stage: ProductionStage.LOOMS, productionDate, ...statusFilter },
             select: { productionDate: true, loom: { select: { yarnInputKg: true, fabricOutputKg: true } } },
         }),
         prisma.productionRecord.findMany({
-            where: { stage: ProductionStage.FABRIC_CHECKING, productionDate, ...statusFilter },
+            where: { companyId, stage: ProductionStage.FABRIC_CHECKING, productionDate, ...statusFilter },
             select: {
                 productionDate: true,
                 fabricCheck: { select: { fabricInputKg: true, firstGradeKg: true, secondGradeKg: true } },
@@ -94,6 +94,7 @@ export async function getProductionDashboard(query: DashboardProductionQuery) {
         }),
         prisma.wastageRecord.findMany({
             where: {
+                companyId,
                 productionRecord: {
                     productionDate,
                     stage: { in: [ProductionStage.EXTRUDER, ProductionStage.LOOMS, ProductionStage.FABRIC_CHECKING] },

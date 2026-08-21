@@ -57,15 +57,16 @@ function mapLoomsRecord(record: LoomsRecordRow) {
     };
 }
 
-export async function createLoomsProduction(input: CreateLoomsInput, actor: string) {
-    await Promise.all([assertColorExists(input.colorId), assertSizeExists(input.sizeId)]);
+export async function createLoomsProduction(input: CreateLoomsInput, companyId: string, actor: string) {
+    await Promise.all([assertColorExists(input.colorId, companyId), assertSizeExists(input.sizeId, companyId)]);
 
-    const wastageCreates = await buildWastageCreates(ProductionStage.LOOMS, actor, [
+    const wastageCreates = await buildWastageCreates(ProductionStage.LOOMS, companyId, actor, [
         { code: WASTAGE_CODES.LOOMS_WASTE, quantityKg: input.loomsWasteKg },
     ]);
 
     const record = await prisma.productionRecord.create({
         data: {
+            companyId,
             stage: ProductionStage.LOOMS,
             productionDate: input.productionDate,
             colorId: input.colorId,
@@ -87,9 +88,9 @@ export async function createLoomsProduction(input: CreateLoomsInput, actor: stri
     return mapLoomsRecord(record);
 }
 
-export async function listLoomsProductions(query: ListLoomsQuery) {
+export async function listLoomsProductions(query: ListLoomsQuery, companyId: string) {
     const { skip, take } = toSkipTake(query);
-    const where = buildProductionWhere(ProductionStage.LOOMS, query);
+    const where = buildProductionWhere(ProductionStage.LOOMS, query, companyId);
 
     const [rows, total] = await prisma.$transaction([
         prisma.productionRecord.findMany({
@@ -105,9 +106,9 @@ export async function listLoomsProductions(query: ListLoomsQuery) {
     return { items: rows.map(mapLoomsRecord), meta: toPageMeta(query, total) };
 }
 
-export async function getLoomsProductionById(id: string) {
+export async function getLoomsProductionById(id: string, companyId: string) {
     const record = await prisma.productionRecord.findFirst({
-        where: { id, stage: ProductionStage.LOOMS },
+        where: { id, companyId, stage: ProductionStage.LOOMS },
         select: loomsSelect,
     });
     if (!record) throw new NotFoundError('Looms production not found', 'LOOMS_NOT_FOUND', { id });

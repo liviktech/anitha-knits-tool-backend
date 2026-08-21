@@ -70,18 +70,19 @@ function mapFabricCheckingRecord(record: FabricCheckingRecordRow) {
     };
 }
 
-export async function createFabricCheckingRecord(input: CreateFabricCheckingInput, actor: string) {
-    await Promise.all([assertColorExists(input.colorId), assertSizeExists(input.sizeId)]);
+export async function createFabricCheckingRecord(input: CreateFabricCheckingInput, companyId: string, actor: string) {
+    await Promise.all([assertColorExists(input.colorId, companyId), assertSizeExists(input.sizeId, companyId)]);
 
     // BW ("Bit Wastage") is colour-tracked (PRD "B White"/"B Blue"), so it's
     // stored against this record's own colour; FW ("Fabric Wastage") is not.
-    const wastageCreates = await buildWastageCreates(ProductionStage.FABRIC_CHECKING, actor, [
+    const wastageCreates = await buildWastageCreates(ProductionStage.FABRIC_CHECKING, companyId, actor, [
         { code: WASTAGE_CODES.FW, quantityKg: input.fwKg },
         { code: WASTAGE_CODES.BW, quantityKg: input.bwKg, colorId: input.colorId },
     ]);
 
     const record = await prisma.productionRecord.create({
         data: {
+            companyId,
             stage: ProductionStage.FABRIC_CHECKING,
             productionDate: input.productionDate,
             colorId: input.colorId,
@@ -105,9 +106,9 @@ export async function createFabricCheckingRecord(input: CreateFabricCheckingInpu
     return mapFabricCheckingRecord(record);
 }
 
-export async function listFabricCheckingRecords(query: ListFabricCheckingQuery) {
+export async function listFabricCheckingRecords(query: ListFabricCheckingQuery, companyId: string) {
     const { skip, take } = toSkipTake(query);
-    const where = buildProductionWhere(ProductionStage.FABRIC_CHECKING, query);
+    const where = buildProductionWhere(ProductionStage.FABRIC_CHECKING, query, companyId);
 
     const [rows, total] = await prisma.$transaction([
         prisma.productionRecord.findMany({
@@ -123,9 +124,9 @@ export async function listFabricCheckingRecords(query: ListFabricCheckingQuery) 
     return { items: rows.map(mapFabricCheckingRecord), meta: toPageMeta(query, total) };
 }
 
-export async function getFabricCheckingRecordById(id: string) {
+export async function getFabricCheckingRecordById(id: string, companyId: string) {
     const record = await prisma.productionRecord.findFirst({
-        where: { id, stage: ProductionStage.FABRIC_CHECKING },
+        where: { id, companyId, stage: ProductionStage.FABRIC_CHECKING },
         select: fabricCheckingSelect,
     });
     if (!record) throw new NotFoundError('Fabric checking record not found', 'FABRIC_CHECKING_NOT_FOUND', { id });

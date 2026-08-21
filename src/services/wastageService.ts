@@ -51,6 +51,7 @@ export type WastageEntryInput = {
  */
 export async function buildWastageCreates(
     stage: ProductionStage,
+    companyId: string,
     actor: string,
     entries: WastageEntryInput[],
 ): Promise<Prisma.WastageRecordCreateWithoutProductionRecordInput[]> {
@@ -62,7 +63,7 @@ export async function buildWastageCreates(
     const types = await Promise.all(
         withQuantity.map((entry) =>
             prisma.wastageType.findUnique({
-                where: { stage_code: { stage, code: entry.code } },
+                where: { companyId_stage_code: { companyId, stage, code: entry.code } },
                 select: { id: true, isActive: true },
             }),
         ),
@@ -78,6 +79,7 @@ export async function buildWastageCreates(
             );
         }
         return {
+            company: { connect: { id: companyId } },
             wastageType: { connect: { id: type.id } },
             color: entry.colorId ? { connect: { id: entry.colorId } } : undefined,
             quantityKg: entry.quantityKg,

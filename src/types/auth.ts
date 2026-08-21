@@ -19,10 +19,22 @@ export interface RefreshTokenPayload extends TokenPayload {
     type: 'refresh';
 }
 
+/** The only PlatformAdmin role today; kept as an enum-like union so more can be added without a breaking change. */
+export type PlatformAdminRole = 'SUPER_ADMIN';
+
+/** Claim set shared by platform-admin access and refresh tokens — deliberately has no companyId. */
+export interface PlatformAdminTokenPayload {
+    sub: string;
+    role: PlatformAdminRole;
+    mobile: string;
+    type: 'platform_admin_access' | 'platform_admin_refresh';
+}
+
 declare global {
     namespace Express {
         interface Request {
             user?: AccessTokenPayload;
+            platformAdmin?: PlatformAdminTokenPayload;
         }
     }
 }

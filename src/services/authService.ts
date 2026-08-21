@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { ConflictError, ForbiddenError, UnauthorizedError } from '../utils/errors.js';
-import { comparePassword, hashPassword } from '../utils/password.js';
+import { comparePassword, dummyPasswordHash, hashPassword } from '../utils/password.js';
 import { signAccessToken, signRefreshToken } from '../utils/jwt.js';
 import type { TokenPayload } from '../types/auth.js';
 import type { LoginInput, SignupInput } from '../validations/authValidation.js';
@@ -26,11 +26,6 @@ const adminUserSelect = {
     isActive: true,
     createdAt: true,
 } satisfies Prisma.UserSelect;
-
-// Precomputed once at startup so a "mobile not found" login takes roughly the same time
-// as a real password check — otherwise the missing bcrypt.compare() would be a timing
-// side-channel that lets an attacker enumerate which mobile numbers have accounts.
-const dummyPasswordHash = await hashPassword('timing-attack-mitigation-placeholder');
 
 /** Maps a Prisma unique-constraint violation on Company to the field that caused it. */
 function mapUniqueConstraintError(err: unknown): never | undefined {

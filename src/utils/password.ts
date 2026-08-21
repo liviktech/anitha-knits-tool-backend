@@ -10,3 +10,8 @@ export function hashPassword(plain: string): Promise<string> {
 export function comparePassword(plain: string, hash: string): Promise<boolean> {
     return bcrypt.compare(plain, hash);
 }
+
+// Precomputed once at startup so an "identifier not found" login takes roughly the same time
+// as a real password check — otherwise the missing bcrypt.compare() would be a timing
+// side-channel that lets an attacker enumerate which identifiers (mobile numbers) have accounts.
+export const dummyPasswordHash = await hashPassword('timing-attack-mitigation-placeholder');

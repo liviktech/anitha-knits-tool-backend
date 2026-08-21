@@ -9,8 +9,13 @@ export type ProductionListFilters = {
 };
 
 /** Builds the common ProductionRecord `where` clause shared by every stage's list endpoint (PRD §17). */
-export function buildProductionWhere(stage: ProductionStage, filters: ProductionListFilters): Prisma.ProductionRecordWhereInput {
+export function buildProductionWhere(
+    stage: ProductionStage,
+    filters: ProductionListFilters,
+    companyId: string,
+): Prisma.ProductionRecordWhereInput {
     return {
+        companyId,
         stage,
         ...(filters.color_id ? { colorId: filters.color_id } : {}),
         ...(filters.size ? { sizeId: filters.size } : {}),
