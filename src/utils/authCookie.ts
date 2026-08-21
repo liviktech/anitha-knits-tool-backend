@@ -5,11 +5,16 @@ import { parseDurationMs } from './duration.js';
 const COOKIE_BASE_OPTIONS = {
     httpOnly: true,
     secure: isProduction,
-    sameSite: 'strict' as const,
+    // Frontend and backend are deployed on different Vercel domains (different
+    // sites), so the cookie must be sameSite=none to be sent on those
+    // cross-site requests at all — sameSite=none requires secure=true, which
+    // isProduction already guarantees. Locally (http, not "secure"), browsers
+    // ignore sameSite=none cookies without secure, so fall back to lax there.
+    sameSite: isProduction ? ('none' as const) : ('lax' as const),
     path: '/',
 };
 
-/** Sets the access+refresh httpOnly cookies. httpOnly blocks XSS token theft; sameSite=strict is the CSRF defense. */
+/** Sets the access+refresh httpOnly cookies. httpOnly blocks XSS token theft. */
 export function setAuthCookies(res: Response, tokens: { accessToken: string; refreshToken: string }): void {
     res.cookie(env.JWT_COOKIE_NAME, tokens.accessToken, {
         ...COOKIE_BASE_OPTIONS,

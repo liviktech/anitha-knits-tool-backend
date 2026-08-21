@@ -5,7 +5,10 @@ import { parseDurationMs } from './duration.js';
 const COOKIE_BASE_OPTIONS = {
     httpOnly: true,
     secure: isProduction,
-    sameSite: 'strict' as const,
+    // See authCookie.ts: frontend and backend are cross-site (different
+    // Vercel domains), so sameSite=none is required for the cookie to be
+    // sent at all; falls back to lax locally where secure=false.
+    sameSite: isProduction ? ('none' as const) : ('lax' as const),
     path: '/',
 };
 
