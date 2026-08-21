@@ -56,6 +56,14 @@ Use Prisma Decimal/PostgreSQL Numeric for monetary and precision-sensitive quant
 Centralize rounding and precision-sensitive calculations.
 
 ## Complexity
-For non-trivial functions state:
+For every function, not only non-trivial ones, state and prioritize:
 Time: O(...)
 Space: O(...)
+
+Prefer the most optimal correct approach over the first one that works.
+
+## Comments
+Keep comments to a single crisp line explaining what a non-obvious block does. No multi-line or paragraph comment blocks.
+
+## Reuse
+Before writing new code, search the codebase for an existing type, utility, middleware or error class that already does this. Reuse or extend it instead of duplicating.

@@ -91,7 +91,7 @@ Never put complex business logic or database workflows in controllers.
 
 ## Existing-code-first
 
-Before creating a helper, service, repository, middleware, error class, mapper or utility:
+Before starting development on any task, not only before creating a brand-new helper, service, repository, middleware, error class, mapper or utility:
 1. Search the existing codebase.
 2. Reuse suitable functionality.
 3. Extend rather than duplicate where appropriate.
@@ -107,8 +107,11 @@ Do not rewrite unrelated modules.
 5. Add tests.
 6. Run typecheck/lint/tests.
 
-For non-trivial algorithms state:
+For every algorithm, not only non-trivial ones, state and prioritize the most optimal correct approach:
 Time: O(...)
 Space: O(...)
 
 Also consider database round trips and N+1 behavior.
+
+## Comments
+Keep comments to a single crisp line explaining what a non-obvious block does. No multi-line or paragraph comment blocks.

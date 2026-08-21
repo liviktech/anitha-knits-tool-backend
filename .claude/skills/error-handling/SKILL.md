@@ -7,6 +7,7 @@ Predictable and secure backend error handling.
 Prefer:
 - NotFoundError
 - ValidationError
+- UnauthorizedError
 - ForbiddenError
 - ConflictError
 - BusinessRuleError
