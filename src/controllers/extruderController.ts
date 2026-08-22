@@ -4,15 +4,12 @@ import { sendSuccess } from '../utils/apiResponse.js';
 import { getAuthContext } from '../utils/actor.js';
 import { parseOrThrow } from '../utils/validate.js';
 import {
-    approveExtruderProduction,
     createExtruderProduction,
     getExtruderProductionById,
     listExtruderProductions,
-    rejectExtruderProduction,
     updateExtruderProduction,
 } from '../services/extruderService.js';
 import {
-    approvalActionSchema,
     createExtruderSchema,
     extruderIdParamsSchema,
     listExtruderQuerySchema,
@@ -45,21 +42,5 @@ export const updateExtruder = asyncHandler(async (req: Request, res: Response) =
     const input = parseOrThrow(updateExtruderSchema, req.body);
     const { companyId, actor } = getAuthContext(req);
     const record = await updateExtruderProduction(id, input, companyId, actor);
-    sendSuccess(res, record);
-});
-
-export const approveExtruder = asyncHandler(async (req: Request, res: Response) => {
-    const { id } = parseOrThrow(extruderIdParamsSchema, req.params);
-    const { reason } = parseOrThrow(approvalActionSchema, req.body ?? {});
-    const { companyId, actor } = getAuthContext(req);
-    const record = await approveExtruderProduction(id, companyId, actor, reason);
-    sendSuccess(res, record);
-});
-
-export const rejectExtruder = asyncHandler(async (req: Request, res: Response) => {
-    const { id } = parseOrThrow(extruderIdParamsSchema, req.params);
-    const { reason } = parseOrThrow(approvalActionSchema, req.body ?? {});
-    const { companyId, actor } = getAuthContext(req);
-    const record = await rejectExtruderProduction(id, companyId, actor, reason);
     sendSuccess(res, record);
 });

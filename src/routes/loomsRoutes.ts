@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { createLooms, getLooms, listLooms } from '../controllers/loomsController.js';
+import { createLooms, getLooms, listLooms, updateLooms } from '../controllers/loomsController.js';
+import { requireAuth } from '../middlewares/auth.js';
 
 const router = Router();
 
@@ -11,11 +12,11 @@ const router = Router();
  *     summary: Create a Looms production record
  *     description: >
  *       Creates a ProductionRecord (stage=LOOMS) with its LoomDetail in one
- *       transaction. Validates that colorId/sizeId exist. Starts at status
- *       PENDING_APPROVAL (this module has no separate "submit" step).
- *       Edit/approve/reject are not implemented yet — only create/list/get.
- *       Optionally accepts loomsWasteKg; becomes a WastageRecord (code
- *       LOOMS_WASTE) in the same transaction, but only when > 0.
+ *       transaction. Validates that colorId/sizeId exist. No approval
+ *       workflow — the record is immediately final. Optionally accepts
+ *       loomsWasteKg; becomes a WastageRecord (code LOOMS_WASTE) in the same
+ *       transaction, but only when > 0. Requires the ADMIN, MANAGER, or
+ *       SUPERVISOR role.
  *     requestBody:
  *       required: true
  *       content:
@@ -55,9 +56,6 @@ const router = Router();
  *         in: query
  *         schema: { type: string, format: uuid }
  *         description: Size master-data id.
- *       - name: status
- *         in: query
- *         schema: { type: string, enum: [DRAFT, SUBMITTED, PENDING_APPROVAL, APPROVED, REJECTED] }
  *       - name: page
  *         in: query
  *         schema: { type: integer, minimum: 1, default: 1 }
@@ -74,7 +72,7 @@ const router = Router();
  *       400:
  *         $ref: '#/components/responses/ValidationError'
  */
-router.post('/', createLooms);
+router.post('/', requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'), createLooms);
 router.get('/', listLooms);
 
 /**
@@ -94,7 +92,33 @@ router.get('/', listLooms);
  *               $ref: '#/components/schemas/LoomsResponse'
  *       404:
  *         $ref: '#/components/responses/NotFound'
+ *   patch:
+ *     tags: [Looms]
+ *     summary: Edit a Looms production record
+ *     description: >
+ *       No approval workflow — edits are always allowed. Partial update: only
+ *       supplied fields change. Requires the ADMIN, MANAGER, or SUPERVISOR role.
+ *     parameters:
+ *       - $ref: '#/components/parameters/LoomsId'
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/LoomsUpdateRequest'
+ *     responses:
+ *       200:
+ *         description: OK.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/LoomsResponse'
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
  */
 router.get('/:id', getLooms);
+router.patch('/:id', requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'), updateLooms);
 
 export default router;

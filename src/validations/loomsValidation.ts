@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { ProductionStatus } from '@prisma/client';
 import { paginationSchema } from '../utils/pagination.js';
 
 export const loomsIdParamsSchema = z
@@ -25,15 +24,28 @@ export const createLoomsSchema = z
     })
     .strict();
 
+export const updateLoomsSchema = z
+    .object({
+        productionDate: z.coerce.date(),
+        colorId: z.string().uuid(),
+        sizeId: z.string().uuid(),
+        yarnInputKg: kg,
+        fabricOutputKg: kg,
+        remarks: z.string().trim().max(500).optional(),
+    })
+    .partial()
+    .strict()
+    .refine((data) => Object.keys(data).length > 0, { message: 'At least one field must be provided' });
+
 export const listLoomsQuerySchema = paginationSchema
     .extend({
         date_from: z.coerce.date().optional(),
         date_to: z.coerce.date().optional(),
         color_id: z.string().uuid().optional(),
         size: z.string().uuid().optional(),
-        status: z.nativeEnum(ProductionStatus).optional(),
     })
     .strict();
 
 export type CreateLoomsInput = z.infer<typeof createLoomsSchema>;
+export type UpdateLoomsInput = z.infer<typeof updateLoomsSchema>;
 export type ListLoomsQuery = z.infer<typeof listLoomsQuerySchema>;

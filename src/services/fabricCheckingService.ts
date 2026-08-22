@@ -1,4 +1,4 @@
-import { Prisma, ProductionStage, ProductionStatus } from '@prisma/client';
+import { Prisma, ProductionStage } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { NotFoundError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
@@ -6,13 +6,12 @@ import { buildProductionWhere } from '../utils/productionFilters.js';
 import { assertColorExists, assertSizeExists } from './masterDataService.js';
 import { buildWastageCreates, mapWastageRecord, wastageSelect } from './wastageService.js';
 import { WASTAGE_CODES } from '../constants/wastageCodes.js';
-import type { CreateFabricCheckingInput, ListFabricCheckingQuery } from '../validations/fabricCheckingValidation.js';
+import type { CreateFabricCheckingInput, UpdateFabricCheckingInput, ListFabricCheckingQuery } from '../validations/fabricCheckingValidation.js';
 
 /**
  * Fabric Checking is PRD §16.7 (base path /api/v1/fabric-checking, not nested
- * under /production/): create/list/get/edit/approve/reject, no separate
- * "submit" step — same reasoning as Extruder/Looms. A created record is
- * therefore stored PENDING_APPROVAL directly.
+ * under /production/): create/list/get, no approval workflow — records are
+ * created directly and are immediately final.
  *
  * FW/BW wastage (PRD §10) is accepted via optional fwKg/bwKg on create and
  * turned into WastageRecord rows in the same transaction (see
@@ -26,14 +25,10 @@ import type { CreateFabricCheckingInput, ListFabricCheckingQuery } from '../vali
  * domain skill is explicit that reconciliation variances must stay visible
  * for management review, not be silently forced to match.
  */
-const FABRIC_CHECKING_INITIAL_STATUS = ProductionStatus.PENDING_APPROVAL;
-
 const fabricCheckingSelect = {
     id: true,
     stage: true,
     productionDate: true,
-    status: true,
-    statusChangedAt: true,
     remarks: true,
     color: { select: { id: true, name: true } },
     size: { select: { id: true, name: true } },
@@ -87,7 +82,6 @@ export async function createFabricCheckingRecord(input: CreateFabricCheckingInpu
             productionDate: input.productionDate,
             colorId: input.colorId,
             sizeId: input.sizeId,
-            status: FABRIC_CHECKING_INITIAL_STATUS,
             remarks: input.remarks,
             createdBy: actor,
             fabricCheck: {
@@ -131,4 +125,44 @@ export async function getFabricCheckingRecordById(id: string, companyId: string)
     });
     if (!record) throw new NotFoundError('Fabric checking record not found', 'FABRIC_CHECKING_NOT_FOUND', { id });
     return mapFabricCheckingRecord(record);
+}
+
+export async function updateFabricCheckingRecord(id: string, input: UpdateFabricCheckingInput, companyId: string, actor: string) {
+    const existing = await prisma.productionRecord.findFirst({
+        where: { id, companyId, stage: ProductionStage.FABRIC_CHECKING },
+        select: { id: true },
+    });
+    if (!existing) throw new NotFoundError('Fabric checking record not found', 'FABRIC_CHECKING_NOT_FOUND', { id });
+
+    await Promise.all([
+        input.colorId ? assertColorExists(input.colorId, companyId) : undefined,
+        input.sizeId ? assertSizeExists(input.sizeId, companyId) : undefined,
+    ]);
+
+    const updated = await prisma.$transaction(async (tx) => {
+        await tx.productionRecord.update({
+            where: { id },
+            data: {
+                ...(input.productionDate ? { productionDate: input.productionDate } : {}),
+                ...(input.colorId ? { colorId: input.colorId } : {}),
+                ...(input.sizeId ? { sizeId: input.sizeId } : {}),
+                ...(input.remarks !== undefined ? { remarks: input.remarks } : {}),
+                updatedBy: actor,
+            },
+        });
+
+        await tx.fabricCheckDetail.update({
+            where: { productionRecordId: id },
+            data: {
+                ...(input.fabricInputKg !== undefined ? { fabricInputKg: input.fabricInputKg } : {}),
+                ...(input.pieceCount !== undefined ? { pieceCount: input.pieceCount } : {}),
+                ...(input.firstGradeKg !== undefined ? { firstGradeKg: input.firstGradeKg } : {}),
+                ...(input.secondGradeKg !== undefined ? { secondGradeKg: input.secondGradeKg } : {}),
+            },
+        });
+
+        return tx.productionRecord.findUniqueOrThrow({ where: { id }, select: fabricCheckingSelect });
+    });
+
+    return mapFabricCheckingRecord(updated);
 }

@@ -1,6 +1,6 @@
-import { Prisma, ProductionStage, ProductionStatus, ApprovalEntityType } from '@prisma/client';
+import { Prisma, ProductionStage } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
-import { NotFoundError, ConflictError, ValidationError } from '../utils/errors.js';
+import { NotFoundError, ValidationError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import { buildProductionWhere } from '../utils/productionFilters.js';
 import { assertBrandExists, assertChemicalExists, assertColorExists, assertSizeExists } from './masterDataService.js';
@@ -9,13 +9,9 @@ import { WASTAGE_CODES } from '../constants/wastageCodes.js';
 import type { CreateExtruderInput, UpdateExtruderInput, ListExtruderQuery } from '../validations/extruderValidation.js';
 
 /**
- * The PRD (§16.3) exposes create/list/get/edit/approve/reject for Extruder,
- * with no separate "submit" step (unlike the generic /production resource in
- * §16.2). A created Extruder production is therefore considered submitted for
- * approval immediately: it starts at PENDING_APPROVAL rather than DRAFT, is
- * editable only in that state, and approve/reject resolve it from there.
+ * The PRD (§16.3) exposes create/list/get/edit for Extruder — no approval
+ * workflow: a created record is created directly and is immediately final.
  */
-const EXTRUDER_INITIAL_STATUS = ProductionStatus.PENDING_APPROVAL;
 
 // Match the schema's Decimal(12,3) precision when comparing a caller-supplied
 // colour consumption against the configured standard.
@@ -25,8 +21,6 @@ const extruderSelect = {
     id: true,
     stage: true,
     productionDate: true,
-    status: true,
-    statusChangedAt: true,
     remarks: true,
     color: { select: { id: true, name: true } },
     size: { select: { id: true, name: true } },
@@ -164,7 +158,6 @@ export async function createExtruderProduction(input: CreateExtruderInput, compa
             productionDate: input.productionDate,
             colorId: input.colorId,
             sizeId: input.sizeId,
-            status: EXTRUDER_INITIAL_STATUS,
             remarks: input.remarks,
             createdBy: actor,
             extruder: {
@@ -217,17 +210,9 @@ export async function getExtruderProductionById(id: string, companyId: string) {
 export async function updateExtruderProduction(id: string, input: UpdateExtruderInput, companyId: string, actor: string) {
     const existing = await prisma.productionRecord.findFirst({
         where: { id, companyId, stage: ProductionStage.EXTRUDER },
-        select: { id: true, status: true, colorId: true, extruder: { select: { rawMaterialKg: true } } },
+        select: { id: true, colorId: true, extruder: { select: { rawMaterialKg: true } } },
     });
     if (!existing) throw new NotFoundError('Extruder production not found', 'EXTRUDER_NOT_FOUND', { id });
-
-    if (existing.status !== ProductionStatus.PENDING_APPROVAL) {
-        throw new ConflictError(
-            'Extruder production can only be edited while pending approval',
-            'EXTRUDER_NOT_EDITABLE',
-            { status: existing.status },
-        );
-    }
 
     await Promise.all([
         input.colorId ? assertColorExists(input.colorId, companyId) : undefined,
@@ -247,8 +232,8 @@ export async function updateExtruderProduction(id: string, input: UpdateExtruder
     }
 
     const updated = await prisma.$transaction(async (tx) => {
-        const result = await tx.productionRecord.updateMany({
-            where: { id, companyId, stage: ProductionStage.EXTRUDER, status: ProductionStatus.PENDING_APPROVAL },
+        await tx.productionRecord.update({
+            where: { id },
             data: {
                 ...(input.productionDate ? { productionDate: input.productionDate } : {}),
                 ...(input.colorId ? { colorId: input.colorId } : {}),
@@ -257,14 +242,6 @@ export async function updateExtruderProduction(id: string, input: UpdateExtruder
                 updatedBy: actor,
             },
         });
-
-        if (result.count === 0) {
-            // Lost a race: status changed between the read above and this write.
-            throw new ConflictError(
-                'Extruder production status changed before this edit could be applied',
-                'EXTRUDER_NOT_EDITABLE',
-            );
-        }
 
         await tx.extruderDetail.update({
             where: { productionRecordId: id },
@@ -288,71 +265,4 @@ export async function updateExtruderProduction(id: string, input: UpdateExtruder
     });
 
     return mapExtruderRecord(updated);
-}
-
-async function transitionExtruderStatus(
-    id: string,
-    companyId: string,
-    actor: string,
-    toStatus: typeof ProductionStatus.APPROVED | typeof ProductionStatus.REJECTED,
-    reason: string | undefined,
-) {
-    const existing = await prisma.productionRecord.findFirst({
-        where: { id, companyId, stage: ProductionStage.EXTRUDER },
-        select: { id: true, status: true },
-    });
-    if (!existing) throw new NotFoundError('Extruder production not found', 'EXTRUDER_NOT_FOUND', { id });
-
-    if (existing.status !== ProductionStatus.PENDING_APPROVAL) {
-        throw new ConflictError(
-            `Extruder production cannot transition from ${existing.status} to ${toStatus}`,
-            'INVALID_STATUS_TRANSITION',
-            { from: existing.status, to: toStatus },
-        );
-    }
-
-    const updated = await prisma.$transaction(async (tx) => {
-        const result = await tx.productionRecord.updateMany({
-            where: { id, companyId, stage: ProductionStage.EXTRUDER, status: ProductionStatus.PENDING_APPROVAL },
-            data: { status: toStatus, statusChangedAt: new Date(), updatedBy: actor },
-        });
-
-        if (result.count === 0) {
-            // Another request approved/rejected this record first.
-            throw new ConflictError(
-                `Extruder production cannot transition from ${existing.status} to ${toStatus}`,
-                'INVALID_STATUS_TRANSITION',
-            );
-        }
-
-        await tx.approvalEvent.create({
-            data: {
-                companyId,
-                entityType: ApprovalEntityType.PRODUCTION_RECORD,
-                entityId: id,
-                fromStatus: ProductionStatus.PENDING_APPROVAL,
-                toStatus,
-                reason: reason ?? null,
-                createdBy: actor,
-            },
-        });
-
-        // Kora ledger / inventory effects (PRD §8 "Approved Extruder output
-        // increases Kora Balance"; §18 Inventory Service) are intentionally not
-        // applied here: KoraBalance/KoraLedger/Inventory models do not exist yet
-        // in schema.prisma. Wire them into this same transaction once that
-        // schema work lands — do not approve without them silently forever.
-
-        return tx.productionRecord.findUniqueOrThrow({ where: { id }, select: extruderSelect });
-    });
-
-    return mapExtruderRecord(updated);
-}
-
-export function approveExtruderProduction(id: string, companyId: string, actor: string, reason: string | undefined) {
-    return transitionExtruderStatus(id, companyId, actor, ProductionStatus.APPROVED, reason);
-}
-
-export function rejectExtruderProduction(id: string, companyId: string, actor: string, reason: string | undefined) {
-    return transitionExtruderStatus(id, companyId, actor, ProductionStatus.REJECTED, reason);
 }

@@ -30,10 +30,6 @@ const router = Router();
  *       - name: date_to
  *         in: query
  *         schema: { type: string, format: date }
- *       - name: status
- *         in: query
- *         schema: { type: string, enum: [DRAFT, SUBMITTED, PENDING_APPROVAL, APPROVED, REJECTED] }
- *         description: Optional. Omit to include records in every status.
  *     responses:
  *       200:
  *         description: OK.

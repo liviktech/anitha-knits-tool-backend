@@ -1,12 +1,6 @@
 import { Router } from 'express';
-import {
-    approveExtruder,
-    createExtruder,
-    getExtruder,
-    listExtruder,
-    rejectExtruder,
-    updateExtruder,
-} from '../controllers/extruderController.js';
+import { createExtruder, getExtruder, listExtruder, updateExtruder } from '../controllers/extruderController.js';
+import { requireAuth } from '../middlewares/auth.js';
 
 const router = Router();
 
@@ -17,14 +11,15 @@ const router = Router();
  *     tags: [Extruder]
  *     summary: Create an Extruder production record
  *     description: >
- *       Creates a ProductionRecord (stage=EXTRUDER) with its ExtruderDetail in one
- *       transaction. Validates that colorId/sizeId/brandId/chemicalId all exist.
+ *       Creates a ProductionRecord (stage=EXTRUDER) with its ExtruderDetail,
+ *       deducting the raw material, chemical and colour consumed from
+ *       Inventory in the same transaction — no approval step, the record is
+ *       immediately final. Requires the ADMIN, MANAGER, or SUPERVISOR role.
+ *       Validates that colorId/sizeId/brandId/chemicalId all exist.
  *       If colorConsumedKg is omitted, it is auto-computed from the colour's
  *       configured standard (grams/25kg) scaled to rawMaterialKg. If a supplied
  *       colorConsumedKg deviates from that standard, the record is flagged
  *       isRecipeOverridden=true and overrideReason becomes mandatory.
- *       The record starts at status PENDING_APPROVAL (this module has no
- *       separate "submit" step — see the tag description).
  *       Optionally accepts yarnWasteKg/lumpsKg; each becomes a WastageRecord
  *       (codes YARN_WASTE/LUMPS) in the same transaction, but only when > 0 —
  *       omitting them or sending 0 creates no wastage record for that type.
@@ -49,6 +44,12 @@ const router = Router();
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
+ *       409:
+ *         description: Consuming this much raw material/chemical/colour would take Inventory below zero (INSUFFICIENT_STOCK).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
  *   get:
  *     tags: [Extruder]
  *     summary: List/filter Extruder production records
@@ -69,9 +70,6 @@ const router = Router();
  *         in: query
  *         schema: { type: string, format: uuid }
  *         description: Size master-data id (PRD filter name is "size", not "size_id").
- *       - name: status
- *         in: query
- *         schema: { type: string, enum: [DRAFT, SUBMITTED, PENDING_APPROVAL, APPROVED, REJECTED] }
  *       - name: page
  *         in: query
  *         schema: { type: integer, minimum: 1, default: 1 }
@@ -88,7 +86,7 @@ const router = Router();
  *       400:
  *         $ref: '#/components/responses/ValidationError'
  */
-router.post('/', createExtruder);
+router.post('/', requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'), createExtruder);
 router.get('/', listExtruder);
 
 /**
@@ -112,11 +110,13 @@ router.get('/', listExtruder);
  *     tags: [Extruder]
  *     summary: Edit an Extruder production record
  *     description: >
- *       Only allowed while status is PENDING_APPROVAL (EXTRUDER_NOT_EDITABLE
- *       otherwise — approved/rejected records are frozen). Partial update: only
+ *       No approval workflow — edits are always allowed. Partial update: only
  *       supplied fields change. If colorId, rawMaterialKg, or colorConsumedKg is
  *       touched, the recipe-override calculation is re-run against the (possibly
- *       new) colour's standard.
+ *       new) colour's standard, and Inventory is re-adjusted by the difference
+ *       between the old and new consumption (or fully reversed/re-applied if the
+ *       brand/chemical/colour itself changed) in the same transaction.
+ *       Requires the ADMIN, MANAGER, or SUPERVISOR role.
  *     parameters:
  *       - $ref: '#/components/parameters/ExtruderId'
  *     requestBody:
@@ -137,89 +137,13 @@ router.get('/', listExtruder);
  *       404:
  *         $ref: '#/components/responses/NotFound'
  *       409:
- *         description: Not PENDING_APPROVAL (EXTRUDER_NOT_EDITABLE), or the status changed concurrently between read and write.
+ *         description: The new consumption would take Inventory below zero (INSUFFICIENT_STOCK).
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.get('/:id', getExtruder);
-router.patch('/:id', updateExtruder);
-
-/**
- * @openapi
- * /api/v1/production/extruder/{id}/approve:
- *   post:
- *     tags: [Extruder]
- *     summary: Approve an Extruder production record
- *     description: >
- *       Conditional transition PENDING_APPROVAL → APPROVED, guarded against
- *       concurrent approve/reject races, with an audit ApprovalEvent written in
- *       the same transaction. NOTE — Kora ledger/inventory effects (PRD "approved
- *       Extruder output increases Kora Balance") are not yet applied here: the
- *       KoraBalance/KoraLedger/Inventory models do not exist in schema.prisma yet.
- *       No authorization/role check is enforced (this repo has no auth system
- *       yet) — the acting user is read from the x-user-email header if present.
- *     parameters:
- *       - $ref: '#/components/parameters/ExtruderId'
- *     requestBody:
- *       required: false
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/ApprovalActionRequest'
- *     responses:
- *       200:
- *         description: OK.
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ExtruderResponse'
- *       404:
- *         $ref: '#/components/responses/NotFound'
- *       409:
- *         description: Not currently PENDING_APPROVAL (INVALID_STATUS_TRANSITION) — includes double-approve.
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
- */
-router.post('/:id/approve', approveExtruder);
-
-/**
- * @openapi
- * /api/v1/production/extruder/{id}/reject:
- *   post:
- *     tags: [Extruder]
- *     summary: Reject an Extruder production record
- *     description: >
- *       Conditional transition PENDING_APPROVAL → REJECTED, with an audit
- *       ApprovalEvent written in the same transaction. Rejected records do not
- *       affect inventory/Kora and are frozen (no further edits).
- *     parameters:
- *       - $ref: '#/components/parameters/ExtruderId'
- *     requestBody:
- *       required: false
- *       content:
- *         application/json:
- *           schema:
- *             $ref: '#/components/schemas/ApprovalActionRequest'
- *     responses:
- *       200:
- *         description: OK.
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ExtruderResponse'
- *       404:
- *         $ref: '#/components/responses/NotFound'
- *       409:
- *         description: Not currently PENDING_APPROVAL (INVALID_STATUS_TRANSITION).
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
- */
-router.post('/:id/reject', rejectExtruder);
+router.patch('/:id', requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'), updateExtruder);
 
 export default router;
