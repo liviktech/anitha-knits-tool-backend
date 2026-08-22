@@ -784,6 +784,31 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     meta: { $ref: '#/components/schemas/PaginationMeta' },
                 },
             },
+            InventoryStockItem: {
+                type: 'object',
+                properties: {
+                    id: { type: 'string', format: 'uuid' },
+                    name: { type: 'string', example: 'Reliance' },
+                    intakeKg: { type: 'number', description: 'Current inventory balance (total stock intake on file).' },
+                    consumedKg: { type: 'number', description: 'Total drawn down by extruder production.' },
+                    stockKg: { type: 'number', description: 'intakeKg minus consumedKg. Can go negative if consumption was never backed by an intake.' },
+                },
+            },
+            InventoryStockSummary: {
+                type: 'object',
+                properties: {
+                    rawMaterial: { type: 'array', items: { $ref: '#/components/schemas/InventoryStockItem' }, description: 'One entry per brand on file for the company.' },
+                    chemical: { type: 'array', items: { $ref: '#/components/schemas/InventoryStockItem' }, description: 'One entry per chemical on file for the company.' },
+                    color: { type: 'array', items: { $ref: '#/components/schemas/InventoryStockItem' }, description: 'One entry per colour on file for the company.' },
+                },
+            },
+            InventoryStockSummaryResponse: {
+                type: 'object',
+                properties: {
+                    success: { type: 'boolean', example: true },
+                    data: { $ref: '#/components/schemas/InventoryStockSummary' },
+                },
+            },
             LoadSentRecord: {
                 type: 'object',
                 properties: {

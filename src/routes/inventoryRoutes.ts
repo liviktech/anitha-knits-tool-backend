@@ -7,8 +7,12 @@ import {
     updateInventoryHandler,
 } from '../controllers/inventoryController.js';
 import { requireAuth } from '../middlewares/auth.js';
+import stockRoutes from './stockRoutes.js';
 
 const router = Router();
+
+// Mounted before the `/:id` routes below so `/inventory/stock` isn't swallowed by the `:id` param.
+router.use(stockRoutes);
 
 /**
  * @openapi
