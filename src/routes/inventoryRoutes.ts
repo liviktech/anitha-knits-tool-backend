@@ -9,6 +9,7 @@ import {
 
 const router = Router();
 
+
 /**
  * @openapi
  * /api/v1/inventory:
