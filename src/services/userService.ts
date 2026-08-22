@@ -3,7 +3,7 @@ import { prisma } from '../config/prisma.js';
 import { ConflictError, NotFoundError } from '../utils/errors.js';
 import { hashPassword } from '../utils/password.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
-import type { CreateUserInput, UpdateUserInput, ListUsersQuery } from '../validations/userValidation.js';
+import type { CreateUserInput, ListAllUsersQuery, ListUsersQuery, UpdateUserInput } from '../validations/userValidation.js';
 
 // This endpoint only manages MANAGER/SUPERVISOR accounts — ADMIN and EMPLOYEE rows are never touched here.
 const MANAGED_ROLES: UserRole[] = [UserRole.MANAGER, UserRole.SUPERVISOR];
@@ -90,6 +90,35 @@ export async function updateUser(id: string, input: UpdateUserInput, companyId: 
         },
         select: managedUserSelect,
     });
+}
+
+const allCompanyUsersSelect = {
+    id: true,
+    companyId: true,
+    name: true,
+    mobile: true,
+    role: true,
+    isActive: true,
+    lastLoginAt: true,
+    createdAt: true,
+    updatedAt: true,
+} satisfies Prisma.UserSelect;
+
+/** Full company roster, all four roles — unlike listUsers, which is scoped to MANAGER/SUPERVISOR only. */
+export async function listAllCompanyUsers(query: ListAllUsersQuery, companyId: string) {
+    const { skip, take } = toSkipTake(query);
+    const where: Prisma.UserWhereInput = {
+        companyId,
+        ...(query.role ? { role: query.role } : {}),
+        ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
+    };
+
+    const [rows, total] = await prisma.$transaction([
+        prisma.user.findMany({ where, select: allCompanyUsersSelect, orderBy: { createdAt: 'desc' }, skip, take }),
+        prisma.user.count({ where }),
+    ]);
+
+    return { items: rows, meta: toPageMeta(query, total) };
 }
 
 /** Soft-deletes (deactivates) a managed user — reversible, and avoids inventing a restore path. */
