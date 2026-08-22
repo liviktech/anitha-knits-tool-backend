@@ -6,6 +6,7 @@ import {
     listLoadSentHandler,
     updateLoadSentHandler,
 } from '../controllers/loadSentController.js';
+import { requireAuth } from '../middlewares/auth.js';
 
 const router = Router();
 
@@ -70,7 +71,7 @@ const router = Router();
  *       400:
  *         $ref: '#/components/responses/ValidationError'
  */
-router.post('/', createLoadSentHandler);
+router.post('/', requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'), createLoadSentHandler);
 router.get('/', listLoadSentHandler);
 
 /**
@@ -124,7 +125,7 @@ router.get('/', listLoadSentHandler);
  *         $ref: '#/components/responses/NotFound'
  */
 router.get('/:id', getLoadSentHandler);
-router.patch('/:id', updateLoadSentHandler);
-router.delete('/:id', deleteLoadSentHandler);
+router.patch('/:id', requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'), updateLoadSentHandler);
+router.delete('/:id', requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'), deleteLoadSentHandler);
 
 export default router;

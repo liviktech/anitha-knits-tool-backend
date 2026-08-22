@@ -1,5 +1,11 @@
 import { Router } from 'express';
-import { createFabricChecking, getFabricChecking, listFabricChecking } from '../controllers/fabricCheckingController.js';
+import {
+  createFabricChecking,
+  getFabricChecking,
+  listFabricChecking,
+  updateFabricChecking,
+} from '../controllers/fabricCheckingController.js';
+import { requireAuth } from '../middlewares/auth.js';
 
 const router = Router();
 
@@ -12,15 +18,14 @@ const router = Router();
  *     description: >
  *       Creates a ProductionRecord (stage=FABRIC_CHECKING) with its
  *       FabricCheckDetail in one transaction. Validates that colorId/sizeId
- *       exist. Starts at status PENDING_APPROVAL (no separate "submit" step).
+ *       exist. No approval workflow — the record is immediately final.
  *       firstGradeKg/secondGradeKg are not validated against fabricInputKg —
  *       reconciliation variances are surfaced for review, not blocked here.
  *       Optionally accepts fwKg/bwKg; each becomes a WastageRecord (codes
  *       FW/BW) in the same transaction, but only when > 0. BW is colour-
  *       tracked (PRD "B White"/"B Blue"), so its WastageRecord.colorId is set
  *       to this record's own colorId; FW's is not. GSM is a separate API (not
- *       yet implemented). Edit/approve/reject are not implemented yet either —
- *       only create/list/get.
+ *       yet implemented). Requires the ADMIN, MANAGER, or SUPERVISOR role.
  *     requestBody:
  *       required: true
  *       content:
@@ -60,9 +65,6 @@ const router = Router();
  *         in: query
  *         schema: { type: string, format: uuid }
  *         description: Size master-data id.
- *       - name: status
- *         in: query
- *         schema: { type: string, enum: [DRAFT, SUBMITTED, PENDING_APPROVAL, APPROVED, REJECTED] }
  *       - name: page
  *         in: query
  *         schema: { type: integer, minimum: 1, default: 1 }
@@ -79,7 +81,11 @@ const router = Router();
  *       400:
  *         $ref: '#/components/responses/ValidationError'
  */
-router.post('/', createFabricChecking);
+router.post(
+  '/',
+  requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
+  createFabricChecking,
+);
 router.get('/', listFabricChecking);
 
 /**
@@ -99,7 +105,37 @@ router.get('/', listFabricChecking);
  *               $ref: '#/components/schemas/FabricCheckingResponse'
  *       404:
  *         $ref: '#/components/responses/NotFound'
+ *   patch:
+ *     tags: [Fabric Checking]
+ *     summary: Edit a Fabric Checking record
+ *     description: >
+ *       No approval workflow — edits are always allowed. Partial update: only
+ *       supplied fields change. Requires the ADMIN, MANAGER, or SUPERVISOR role.
+ *     parameters:
+ *       - $ref: '#/components/parameters/FabricCheckingId'
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/FabricCheckingUpdateRequest'
+ *     responses:
+ *       200:
+ *         description: OK.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/FabricCheckingResponse'
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
  */
 router.get('/:id', getFabricChecking);
+router.patch(
+  '/:id',
+  requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
+  updateFabricChecking,
+);
 
 export default router;

@@ -56,21 +56,24 @@ const definition: swaggerJsdoc.OAS3Definition = {
             name: 'Extruder',
             description:
                 'Extruder production records — stage 1 of the production flow (raw material → yarn). ' +
-                'PRD §16.3. No separate "submit" step: a created record starts PENDING_APPROVAL directly ' +
-                'and is editable only in that state; approve/reject resolve it from there.',
+                'PRD §16.3. No approval workflow: a created record is immediately final, deducting the ' +
+                'raw material/chemical/colour consumed from Inventory in the same transaction. ' +
+                'Create/edit require the ADMIN, MANAGER, or SUPERVISOR role.',
         },
         {
             name: 'Looms',
             description:
                 'Looms production records — stage 2 of the production flow (yarn → fabric). PRD §16.4. ' +
-                'Only create/list/get are implemented so far; edit/approve/reject are a follow-up.',
+                'No approval workflow — a created record is immediately final. Create/list/get/edit are ' +
+                'implemented; create/edit require the ADMIN, MANAGER, or SUPERVISOR role.',
         },
         {
             name: 'Fabric Checking',
             description:
                 'Fabric Checking records — the QA stage (fabric → First Grade/Second Grade). PRD §16.7. ' +
-                'Base path is /api/v1/fabric-checking, not nested under /production. ' +
-                'Only create/list/get are implemented so far; edit/approve/reject and GSM are a follow-up.',
+                'Base path is /api/v1/fabric-checking, not nested under /production. No approval workflow. ' +
+                'Create/list/get/edit are implemented; GSM is a follow-up. Create/edit require the ADMIN, ' +
+                'MANAGER, or SUPERVISOR role.',
         },
         {
             name: 'Lookups',
@@ -82,7 +85,9 @@ const definition: swaggerJsdoc.OAS3Definition = {
         },
         {
             name: 'Inventory',
-            description: 'Inventory stock records (raw material/chemical/yarn/fabric on hand). Full CRUD.',
+            description:
+                'Current stock balance (raw material/chemical/colour on hand) — one row per item, updated ' +
+                'in place by manual intake, Extruder consumption, and manual corrections. Full CRUD.',
         },
         {
             name: 'Load Sent',
@@ -382,11 +387,6 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     id: { type: 'string', format: 'uuid' },
                     stage: { type: 'string', enum: ['EXTRUDER'] },
                     productionDate: { type: 'string', format: 'date-time' },
-                    status: {
-                        type: 'string',
-                        enum: ['DRAFT', 'SUBMITTED', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED'],
-                    },
-                    statusChangedAt: { type: 'string', format: 'date-time' },
                     remarks: { type: 'string', nullable: true },
                     color: { $ref: '#/components/schemas/MasterDataRef' },
                     size: { $ref: '#/components/schemas/MasterDataRef' },
@@ -428,7 +428,7 @@ const definition: swaggerJsdoc.OAS3Definition = {
             },
             ExtruderUpdateRequest: {
                 type: 'object',
-                description: 'Every field is optional, but at least one must be present. Only allowed while status is PENDING_APPROVAL.',
+                description: 'Every field is optional, but at least one must be present. No approval workflow — always allowed. Inventory is re-adjusted for any changed brand/chemical/colour or quantity.',
                 minProperties: 1,
                 additionalProperties: false,
                 properties: {
@@ -443,13 +443,6 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     yarnOutputKg: { type: 'number', exclusiveMinimum: 0 },
                     remarks: { type: 'string', maxLength: 500 },
                     overrideReason: { type: 'string', maxLength: 500 },
-                },
-            },
-            ApprovalActionRequest: {
-                type: 'object',
-                additionalProperties: false,
-                properties: {
-                    reason: { type: 'string', maxLength: 500, description: 'Optional note, stored on the audit ApprovalEvent.' },
                 },
             },
             PaginationMeta: {
@@ -510,10 +503,6 @@ const definition: swaggerJsdoc.OAS3Definition = {
                         description: 'Set only for colour-tracked wastage types (currently BW / "Bit Wastage").',
                     },
                     quantityKg: { type: 'number', example: 2.5 },
-                    status: {
-                        type: 'string',
-                        enum: ['DRAFT', 'SUBMITTED', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED'],
-                    },
                 },
             },
             LoomDetail: {
@@ -530,11 +519,6 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     id: { type: 'string', format: 'uuid' },
                     stage: { type: 'string', enum: ['LOOMS'] },
                     productionDate: { type: 'string', format: 'date-time' },
-                    status: {
-                        type: 'string',
-                        enum: ['DRAFT', 'SUBMITTED', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED'],
-                    },
-                    statusChangedAt: { type: 'string', format: 'date-time' },
                     remarks: { type: 'string', nullable: true },
                     color: { $ref: '#/components/schemas/MasterDataRef' },
                     size: { $ref: '#/components/schemas/MasterDataRef' },
@@ -558,6 +542,20 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     fabricOutputKg: { type: 'number', exclusiveMinimum: 0, example: 470 },
                     remarks: { type: 'string', maxLength: 500 },
                     loomsWasteKg: { type: 'number', minimum: 0, description: 'Optional. Creates a WastageRecord (code LOOMS_WASTE) only if > 0.' },
+                },
+            },
+            LoomsUpdateRequest: {
+                type: 'object',
+                description: 'Every field is optional, but at least one must be present. No approval workflow — always allowed.',
+                minProperties: 1,
+                additionalProperties: false,
+                properties: {
+                    productionDate: { type: 'string', format: 'date' },
+                    colorId: { type: 'string', format: 'uuid' },
+                    sizeId: { type: 'string', format: 'uuid' },
+                    yarnInputKg: { type: 'number', exclusiveMinimum: 0 },
+                    fabricOutputKg: { type: 'number', exclusiveMinimum: 0 },
+                    remarks: { type: 'string', maxLength: 500 },
                 },
             },
             LoomsResponse: {
@@ -591,11 +589,6 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     id: { type: 'string', format: 'uuid' },
                     stage: { type: 'string', enum: ['FABRIC_CHECKING'] },
                     productionDate: { type: 'string', format: 'date-time' },
-                    status: {
-                        type: 'string',
-                        enum: ['DRAFT', 'SUBMITTED', 'PENDING_APPROVAL', 'APPROVED', 'REJECTED'],
-                    },
-                    statusChangedAt: { type: 'string', format: 'date-time' },
                     remarks: { type: 'string', nullable: true },
                     color: { $ref: '#/components/schemas/MasterDataRef' },
                     size: { $ref: '#/components/schemas/MasterDataRef' },
@@ -626,6 +619,22 @@ const definition: swaggerJsdoc.OAS3Definition = {
                         minimum: 0,
                         description: 'Optional. Creates a colour-tracked WastageRecord (code BW, colorId = this record\'s colorId) only if > 0.',
                     },
+                },
+            },
+            FabricCheckingUpdateRequest: {
+                type: 'object',
+                description: 'Every field is optional, but at least one must be present. No approval workflow — always allowed. Does not re-edit fwKg/bwKg wastage.',
+                minProperties: 1,
+                additionalProperties: false,
+                properties: {
+                    productionDate: { type: 'string', format: 'date' },
+                    colorId: { type: 'string', format: 'uuid' },
+                    sizeId: { type: 'string', format: 'uuid' },
+                    fabricInputKg: { type: 'number', exclusiveMinimum: 0 },
+                    pieceCount: { type: 'integer', exclusiveMinimum: 0 },
+                    firstGradeKg: { type: 'number', minimum: 0 },
+                    secondGradeKg: { type: 'number', minimum: 0 },
+                    remarks: { type: 'string', maxLength: 500 },
                 },
             },
             FabricCheckingResponse: {
@@ -720,12 +729,16 @@ const definition: swaggerJsdoc.OAS3Definition = {
             },
             InventoryRecord: {
                 type: 'object',
+                description: 'The current standing balance for one item — updated in place, not a per-transaction log entry.',
                 properties: {
                     id: { type: 'string', format: 'uuid' },
                     date: { type: 'string', format: 'date-time' },
-                    type: { type: 'string', enum: ['RAW_MATERIAL', 'CHEMICAL', 'YARN', 'FABRIC'] },
-                    name: { type: 'string', example: 'White Chips' },
-                    weightKg: { type: 'number', format: 'decimal', example: 250 },
+                    type: { type: 'string', enum: ['RAW_MATERIAL', 'CHEMICAL', 'COLOR'] },
+                    name: { type: 'string', example: 'Reliance', description: 'Auto-filled from the linked brand/chemical/colour.' },
+                    weightKg: { type: 'number', format: 'decimal', example: 250, description: 'Current balance on hand.' },
+                    brand: { allOf: [{ $ref: '#/components/schemas/MasterDataRef' }], nullable: true, description: 'Set when type is RAW_MATERIAL.' },
+                    chemical: { allOf: [{ $ref: '#/components/schemas/MasterDataRef' }], nullable: true, description: 'Set when type is CHEMICAL.' },
+                    color: { allOf: [{ $ref: '#/components/schemas/MasterDataRef' }], nullable: true, description: 'Set when type is COLOR.' },
                     createdAt: { type: 'string', format: 'date-time' },
                     createdBy: { type: 'string' },
                     updatedAt: { type: 'string', format: 'date-time' },
@@ -734,25 +747,26 @@ const definition: swaggerJsdoc.OAS3Definition = {
             },
             InventoryCreateRequest: {
                 type: 'object',
-                required: ['type', 'name', 'weightKg'],
+                description: 'Manual stock intake. quantityKg is added to the item\'s current balance. Exactly one of brandId/chemicalId/colorId is required, matching type.',
+                required: ['type', 'quantityKg'],
                 additionalProperties: false,
                 properties: {
                     date: { type: 'string', format: 'date', description: 'Optional. Defaults to now.' },
-                    type: { type: 'string', enum: ['RAW_MATERIAL', 'CHEMICAL', 'YARN', 'FABRIC'] },
-                    name: { type: 'string', maxLength: 150, example: 'White Chips' },
-                    weightKg: { type: 'number', exclusiveMinimum: 0, example: 250 },
+                    type: { type: 'string', enum: ['RAW_MATERIAL', 'CHEMICAL', 'COLOR'] },
+                    brandId: { type: 'string', format: 'uuid', description: 'Required when type is RAW_MATERIAL.' },
+                    chemicalId: { type: 'string', format: 'uuid', description: 'Required when type is CHEMICAL.' },
+                    colorId: { type: 'string', format: 'uuid', description: 'Required when type is COLOR.' },
+                    quantityKg: { type: 'number', exclusiveMinimum: 0, example: 250 },
                 },
             },
             InventoryUpdateRequest: {
                 type: 'object',
-                description: 'Every field is optional, but at least one must be present.',
+                description: 'Manual correction of a balance already on file. Every field is optional, but at least one must be present. Item identity (type/brandId/chemicalId/colorId) cannot be changed.',
                 minProperties: 1,
                 additionalProperties: false,
                 properties: {
                     date: { type: 'string', format: 'date' },
-                    type: { type: 'string', enum: ['RAW_MATERIAL', 'CHEMICAL', 'YARN', 'FABRIC'] },
-                    name: { type: 'string', maxLength: 150 },
-                    weightKg: { type: 'number', exclusiveMinimum: 0 },
+                    weightKg: { type: 'number', minimum: 0 },
                 },
             },
             InventoryResponse: {
@@ -873,7 +887,7 @@ const definition: swaggerJsdoc.OAS3Definition = {
                 content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } },
             },
             Conflict: {
-                description: 'The request conflicts with the record\'s current state (invalid status transition, edit after approval, concurrent update).',
+                description: 'The request conflicts with the record\'s current state (e.g. insufficient stock, concurrent update).',
                 content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } },
             },
         },
