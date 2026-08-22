@@ -39,6 +39,20 @@ const definition: swaggerJsdoc.OAS3Definition = {
             description: 'Company signup and (future) login. Signup creates a Company and its first ADMIN User.',
         },
         {
+            name: 'Platform Admin',
+            description:
+                'Platform-admin-only operations: bootstrap signup, login/refresh, managing companies ' +
+                '(customers) — list, view, edit — and viewing a company\'s users. Entirely separate auth ' +
+                'system from company-user auth (requirePlatformAdmin, its own cookies) — a company-user ' +
+                'session cannot access these routes.',
+        },
+        {
+            name: 'Company Users',
+            description:
+                'A company ADMIN managing/viewing their own company\'s users. requireAuth(\'ADMIN\'), ' +
+                'scoped to the caller\'s own companyId via the JWT.',
+        },
+        {
             name: 'Extruder',
             description:
                 'Extruder production records — stage 1 of the production flow (raw material → yarn). ' +
@@ -102,6 +116,59 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     companyCode: { type: 'string' },
                     isActive: { type: 'boolean' },
                     createdAt: { type: 'string', format: 'date-time' },
+                    updatedAt: { type: 'string', format: 'date-time' },
+                },
+            },
+            CompanyResponse: {
+                type: 'object',
+                properties: {
+                    success: { type: 'boolean', example: true },
+                    data: { $ref: '#/components/schemas/CompanySummary' },
+                },
+            },
+            CompanyListResponse: {
+                type: 'object',
+                properties: {
+                    success: { type: 'boolean', example: true },
+                    data: { type: 'array', items: { $ref: '#/components/schemas/CompanySummary' } },
+                    meta: { $ref: '#/components/schemas/PaginationMeta' },
+                },
+            },
+            CompanyUpdateRequest: {
+                type: 'object',
+                description: 'Every field is optional, but at least one must be present. Excludes adminPasswordHash — resetting the admin password is a separate concern.',
+                minProperties: 1,
+                additionalProperties: false,
+                properties: {
+                    name: { type: 'string', maxLength: 150 },
+                    address: { type: 'string', maxLength: 500, nullable: true },
+                    gst: { type: 'string', maxLength: 20, nullable: true },
+                    companyCode: { type: 'string', maxLength: 50 },
+                    adminMobile: { type: 'string', description: '10-15 digits.' },
+                    isActive: { type: 'boolean' },
+                },
+            },
+            PlatformAdminUserSummary: {
+                type: 'object',
+                description: 'A user belonging to a company, as seen by a platform admin (all roles, unlike the tenant-side UserSummary).',
+                properties: {
+                    id: { type: 'string', format: 'uuid' },
+                    companyId: { type: 'string', format: 'uuid' },
+                    name: { type: 'string', nullable: true },
+                    mobile: { type: 'string' },
+                    role: { type: 'string', enum: ['ADMIN', 'MANAGER', 'SUPERVISOR', 'EMPLOYEE'] },
+                    isActive: { type: 'boolean' },
+                    lastLoginAt: { type: 'string', format: 'date-time', nullable: true },
+                    createdAt: { type: 'string', format: 'date-time' },
+                    updatedAt: { type: 'string', format: 'date-time' },
+                },
+            },
+            PlatformAdminUserListResponse: {
+                type: 'object',
+                properties: {
+                    success: { type: 'boolean', example: true },
+                    data: { type: 'array', items: { $ref: '#/components/schemas/PlatformAdminUserSummary' } },
+                    meta: { $ref: '#/components/schemas/PaginationMeta' },
                 },
             },
             AdminUserSummary: {
@@ -168,6 +235,110 @@ const definition: swaggerJsdoc.OAS3Definition = {
                             company: { $ref: '#/components/schemas/LoginCompanySummary' },
                         },
                     },
+                },
+            },
+            RefreshResponse: {
+                type: 'object',
+                description: 'Shared by /company/auth/refresh and /platform/admin/refresh. Also sets fresh httpOnly access/refresh cookies.',
+                properties: {
+                    success: { type: 'boolean', example: true },
+                    data: {
+                        type: 'object',
+                        properties: {
+                            refreshed: { type: 'boolean', example: true },
+                        },
+                    },
+                },
+            },
+            PlatformAdminSignupRequest: {
+                type: 'object',
+                required: ['name', 'mobile', 'password'],
+                additionalProperties: false,
+                properties: {
+                    name: { type: 'string', maxLength: 150 },
+                    mobile: { type: 'string', example: '9876543210', description: '10-15 digits.' },
+                    password: { type: 'string', format: 'password', minLength: 8, maxLength: 128 },
+                },
+            },
+            PlatformAdminSummary: {
+                type: 'object',
+                properties: {
+                    id: { type: 'string', format: 'uuid' },
+                    name: { type: 'string' },
+                    mobile: { type: 'string' },
+                    role: { type: 'string', enum: ['SUPER_ADMIN'] },
+                    isActive: { type: 'boolean' },
+                    createdAt: { type: 'string', format: 'date-time' },
+                },
+            },
+            PlatformAdminSignupResponse: {
+                type: 'object',
+                properties: {
+                    success: { type: 'boolean', example: true },
+                    data: { $ref: '#/components/schemas/PlatformAdminSummary' },
+                },
+            },
+            PlatformAdminLoginResponse: {
+                type: 'object',
+                properties: {
+                    success: { type: 'boolean', example: true },
+                    data: {
+                        type: 'object',
+                        properties: {
+                            admin: { $ref: '#/components/schemas/PlatformAdminSummary' },
+                        },
+                    },
+                },
+            },
+            CompanyUserCreateRequest: {
+                type: 'object',
+                required: ['mobile', 'password', 'role'],
+                additionalProperties: false,
+                properties: {
+                    name: { type: 'string', maxLength: 150 },
+                    mobile: { type: 'string', example: '9876543210', description: '10-15 digits.' },
+                    password: { type: 'string', format: 'password', minLength: 8, maxLength: 128 },
+                    role: { type: 'string', enum: ['MANAGER', 'SUPERVISOR'], description: 'ADMIN and EMPLOYEE cannot be created through this endpoint.' },
+                },
+            },
+            CompanyUserSummary: {
+                type: 'object',
+                description: 'A MANAGER/SUPERVISOR user managed through this endpoint. For the full roster (all roles) see GET /api/v1/company/user/all.',
+                properties: {
+                    id: { type: 'string', format: 'uuid' },
+                    companyId: { type: 'string', format: 'uuid' },
+                    name: { type: 'string', nullable: true },
+                    mobile: { type: 'string' },
+                    role: { type: 'string', enum: ['MANAGER', 'SUPERVISOR'] },
+                    isActive: { type: 'boolean' },
+                    createdAt: { type: 'string', format: 'date-time' },
+                    updatedAt: { type: 'string', format: 'date-time' },
+                },
+            },
+            CompanyUserResponse: {
+                type: 'object',
+                properties: {
+                    success: { type: 'boolean', example: true },
+                    data: { $ref: '#/components/schemas/CompanyUserSummary' },
+                },
+            },
+            CompanyUserListResponse: {
+                type: 'object',
+                properties: {
+                    success: { type: 'boolean', example: true },
+                    data: { type: 'array', items: { $ref: '#/components/schemas/CompanyUserSummary' } },
+                    meta: { $ref: '#/components/schemas/PaginationMeta' },
+                },
+            },
+            CompanyUserUpdateRequest: {
+                type: 'object',
+                description: 'Every field is optional, but at least one must be present. Excludes password/mobile — those are separate concerns.',
+                minProperties: 1,
+                additionalProperties: false,
+                properties: {
+                    name: { type: 'string', maxLength: 150 },
+                    role: { type: 'string', enum: ['MANAGER', 'SUPERVISOR'] },
+                    isActive: { type: 'boolean' },
                 },
             },
             MasterDataRef: {

@@ -1,10 +1,17 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
-import { ConflictError, ForbiddenError, UnauthorizedError } from '../utils/errors.js';
+import { ConflictError, ForbiddenError, NotFoundError, UnauthorizedError } from '../utils/errors.js';
 import { comparePassword, dummyPasswordHash, hashPassword } from '../utils/password.js';
 import { signAccessToken, signRefreshToken } from '../utils/jwt.js';
+import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import type { TokenPayload } from '../types/auth.js';
-import type { LoginInput, SignupInput } from '../validations/authValidation.js';
+import type {
+    LoginInput,
+    ListCompaniesQuery,
+    ListCompanyUsersQuery,
+    SignupInput,
+    UpdateCompanyInput,
+} from '../validations/authValidation.js';
 
 const companySelect = {
     id: true,
@@ -15,6 +22,7 @@ const companySelect = {
     companyCode: true,
     isActive: true,
     createdAt: true,
+    updatedAt: true,
 } satisfies Prisma.CompanySelect;
 
 const adminUserSelect = {
@@ -166,4 +174,91 @@ export async function loginUser(input: LoginInput) {
         },
         company: { id: user.company.id, name: user.company.name, companyCode: user.company.companyCode },
     };
+}
+
+/** Platform-admin: paginated, filterable list of every company. Time: O(limit); Space: O(limit). */
+export async function listCompanies(query: ListCompaniesQuery) {
+    const { skip, take } = toSkipTake(query);
+    const where: Prisma.CompanyWhereInput = {
+        ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
+        ...(query.name ? { name: { contains: query.name, mode: 'insensitive' } } : {}),
+    };
+
+    const [rows, total] = await prisma.$transaction([
+        prisma.company.findMany({ where, select: companySelect, orderBy: { createdAt: 'desc' }, skip, take }),
+        prisma.company.count({ where }),
+    ]);
+
+    return { items: rows, meta: toPageMeta(query, total) };
+}
+
+/** Platform-admin: fetch one company by id. Time: O(1); Space: O(1). */
+export async function getCompanyById(id: string) {
+    const company = await prisma.company.findUnique({ where: { id }, select: companySelect });
+    if (!company) throw new NotFoundError('Company not found', 'COMPANY_NOT_FOUND', { id });
+    return company;
+}
+
+/**
+ * Platform-admin: partial update of a company's details. Deliberately excludes
+ * adminPasswordHash — resetting a company's admin password belongs in its own
+ * dedicated endpoint, not a generic PATCH. Time: O(1); Space: O(1).
+ */
+export async function updateCompany(id: string, input: UpdateCompanyInput) {
+    const existing = await prisma.company.findUnique({ where: { id }, select: { id: true } });
+    if (!existing) throw new NotFoundError('Company not found', 'COMPANY_NOT_FOUND', { id });
+
+    try {
+        return await prisma.company.update({
+            where: { id },
+            data: {
+                ...(input.name !== undefined ? { name: input.name } : {}),
+                ...(input.address !== undefined ? { address: input.address } : {}),
+                ...(input.gst !== undefined ? { gst: input.gst } : {}),
+                ...(input.companyCode !== undefined ? { companyCode: input.companyCode } : {}),
+                ...(input.adminMobile !== undefined ? { adminMobile: input.adminMobile } : {}),
+                ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+            },
+            select: companySelect,
+        });
+    } catch (err) {
+        mapUniqueConstraintError(err);
+        throw err;
+    }
+}
+
+const companyUserSelect = {
+    id: true,
+    companyId: true,
+    name: true,
+    mobile: true,
+    role: true,
+    isActive: true,
+    lastLoginAt: true,
+    createdAt: true,
+    updatedAt: true,
+} satisfies Prisma.UserSelect;
+
+/**
+ * Platform-admin: paginated list of every user (all four roles, unlike the
+ * tenant-side /company/user endpoint which excludes ADMIN/EMPLOYEE) for one
+ * company. Time: O(limit); Space: O(limit).
+ */
+export async function listCompanyUsers(companyId: string, query: ListCompanyUsersQuery) {
+    const company = await prisma.company.findUnique({ where: { id: companyId }, select: { id: true } });
+    if (!company) throw new NotFoundError('Company not found', 'COMPANY_NOT_FOUND', { id: companyId });
+
+    const { skip, take } = toSkipTake(query);
+    const where: Prisma.UserWhereInput = {
+        companyId,
+        ...(query.role ? { role: query.role } : {}),
+        ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
+    };
+
+    const [rows, total] = await prisma.$transaction([
+        prisma.user.findMany({ where, select: companyUserSelect, orderBy: { createdAt: 'desc' }, skip, take }),
+        prisma.user.count({ where }),
+    ]);
+
+    return { items: rows, meta: toPageMeta(query, total) };
 }
