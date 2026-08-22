@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import {
-    createInventoryHandler,
-    deleteInventoryHandler,
-    getInventoryHandler,
-    listInventoryHandler,
-    updateInventoryHandler,
+  createInventoryHandler,
+  deleteInventoryHandler,
+  getInventoryHandler,
+  listInventoryHandler,
+  updateInventoryHandler,
 } from '../controllers/inventoryController.js';
 import { requireAuth } from '../middlewares/auth.js';
 import stockRoutes from './stockRoutes.js';
@@ -83,8 +83,16 @@ router.use(stockRoutes);
  *       400:
  *         $ref: '#/components/responses/ValidationError'
  */
-router.post('/', requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'), createInventoryHandler);
-router.get('/', listInventoryHandler);
+router.post(
+  '/',
+  requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
+  createInventoryHandler,
+);
+router.get(
+  '/',
+  requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
+  listInventoryHandler,
+);
 
 /**
  * @openapi
@@ -143,7 +151,15 @@ router.get('/', listInventoryHandler);
  *         $ref: '#/components/responses/NotFound'
  */
 router.get('/:id', getInventoryHandler);
-router.patch('/:id', requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'), updateInventoryHandler);
-router.delete('/:id', requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'), deleteInventoryHandler);
+router.patch(
+  '/:id',
+  requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
+  updateInventoryHandler,
+);
+router.delete(
+  '/:id',
+  requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
+  deleteInventoryHandler,
+);
 
 export default router;
