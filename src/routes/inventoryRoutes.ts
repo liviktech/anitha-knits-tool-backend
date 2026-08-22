@@ -150,7 +150,11 @@ router.get(
  *       404:
  *         $ref: '#/components/responses/NotFound'
  */
-router.get('/:id', getInventoryHandler);
+router.get(
+  '/:id',
+  requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
+  getInventoryHandler,
+);
 router.patch(
   '/:id',
   requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
