@@ -3,9 +3,17 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 import { getAuthContext } from '../utils/actor.js';
 import { parseOrThrow } from '../utils/validate.js';
-import { createManagedUser, deleteUser, getUserById, listUsers, updateUser } from '../services/userService.js';
+import {
+    createManagedUser,
+    deleteUser,
+    getUserById,
+    listAllCompanyUsers,
+    listUsers,
+    updateUser,
+} from '../services/userService.js';
 import {
     createUserSchema,
+    listAllUsersQuerySchema,
     listUsersQuerySchema,
     updateUserSchema,
     userIdParamsSchema,
@@ -22,6 +30,13 @@ export const listUsersHandler = asyncHandler(async (req: Request, res: Response)
     const query = parseOrThrow(listUsersQuerySchema, req.query);
     const { companyId } = getAuthContext(req);
     const { items, meta } = await listUsers(query, companyId);
+    sendSuccess(res, items, meta);
+});
+
+export const listAllUsersHandler = asyncHandler(async (req: Request, res: Response) => {
+    const query = parseOrThrow(listAllUsersQuerySchema, req.query);
+    const { companyId } = getAuthContext(req);
+    const { items, meta } = await listAllCompanyUsers(query, companyId);
     sendSuccess(res, items, meta);
 });
 

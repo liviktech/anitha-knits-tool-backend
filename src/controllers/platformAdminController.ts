@@ -5,8 +5,14 @@ import { parseOrThrow } from '../utils/validate.js';
 import { setPlatformAdminAuthCookies } from '../utils/platformAdminCookie.js';
 import { loginPlatformAdmin, signupPlatformAdmin } from '../services/platformAdminService.js';
 import { platformAdminLoginSchema, platformAdminSignupSchema } from '../validations/platformAdminValidation.js';
-import { signupCompany } from '../services/authService.js';
-import { signupSchema } from '../validations/authValidation.js';
+import { getCompanyById, listCompanies, listCompanyUsers, signupCompany, updateCompany } from '../services/authService.js';
+import {
+    companyIdParamsSchema,
+    listCompaniesQuerySchema,
+    listCompanyUsersQuerySchema,
+    signupSchema,
+    updateCompanySchema,
+} from '../validations/authValidation.js';
 import { env } from '../config/env.js';
 import { rotatePlatformAdminTokens } from '../utils/platformAdminJwt.js';
 import { UnauthorizedError } from '../utils/errors.js';
@@ -41,4 +47,30 @@ export const refresh = asyncHandler(async (req: Request, res: Response) => {
     const tokens = rotatePlatformAdminTokens(refreshToken);
     setPlatformAdminAuthCookies(res, tokens);
     sendSuccess(res, { refreshed: true });
+});
+
+export const listCompaniesHandler = asyncHandler(async (req: Request, res: Response) => {
+    const query = parseOrThrow(listCompaniesQuerySchema, req.query);
+    const { items, meta } = await listCompanies(query);
+    sendSuccess(res, items, meta);
+});
+
+export const getCompanyHandler = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = parseOrThrow(companyIdParamsSchema, req.params);
+    const company = await getCompanyById(id);
+    sendSuccess(res, company);
+});
+
+export const updateCompanyHandler = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = parseOrThrow(companyIdParamsSchema, req.params);
+    const input = parseOrThrow(updateCompanySchema, req.body);
+    const company = await updateCompany(id, input);
+    sendSuccess(res, company);
+});
+
+export const listCompanyUsersHandler = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = parseOrThrow(companyIdParamsSchema, req.params);
+    const query = parseOrThrow(listCompanyUsersQuerySchema, req.query);
+    const { items, meta } = await listCompanyUsers(id, query);
+    sendSuccess(res, items, meta);
 });

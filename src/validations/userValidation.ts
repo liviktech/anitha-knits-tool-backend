@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { paginationSchema } from '../utils/pagination.js';
+import { UserRole } from '@prisma/client';
+import { booleanQueryParam, paginationSchema } from '../utils/pagination.js';
 
 // Deliberately excludes ADMIN (no self-service admin creation) and EMPLOYEE (out of scope for this endpoint).
 export const managedUserRoleSchema = z.enum(['MANAGER', 'SUPERVISOR']);
@@ -35,10 +36,18 @@ export const updateUserSchema = z
 export const listUsersQuerySchema = paginationSchema
     .extend({
         role: managedUserRoleSchema.optional(),
-        isActive: z.coerce.boolean().optional(),
+        isActive: booleanQueryParam.optional(),
+    })
+    .strict();
+
+export const listAllUsersQuerySchema = paginationSchema
+    .extend({
+        role: z.nativeEnum(UserRole).optional(),
+        isActive: booleanQueryParam.optional(),
     })
     .strict();
 
 export type CreateUserInput = z.infer<typeof createUserSchema>;
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
 export type ListUsersQuery = z.infer<typeof listUsersQuerySchema>;
+export type ListAllUsersQuery = z.infer<typeof listAllUsersQuerySchema>;

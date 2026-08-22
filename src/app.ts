@@ -13,6 +13,11 @@ import { errorHandler } from './middlewares/errorHandler.js';
 
 const helmet = helmetImport as unknown as typeof import('helmet').default;
 
+// Render sets this automatically on every web service. The Swagger docs page is served from
+// this same origin (/api/docs), and its "Try it out" requests carry it as their Origin header —
+// without allowing it explicitly, testing the API from its own docs page gets CORS-rejected.
+const SELF_ORIGIN = process.env.RENDER_EXTERNAL_URL;
+
 export const app = express();
 
 app.disable('x-powered-by');
@@ -20,14 +25,15 @@ app.use(helmet());
 // In development, reflect whatever Origin the request sends (`origin: true`)
 // so the frontend is never blocked regardless of which local port it runs on.
 // In production, only trust origins in CORS_ORIGINS (comma-separated, see
-// .env.example) — `credentials: true` is what allows the auth cookie to be
-// sent/read cross-origin, so the allowlist is what stands between "any site"
-// and "only our frontend" for credentialed requests.
+// .env.example) plus the API's own origin (Swagger UI) — `credentials: true`
+// is what allows the auth cookie to be sent/read cross-origin, so the
+// allowlist is what stands between "any site" and "only our frontend" for
+// credentialed requests.
 app.use(
     cors({
         origin: isProduction
             ? (origin, callback) => {
-                  if (!origin || env.CORS_ORIGINS.includes(origin)) {
+                  if (!origin || origin === SELF_ORIGIN || env.CORS_ORIGINS.includes(origin)) {
                       callback(null, true);
                   } else {
                       callback(new Error(`Origin not allowed by CORS: ${origin}`));
