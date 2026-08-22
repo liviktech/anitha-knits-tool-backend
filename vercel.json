@@ -28,5 +28,10 @@
             "source": "/(.*)",
             "destination": "/api/index.ts"
         }
-    ]
+    ],
+    "functions": {
+        "api/index.ts": {
+            "includeFiles": "node_modules/swagger-ui-dist/**"
+        }
+    }
 }
