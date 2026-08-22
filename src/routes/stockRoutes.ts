@@ -24,6 +24,10 @@ const router = Router();
  *             schema:
  *               $ref: '#/components/schemas/InventoryStockSummaryResponse'
  */
-router.get('/stock', requireAuth(), getInventoryStockHandler);
+router.get(
+  '/stock',
+  requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
+  getInventoryStockHandler,
+);
 
 export default router;
