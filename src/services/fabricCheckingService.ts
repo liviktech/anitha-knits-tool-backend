@@ -43,6 +43,7 @@ const fabricCheckingSelect = {
             pieceCount: true,
             firstGradeKg: true,
             secondGradeKg: true,
+            outputKg: true,
         },
     },
     wastages: { select: wastageSelect },
@@ -64,6 +65,7 @@ function mapFabricCheckingRecord(record: FabricCheckingRecordRow) {
                   pieceCount: fabricCheck.pieceCount,
                   firstGradeKg: fabricCheck.firstGradeKg.toNumber(),
                   secondGradeKg: fabricCheck.secondGradeKg.toNumber(),
+                  outputKg: fabricCheck.outputKg ? fabricCheck.outputKg.toNumber() : null,
               }
             : null,
         wastages: wastages.map(mapWastageRecord),
@@ -93,9 +95,13 @@ export async function createFabricCheckingRecord(input: CreateFabricCheckingInpu
             fabricCheck: {
                 create: {
                     fabricInputKg: input.fabricInputKg,
-                    pieceCount: input.pieceCount,
-                    firstGradeKg: input.firstGradeKg,
-                    secondGradeKg: input.secondGradeKg,
+                    // pieceCount/firstGradeKg/secondGradeKg are no longer
+                    // collected via the entry UI — the columns stay NOT NULL,
+                    // so default to 0 rather than leave the create() incomplete.
+                    pieceCount: input.pieceCount ?? 0,
+                    firstGradeKg: input.firstGradeKg ?? 0,
+                    secondGradeKg: input.secondGradeKg ?? 0,
+                    outputKg: input.outputKg,
                 },
             },
             ...(wastageCreates.length > 0 ? { wastages: { create: wastageCreates } } : {}),

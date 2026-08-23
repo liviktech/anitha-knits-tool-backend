@@ -337,6 +337,7 @@ model FabricCheckDetail {
 
   firstGradeKg  Decimal @map("first_grade_kg") @db.Decimal(12, 3)
   secondGradeKg Decimal @map("second_grade_kg") @db.Decimal(12, 3)
+  outputKg      Decimal? @map("output_kg") @db.Decimal(12, 3)
 
   @@map("fabric_check_details")
 }

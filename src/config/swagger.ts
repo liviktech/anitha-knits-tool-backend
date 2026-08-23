@@ -579,9 +579,10 @@ const definition: swaggerJsdoc.OAS3Definition = {
                 type: 'object',
                 properties: {
                     fabricInputKg: { type: 'number', format: 'decimal', example: 192, description: 'Total fabric weight received for checking.' },
-                    pieceCount: { type: 'integer', example: 20 },
-                    firstGradeKg: { type: 'number', format: 'decimal', example: 170 },
-                    secondGradeKg: { type: 'number', format: 'decimal', example: 18 },
+                    outputKg: { type: 'number', format: 'decimal', nullable: true, example: 170, description: 'Final stock / output weight.' },
+                    pieceCount: { type: 'integer', example: 20, description: 'No longer collected via the entry UI; defaults to 0 when omitted.' },
+                    firstGradeKg: { type: 'number', format: 'decimal', example: 170, description: 'No longer collected via the entry UI; defaults to 0 when omitted.' },
+                    secondGradeKg: { type: 'number', format: 'decimal', example: 18, description: 'No longer collected via the entry UI; defaults to 0 when omitted.' },
                 },
             },
             FabricCheckingRecord: {
@@ -609,16 +610,17 @@ const definition: swaggerJsdoc.OAS3Definition = {
             },
             FabricCheckingCreateRequest: {
                 type: 'object',
-                required: ['productionDate', 'colorId', 'sizeId', 'fabricInputKg', 'pieceCount', 'firstGradeKg', 'secondGradeKg'],
+                required: ['productionDate', 'colorId', 'sizeId', 'fabricInputKg'],
                 additionalProperties: false,
                 properties: {
                     productionDate: { type: 'string', format: 'date', example: '2026-08-19' },
                     colorId: { type: 'string', format: 'uuid' },
                     sizeId: { type: 'string', format: 'uuid' },
                     fabricInputKg: { type: 'number', exclusiveMinimum: 0, example: 192 },
-                    pieceCount: { type: 'integer', exclusiveMinimum: 0, example: 20 },
-                    firstGradeKg: { type: 'number', minimum: 0, example: 170 },
-                    secondGradeKg: { type: 'number', minimum: 0, example: 18 },
+                    outputKg: { type: 'number', minimum: 0, example: 170, description: 'Final stock / output weight.' },
+                    pieceCount: { type: 'integer', minimum: 0, example: 20, description: 'Deprecated — no longer collected via the entry UI.' },
+                    firstGradeKg: { type: 'number', minimum: 0, example: 170, description: 'Deprecated — no longer collected via the entry UI.' },
+                    secondGradeKg: { type: 'number', minimum: 0, example: 18, description: 'Deprecated — no longer collected via the entry UI.' },
                     remarks: { type: 'string', maxLength: 500 },
                     fwKg: { type: 'number', minimum: 0, description: 'Optional. Creates a WastageRecord (code FW) only if > 0.' },
                     bwKg: {

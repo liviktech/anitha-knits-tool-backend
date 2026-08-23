@@ -16,9 +16,14 @@ export const createFabricCheckingSchema = z
         colorId: z.string().uuid(),
         sizeId: z.string().uuid(),
         fabricInputKg: z.coerce.number().positive('must be a positive number'),
-        pieceCount: z.coerce.number().int().positive('must be a positive integer'),
-        firstGradeKg: z.coerce.number().nonnegative(),
-        secondGradeKg: z.coerce.number().nonnegative(),
+        // No longer collected via the entry UI (PRD terminology now favours a
+        // single Output/Final Stock figure) — kept optional rather than
+        // removed so the fabric_check_details columns stay populated for any
+        // caller that still sends them.
+        pieceCount: z.coerce.number().int().nonnegative().optional(),
+        firstGradeKg: z.coerce.number().nonnegative().optional(),
+        secondGradeKg: z.coerce.number().nonnegative().optional(),
+        outputKg: z.coerce.number().nonnegative().optional(),
         remarks: z.string().trim().max(500).optional(),
         // Wastage entered alongside this record (PRD §9/§10): optional, and
         // only turns into a WastageRecord when > 0 — see wastageService.ts.
