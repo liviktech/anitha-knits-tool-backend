@@ -13,7 +13,7 @@
  * go-live (PRD §20).
  */
 
-import { ProductionStage, ApprovalMode } from '@prisma/client'
+import { ProductionStage } from '@prisma/client'
 import { prisma } from '../config/prisma.js'
 
 const SYSTEM = 'system:seed'
@@ -29,20 +29,7 @@ const companyId: string = process.env.SEED_COMPANY_ID ?? (() => {
 
 async function main() {
   // -------------------------------------------------------------------------
-  // 1. Settings — exactly one row per company.
-  // -------------------------------------------------------------------------
-  await prisma.productionSetting.upsert({
-    where: { companyId },
-    update: {},                       // never overwrite a live setting
-    create: {
-      companyId,
-      approvalMode: ApprovalMode.MANAGER_APPROVAL,
-      updatedBy: SYSTEM,
-    },
-  })
-
-  // -------------------------------------------------------------------------
-  // 2. Brands — the HDPE suppliers the factory buys from.
+  // 1. Brands — the HDPE suppliers the factory buys from.
   //    The Production Module PRD (§4) only confirms the raw material is HDPE
   //    and doesn't list brands. The baseline PRD (§12 Raw Material Management)
   //    does: "Known brands include: Reliance, Haldia / TATA, Opel / Bangalore,
@@ -60,7 +47,7 @@ async function main() {
   }
 
   // -------------------------------------------------------------------------
-  // 3. Chemicals — PRD §4: DN+MB or ACM, exactly one per extruder entry.
+  // 2. Chemicals — PRD §4: DN+MB or ACM, exactly one per extruder entry.
   // -------------------------------------------------------------------------
   for (const name of ['DN+MB', 'ACM']) {
     await prisma.chemical.upsert({
@@ -71,7 +58,7 @@ async function main() {
   }
 
   // -------------------------------------------------------------------------
-  // 4. Sizes — PRD §4.
+  // 3. Sizes — PRD §4.
   // -------------------------------------------------------------------------
   for (const name of ['150mm', '160mm', '170mm', '180mm', '190mm']) {
     await prisma.size.upsert({
@@ -82,7 +69,7 @@ async function main() {
   }
 
   // -------------------------------------------------------------------------
-  // 5. Colours + their consumption standard.
+  // 4. Colours + their consumption standard.
   //    PRD §5, confirmed: White 150 g, Blue 100 g, Green 200 g per 25 KG.
   //    Custom colours are added later through the UI; a colour with no
   //    standard simply means the extruder form does not pre-fill.
@@ -116,7 +103,7 @@ async function main() {
   }
 
   // -------------------------------------------------------------------------
-  // 6. Wastage types — PRD §9. Codes are stable identifiers the app can
+  // 5. Wastage types — PRD §9. Codes are stable identifiers the app can
   //    branch on; names are what the operator sees and may be renamed.
   //    LUMS and LUMPS are the same thing, so there is one code, not two.
   // -------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-import { Prisma, ProductionStage, ProductionStatus } from '@prisma/client';
+import { Prisma, ProductionStage } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { NotFoundError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
@@ -6,25 +6,19 @@ import { buildProductionWhere } from '../utils/productionFilters.js';
 import { assertColorExists, assertSizeExists } from './masterDataService.js';
 import { buildWastageCreates, mapWastageRecord, wastageSelect } from './wastageService.js';
 import { WASTAGE_CODES } from '../constants/wastageCodes.js';
-import type { CreateLoomsInput, ListLoomsQuery } from '../validations/loomsValidation.js';
+import type { CreateLoomsInput, UpdateLoomsInput, ListLoomsQuery } from '../validations/loomsValidation.js';
 
 /**
- * Looms is PRD §16.4: create/list/get/edit/approve/reject, no separate "submit"
- * step (same reasoning as Extruder — see extruderService.ts). A created Looms
- * production is therefore stored PENDING_APPROVAL directly.
+ * Looms is PRD §16.4: create/list/get, no approval workflow — records are
+ * created directly and are immediately final.
  *
- * Kora Balance consumption ("approved Looms yarn consumption decreases Kora
- * Balance", PRD §8) is an approval-time effect and out of scope until the
- * approve endpoint is built — see the same caveat in extruderService.ts.
+ * Yarn/Kora Balance consumption (PRD §8) is out of scope: Kora Balance isn't
+ * modeled in this schema.
  */
-const LOOMS_INITIAL_STATUS = ProductionStatus.PENDING_APPROVAL;
-
 const loomsSelect = {
     id: true,
     stage: true,
     productionDate: true,
-    status: true,
-    statusChangedAt: true,
     remarks: true,
     color: { select: { id: true, name: true } },
     size: { select: { id: true, name: true } },
@@ -71,7 +65,6 @@ export async function createLoomsProduction(input: CreateLoomsInput, companyId: 
             productionDate: input.productionDate,
             colorId: input.colorId,
             sizeId: input.sizeId,
-            status: LOOMS_INITIAL_STATUS,
             remarks: input.remarks,
             createdBy: actor,
             loom: {
@@ -113,4 +106,42 @@ export async function getLoomsProductionById(id: string, companyId: string) {
     });
     if (!record) throw new NotFoundError('Looms production not found', 'LOOMS_NOT_FOUND', { id });
     return mapLoomsRecord(record);
+}
+
+export async function updateLoomsProduction(id: string, input: UpdateLoomsInput, companyId: string, actor: string) {
+    const existing = await prisma.productionRecord.findFirst({
+        where: { id, companyId, stage: ProductionStage.LOOMS },
+        select: { id: true },
+    });
+    if (!existing) throw new NotFoundError('Looms production not found', 'LOOMS_NOT_FOUND', { id });
+
+    await Promise.all([
+        input.colorId ? assertColorExists(input.colorId, companyId) : undefined,
+        input.sizeId ? assertSizeExists(input.sizeId, companyId) : undefined,
+    ]);
+
+    const updated = await prisma.$transaction(async (tx) => {
+        await tx.productionRecord.update({
+            where: { id },
+            data: {
+                ...(input.productionDate ? { productionDate: input.productionDate } : {}),
+                ...(input.colorId ? { colorId: input.colorId } : {}),
+                ...(input.sizeId ? { sizeId: input.sizeId } : {}),
+                ...(input.remarks !== undefined ? { remarks: input.remarks } : {}),
+                updatedBy: actor,
+            },
+        });
+
+        await tx.loomDetail.update({
+            where: { productionRecordId: id },
+            data: {
+                ...(input.yarnInputKg !== undefined ? { yarnInputKg: input.yarnInputKg } : {}),
+                ...(input.fabricOutputKg !== undefined ? { fabricOutputKg: input.fabricOutputKg } : {}),
+            },
+        });
+
+        return tx.productionRecord.findUniqueOrThrow({ where: { id }, select: loomsSelect });
+    });
+
+    return mapLoomsRecord(updated);
 }

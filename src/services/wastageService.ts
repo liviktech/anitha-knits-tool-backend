@@ -1,16 +1,14 @@
-import { Prisma, ProductionStage, ProductionStatus } from '@prisma/client';
+import { Prisma, ProductionStage } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { NotFoundError } from '../utils/errors.js';
 
 /**
  * Wastage entered alongside a production record (PRD §9/§26: "Wastage must be
  * linked to a production record whenever applicable"). The dedicated Wastage
- * API (list/get/edit/approve/reject, PRD §16.6) isn't built yet, so this is
- * the only way wastage gets into WastageRecord today — created in the same
- * nested write as the production record, so it's atomic with it and always
- * has a productionRecordId. It starts PENDING_APPROVAL, matching the
- * production record it belongs to (same "no separate submit step" reasoning
- * used across Extruder/Looms/Fabric Checking).
+ * API (list/get/edit, PRD §16.6) isn't built yet, so this is the only way
+ * wastage gets into WastageRecord today — created in the same nested write as
+ * the production record, so it's atomic with it and always has a
+ * productionRecordId.
  */
 
 export const wastageSelect = {
@@ -18,7 +16,6 @@ export const wastageSelect = {
     wastageType: { select: { id: true, code: true, name: true } },
     color: { select: { id: true, name: true } },
     quantityKg: true,
-    status: true,
 } satisfies Prisma.WastageRecordSelect;
 
 type WastageRow = Prisma.WastageRecordGetPayload<{ select: typeof wastageSelect }>;
@@ -29,7 +26,6 @@ export function mapWastageRecord(row: WastageRow) {
         wastageType: row.wastageType,
         color: row.color,
         quantityKg: row.quantityKg.toNumber(),
-        status: row.status,
     };
 }
 
@@ -83,7 +79,6 @@ export async function buildWastageCreates(
             wastageType: { connect: { id: type.id } },
             color: entry.colorId ? { connect: { id: entry.colorId } } : undefined,
             quantityKg: entry.quantityKg,
-            status: ProductionStatus.PENDING_APPROVAL,
             createdBy: actor,
         };
     });

@@ -25,28 +25,10 @@ enum ProductionStage {
   FABRIC_CHECKING
 }
 
-enum ProductionStatus {
-  DRAFT
-  SUBMITTED
-  PENDING_APPROVAL
-  APPROVED
-  REJECTED
-}
-
-enum ApprovalMode {
-  AUTO_APPROVAL
-  MANAGER_APPROVAL
-}
-
 enum ProductionRecordType {
   NORMAL
   ADJUSTMENT
   REVERSAL
-}
-
-enum ApprovalEntityType {
-  PRODUCTION_RECORD
-  WASTAGE_RECORD
 }
 
 enum InventoryType {
@@ -92,10 +74,8 @@ model Company {
   sizes                     Size[]
   colorConsumptionStandards ColorConsumptionStandard[]
   wastageTypes              WastageType[]
-  productionSetting         ProductionSetting?
   productionRecords         ProductionRecord[]
   wastageRecords            WastageRecord[]
-  approvalEvents            ApprovalEvent[]
   inventories               Inventory[]
   loadSents                 LoadSent[]
 
@@ -134,20 +114,6 @@ model User {
   @@map("users")
 }
 
-model ProductionSetting {
-  id String @id @default(uuid()) @db.Uuid
-
-  companyId    String       @unique @map("company_id") @db.Uuid
-  company      Company      @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  approvalMode ApprovalMode @default(MANAGER_APPROVAL) @map("approval_mode")
-
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  updatedBy String?  @map("updated_by") @db.VarChar(100)
-
-  @@map("production_settings")
-}
-
 model Brand {
   id String @id @default(uuid()) @db.Uuid
 
@@ -155,6 +121,7 @@ model Brand {
   company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
   name            String           @db.VarChar(100)
   extruderDetails ExtruderDetail[]
+  inventories     Inventory[]
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   createdBy String?  @map("created_by") @db.VarChar(100)
@@ -174,6 +141,7 @@ model Chemical {
   name      String  @db.VarChar(100)
 
   extruderDetails ExtruderDetail[]
+  inventories     Inventory[]
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   createdBy String?  @map("created_by") @db.VarChar(100)
@@ -195,6 +163,7 @@ model Color {
   productionRecords   ProductionRecord[]
   wastageRecords      WastageRecord[]
   loadSents           LoadSent[]
+  inventories         Inventory[]
   consumptionStandard ColorConsumptionStandard?
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -267,9 +236,7 @@ model ProductionRecord {
   reversesRecord   ProductionRecord?    @relation("ProductionCorrection", fields: [reversesRecordId], references: [id])
   corrections      ProductionRecord[]   @relation("ProductionCorrection")
 
-  status          ProductionStatus @default(DRAFT)
-  statusChangedAt DateTime         @default(now()) @map("status_changed_at") @db.Timestamptz(6)
-  remarks         String?          @db.VarChar(500)
+  remarks String? @db.VarChar(500)
 
   extruder    ExtruderDetail?
   loom        LoomDetail?
@@ -284,7 +251,6 @@ model ProductionRecord {
   @@index([companyId])
   @@index([companyId, productionDate])
   @@index([companyId, stage, productionDate])
-  @@index([companyId, status])
   @@index([colorId, sizeId])
   @@index([reversesRecordId])
   @@map("production_records")
@@ -382,9 +348,6 @@ model WastageRecord {
   quantityKg Decimal @map("quantity_kg") @db.Decimal(12, 3)
   reason     String? @db.VarChar(500)
 
-  status          ProductionStatus @default(DRAFT)
-  statusChangedAt DateTime         @default(now()) @map("status_changed_at") @db.Timestamptz(6)
-
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   createdBy String   @map("created_by") @db.VarChar(100)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -394,29 +357,7 @@ model WastageRecord {
   @@index([productionRecordId])
   @@index([wastageTypeId])
   @@index([colorId])
-  @@index([status])
   @@map("wastage_records")
-}
-
-model ApprovalEvent {
-  id String @id @default(uuid()) @db.Uuid
-
-  companyId  String             @map("company_id") @db.Uuid
-  company    Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  entityType ApprovalEntityType @map("entity_type")
-  entityId   String             @map("entity_id") @db.Uuid
-
-  fromStatus ProductionStatus @map("from_status")
-  toStatus   ProductionStatus @map("to_status")
-  reason     String?          @db.VarChar(500)
-
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  createdBy String   @map("created_by") @db.VarChar(100)
-
-  @@index([companyId])
-  @@index([entityType, entityId, createdAt])
-  @@index([toStatus, createdAt])
-  @@map("approval_events")
 }
 
 model Inventory {
@@ -430,11 +371,21 @@ model Inventory {
   name     String        @db.VarChar(150)
   weightKg Decimal       @map("weight_kg") @db.Decimal(12, 3)
 
+  brandId    String?   @map("brand_id") @db.Uuid
+  brand      Brand?    @relation(fields: [brandId], references: [id])
+  chemicalId String?   @map("chemical_id") @db.Uuid
+  chemical   Chemical? @relation(fields: [chemicalId], references: [id])
+  colorId    String?   @map("color_id") @db.Uuid
+  color      Color?    @relation(fields: [colorId], references: [id])
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   createdBy String   @map("created_by") @db.VarChar(100)
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
   updatedBy String?  @map("updated_by") @db.VarChar(100)
 
+  @@unique([companyId, type, brandId])
+  @@unique([companyId, type, chemicalId])
+  @@unique([companyId, type, colorId])
   @@index([companyId])
   @@index([date])
   @@index([type])

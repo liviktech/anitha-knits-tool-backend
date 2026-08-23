@@ -12,10 +12,11 @@
  * Requires master data (brands/chemicals/colors/sizes/wastage types) to
  * already exist for the company — run `prisma/seed.ts` first.
  *
- * Extruder entries are auto-approved after creation (the only stage with an
- * approve endpoint today). Looms/Fabric Checking stay PENDING_APPROVAL —
- * there is no approve/reject service for those stages yet. Inventory/Load
- * Sent have no approval concept at all.
+ * No approval workflow exists for any stage — every record created here is
+ * immediately final. Extruder entries deduct raw material/chemical/colour
+ * from Inventory as they're created, so this script seeds a large opening
+ * balance for every brand/chemical/colour up front (otherwise the very first
+ * Extruder entry for an unseeded item would fail with INSUFFICIENT_STOCK).
  *
  * Not idempotent — re-running adds MORE records, it does not upsert/dedupe.
  *
@@ -28,7 +29,7 @@
 
 import { InventoryType } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
-import { createExtruderProduction, approveExtruderProduction } from '../services/extruderService.js';
+import { createExtruderProduction } from '../services/extruderService.js';
 import { createLoomsProduction } from '../services/loomsService.js';
 import { createFabricCheckingRecord } from '../services/fabricCheckingService.js';
 import { createLoadSent } from '../services/loadSentService.js';
@@ -89,6 +90,15 @@ async function main() {
         throw new Error('Missing master data (colors/sizes/brands/chemicals) for this company — run prisma/seed.ts first.');
     }
 
+    // Opening balance so Extruder consumption throughout the whole date range
+    // never runs an item negative — plenty of headroom for demo purposes.
+    console.log('Seeding opening Inventory balances...');
+    await Promise.all([
+        ...brands.map((brand) => createInventory({ type: InventoryType.RAW_MATERIAL, brandId: brand.id, quantityKg: 1_000_000 }, companyId, SYSTEM)),
+        ...chemicals.map((chemical) => createInventory({ type: InventoryType.CHEMICAL, chemicalId: chemical.id, quantityKg: 1_000_000 }, companyId, SYSTEM)),
+        ...colors.map((color) => createInventory({ type: InventoryType.COLOR, colorId: color.id, quantityKg: 1_000_000 }, companyId, SYSTEM)),
+    ]);
+
     const days = eachDate(startDate, endDate);
     console.log(
         `Seeding ${ENTRIES_PER_DAY} entries/day x 5 modules across ${days.length} days ` +
@@ -121,7 +131,7 @@ async function main() {
                     },
                     companyId,
                     SYSTEM,
-                ).then((record) => approveExtruderProduction(record.id, companyId, SYSTEM, undefined)),
+                ),
             );
 
             const yarnInputKg = randomFloat(18, 28);
@@ -173,16 +183,17 @@ async function main() {
                 ),
             );
 
+            // Occasional top-up intake, representing periodic restocking.
             const invType = randomItem([InventoryType.RAW_MATERIAL, InventoryType.CHEMICAL, InventoryType.COLOR]);
-            const invName =
+            const invInput =
                 invType === InventoryType.RAW_MATERIAL
-                    ? randomItem(brands).name
+                    ? { type: invType, brandId: randomItem(brands).id }
                     : invType === InventoryType.CHEMICAL
-                      ? randomItem(chemicals).name
-                      : color.name;
+                      ? { type: invType, chemicalId: randomItem(chemicals).id }
+                      : { type: invType, colorId: color.id };
             dayTasks.push(
                 createInventory(
-                    { date: day, type: invType, name: invName, weightKg: randomFloat(100, 500) },
+                    { date: day, quantityKg: randomFloat(100, 500), ...invInput },
                     companyId,
                     SYSTEM,
                 ),

@@ -15,17 +15,46 @@ import { requireAuth } from '../middlewares/auth.js';
 const router = Router();
 
 router.use('/health', healthRoutes);
+
+//Done
 router.use('/company/auth', authRoutes);
+router.use('/inventory', inventoryRoutes);
+router.use(
+  '/dashboard',
+  requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
+  dashboardRoutes,
+);
+
+//Pending
+router.use(
+  '/load-sent',
+  requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
+  loadSentRoutes,
+);
+
 router.use('/platform/admin', platformAdminRoutes);
 router.use('/company/user', requireAuth('ADMIN'), userRoutes);
-router.use('/production/extruder', requireAuth(), extruderRoutes);
-router.use('/production/looms', requireAuth(), loomsRoutes);
+router.use(
+  '/production/extruder',
+  requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
+  extruderRoutes,
+);
+router.use(
+  '/production/looms',
+  requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
+  loomsRoutes,
+);
 // PRD §16.7: base path is /api/v1/fabric-checking, not nested under /production.
-router.use('/fabric-checking', requireAuth(), fabricCheckingRoutes);
-router.use('/lookups', requireAuth(), lookupRoutes);
-router.use('/dashboard', requireAuth(), dashboardRoutes);
-router.use('/inventory', requireAuth(), inventoryRoutes);
-router.use('/load-sent', requireAuth(), loadSentRoutes);
+router.use(
+  '/fabric-checking',
+  requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
+  fabricCheckingRoutes,
+);
+router.use(
+  '/lookups',
+  requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
+  lookupRoutes,
+);
 
 // Mount additional feature routers here, e.g.:
 // router.use('/users', userRoutes);

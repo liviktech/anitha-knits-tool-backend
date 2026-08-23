@@ -7,11 +7,13 @@ import {
     createFabricCheckingRecord,
     getFabricCheckingRecordById,
     listFabricCheckingRecords,
+    updateFabricCheckingRecord,
 } from '../services/fabricCheckingService.js';
 import {
     createFabricCheckingSchema,
     fabricCheckingIdParamsSchema,
     listFabricCheckingQuerySchema,
+    updateFabricCheckingSchema,
 } from '../validations/fabricCheckingValidation.js';
 
 export const createFabricChecking = asyncHandler(async (req: Request, res: Response) => {
@@ -32,5 +34,13 @@ export const getFabricChecking = asyncHandler(async (req: Request, res: Response
     const { id } = parseOrThrow(fabricCheckingIdParamsSchema, req.params);
     const { companyId } = getAuthContext(req);
     const record = await getFabricCheckingRecordById(id, companyId);
+    sendSuccess(res, record);
+});
+
+export const updateFabricChecking = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = parseOrThrow(fabricCheckingIdParamsSchema, req.params);
+    const input = parseOrThrow(updateFabricCheckingSchema, req.body);
+    const { companyId, actor } = getAuthContext(req);
+    const record = await updateFabricCheckingRecord(id, input, companyId, actor);
     sendSuccess(res, record);
 });
