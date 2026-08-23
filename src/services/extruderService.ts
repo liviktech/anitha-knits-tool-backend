@@ -116,18 +116,24 @@ async function resolveColorConsumption(
 
     const deviatesFromStandard = standardKg === null || Math.abs(requestedColorConsumedKg - standardKg) > COLOR_CONSUMPTION_TOLERANCE_KG;
 
-    if (deviatesFromStandard && (!overrideReason || overrideReason.trim().length === 0)) {
-        throw new ValidationError(
-            'overrideReason is required when colorConsumedKg deviates from the configured standard',
-            'OVERRIDE_REASON_REQUIRED',
-            { colorId, standardKg },
-        );
-    }
+    // PRD §6 requires an overrideReason whenever colorConsumedKg deviates
+    // from the standard, for audit purposes. Temporarily disabled by
+    // request — the frontend has no UI to collect it yet, and requiring it
+    // was blocking entry. isRecipeOverridden still records the deviation;
+    // only the "must supply a reason" enforcement is off. Re-enable once the
+    // frontend has a real way to collect the reason.
+    // if (deviatesFromStandard && (!overrideReason || overrideReason.trim().length === 0)) {
+    //     throw new ValidationError(
+    //         'overrideReason is required when colorConsumedKg deviates from the configured standard',
+    //         'OVERRIDE_REASON_REQUIRED',
+    //         { colorId, standardKg },
+    //     );
+    // }
 
     return {
         colorConsumedKg: requestedColorConsumedKg,
         isRecipeOverridden: deviatesFromStandard,
-        overrideReason: deviatesFromStandard ? (overrideReason as string).trim() : null,
+        overrideReason: overrideReason && overrideReason.trim().length > 0 ? overrideReason.trim() : null,
     };
 }
 
