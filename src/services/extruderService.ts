@@ -4,7 +4,7 @@ import { NotFoundError, ValidationError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import { buildProductionWhere } from '../utils/productionFilters.js';
 import { assertBrandExists, assertChemicalExists, assertColorExists, assertSizeExists } from './masterDataService.js';
-import { buildWastageCreates, mapWastageRecord, wastageSelect } from './wastageService.js';
+import { applyWastageUpdates, buildWastageCreates, mapWastageRecord, wastageSelect } from './wastageService.js';
 import { WASTAGE_CODES } from '../constants/wastageCodes.js';
 import type { CreateExtruderInput, UpdateExtruderInput, ListExtruderQuery } from '../validations/extruderValidation.js';
 
@@ -261,8 +261,31 @@ export async function updateExtruderProduction(id: string, input: UpdateExtruder
             },
         });
 
+        const wastageUpdates = [
+            ...(input.yarnWasteKg !== undefined ? [{ code: WASTAGE_CODES.YARN_WASTE, quantityKg: input.yarnWasteKg }] : []),
+            ...(input.lumpsKg !== undefined ? [{ code: WASTAGE_CODES.LUMPS, quantityKg: input.lumpsKg }] : []),
+        ];
+        if (wastageUpdates.length > 0) {
+            await applyWastageUpdates(tx, id, ProductionStage.EXTRUDER, companyId, actor, wastageUpdates);
+        }
+
         return tx.productionRecord.findUniqueOrThrow({ where: { id }, select: extruderSelect });
     });
 
     return mapExtruderRecord(updated);
+}
+
+export async function deleteExtruderProduction(id: string, companyId: string): Promise<void> {
+    const existing = await prisma.productionRecord.findFirst({
+        where: { id, companyId, stage: ProductionStage.EXTRUDER },
+        select: { id: true },
+    });
+    if (!existing) throw new NotFoundError('Extruder production not found', 'EXTRUDER_NOT_FOUND', { id });
+
+    await prisma.$transaction(async (tx) => {
+        // WastageRecord has no onDelete: Cascade to ProductionRecord, so it
+        // must be cleared explicitly before the record itself can be deleted.
+        await tx.wastageRecord.deleteMany({ where: { productionRecordId: id } });
+        await tx.productionRecord.delete({ where: { id } });
+    });
 }

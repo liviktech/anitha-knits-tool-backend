@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createExtruder, getExtruder, listExtruder, updateExtruder } from '../controllers/extruderController.js';
+import { createExtruder, deleteExtruder, getExtruder, listExtruder, updateExtruder } from '../controllers/extruderController.js';
 import { requireAuth } from '../middlewares/auth.js';
 
 const router = Router();
@@ -142,8 +142,20 @@ router.get('/', listExtruder);
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
+ *   delete:
+ *     tags: [Extruder]
+ *     summary: Delete an Extruder production record
+ *     description: Deletes the record and any WastageRecords linked to it. Requires the ADMIN, MANAGER, or SUPERVISOR role.
+ *     parameters:
+ *       - $ref: '#/components/parameters/ExtruderId'
+ *     responses:
+ *       204:
+ *         description: Deleted.
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
  */
 router.get('/:id', getExtruder);
 router.patch('/:id', requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'), updateExtruder);
+router.delete('/:id', requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'), deleteExtruder);
 
 export default router;

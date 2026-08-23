@@ -5,6 +5,7 @@ import { getAuthContext } from '../utils/actor.js';
 import { parseOrThrow } from '../utils/validate.js';
 import {
     createExtruderProduction,
+    deleteExtruderProduction,
     getExtruderProductionById,
     listExtruderProductions,
     updateExtruderProduction,
@@ -43,4 +44,11 @@ export const updateExtruder = asyncHandler(async (req: Request, res: Response) =
     const { companyId, actor } = getAuthContext(req);
     const record = await updateExtruderProduction(id, input, companyId, actor);
     sendSuccess(res, record);
+});
+
+export const deleteExtruder = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = parseOrThrow(extruderIdParamsSchema, req.params);
+    const { companyId } = getAuthContext(req);
+    await deleteExtruderProduction(id, companyId);
+    res.status(204).send();
 });

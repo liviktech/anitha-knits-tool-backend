@@ -172,3 +172,18 @@ export async function updateFabricCheckingRecord(id: string, input: UpdateFabric
 
     return mapFabricCheckingRecord(updated);
 }
+
+export async function deleteFabricCheckingRecord(id: string, companyId: string): Promise<void> {
+    const existing = await prisma.productionRecord.findFirst({
+        where: { id, companyId, stage: ProductionStage.FABRIC_CHECKING },
+        select: { id: true },
+    });
+    if (!existing) throw new NotFoundError('Fabric checking record not found', 'FABRIC_CHECKING_NOT_FOUND', { id });
+
+    await prisma.$transaction(async (tx) => {
+        // WastageRecord has no onDelete: Cascade to ProductionRecord, so it
+        // must be cleared explicitly before the record itself can be deleted.
+        await tx.wastageRecord.deleteMany({ where: { productionRecordId: id } });
+        await tx.productionRecord.delete({ where: { id } });
+    });
+}

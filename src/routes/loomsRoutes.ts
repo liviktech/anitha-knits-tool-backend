@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createLooms, getLooms, listLooms, updateLooms } from '../controllers/loomsController.js';
+import { createLooms, deleteLooms, getLooms, listLooms, updateLooms } from '../controllers/loomsController.js';
 import { requireAuth } from '../middlewares/auth.js';
 
 const router = Router();
@@ -117,8 +117,20 @@ router.get('/', listLooms);
  *         $ref: '#/components/responses/ValidationError'
  *       404:
  *         $ref: '#/components/responses/NotFound'
+ *   delete:
+ *     tags: [Looms]
+ *     summary: Delete a Looms production record
+ *     description: Deletes the record and any WastageRecords linked to it. Requires the ADMIN, MANAGER, or SUPERVISOR role.
+ *     parameters:
+ *       - $ref: '#/components/parameters/LoomsId'
+ *     responses:
+ *       204:
+ *         description: Deleted.
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
  */
 router.get('/:id', getLooms);
 router.patch('/:id', requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'), updateLooms);
+router.delete('/:id', requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'), deleteLooms);
 
 export default router;

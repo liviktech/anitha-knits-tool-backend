@@ -5,6 +5,7 @@ import { getAuthContext } from '../utils/actor.js';
 import { parseOrThrow } from '../utils/validate.js';
 import {
     createFabricCheckingRecord,
+    deleteFabricCheckingRecord,
     getFabricCheckingRecordById,
     listFabricCheckingRecords,
     updateFabricCheckingRecord,
@@ -43,4 +44,11 @@ export const updateFabricChecking = asyncHandler(async (req: Request, res: Respo
     const { companyId, actor } = getAuthContext(req);
     const record = await updateFabricCheckingRecord(id, input, companyId, actor);
     sendSuccess(res, record);
+});
+
+export const deleteFabricChecking = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = parseOrThrow(fabricCheckingIdParamsSchema, req.params);
+    const { companyId } = getAuthContext(req);
+    await deleteFabricCheckingRecord(id, companyId);
+    res.status(204).send();
 });

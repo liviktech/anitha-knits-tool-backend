@@ -83,3 +83,67 @@ export async function buildWastageCreates(
         };
     });
 }
+
+/**
+ * Applies wastage edits made while updating an existing production record.
+ * Only include an entry for a (code) the caller actually wants to change —
+ * omit anything not being touched. For each included entry: updates the
+ * record's existing WastageRecord of that type if one exists, creates one if
+ * a positive quantity is given and none exists yet, or deletes the existing
+ * one if the new quantity is 0 (explicitly clearing that wastage).
+ *
+ * Runs inside the caller's transaction so it stays atomic with the rest of
+ * the update.
+ *
+ * Time: O(k) — k = number of wastage entries being updated (at most 2 today).
+ */
+export async function applyWastageUpdates(
+    tx: Prisma.TransactionClient,
+    productionRecordId: string,
+    stage: ProductionStage,
+    companyId: string,
+    actor: string,
+    entries: WastageEntryInput[],
+): Promise<void> {
+    for (const entry of entries) {
+        const type = await tx.wastageType.findUnique({
+            where: { companyId_stage_code: { companyId, stage, code: entry.code } },
+            select: { id: true, isActive: true },
+        });
+        if (!type || !type.isActive) {
+            throw new NotFoundError(
+                `Wastage type "${entry.code}" is not configured for stage ${stage}`,
+                'WASTAGE_TYPE_NOT_FOUND',
+                { stage, code: entry.code },
+            );
+        }
+
+        const existing = await tx.wastageRecord.findFirst({
+            where: { productionRecordId, wastageTypeId: type.id },
+            select: { id: true },
+        });
+
+        const quantityKg = entry.quantityKg ?? 0;
+        if (quantityKg > 0) {
+            if (existing) {
+                await tx.wastageRecord.update({
+                    where: { id: existing.id },
+                    data: { quantityKg, colorId: entry.colorId, updatedBy: actor },
+                });
+            } else {
+                await tx.wastageRecord.create({
+                    data: {
+                        companyId,
+                        productionRecordId,
+                        wastageTypeId: type.id,
+                        colorId: entry.colorId,
+                        quantityKg,
+                        createdBy: actor,
+                    },
+                });
+            }
+        } else if (existing) {
+            await tx.wastageRecord.delete({ where: { id: existing.id } });
+        }
+    }
+}

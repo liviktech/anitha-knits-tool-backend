@@ -5,6 +5,7 @@ import { getAuthContext } from '../utils/actor.js';
 import { parseOrThrow } from '../utils/validate.js';
 import {
     createLoomsProduction,
+    deleteLoomsProduction,
     getLoomsProductionById,
     listLoomsProductions,
     updateLoomsProduction,
@@ -43,4 +44,11 @@ export const updateLooms = asyncHandler(async (req: Request, res: Response) => {
     const { companyId, actor } = getAuthContext(req);
     const record = await updateLoomsProduction(id, input, companyId, actor);
     sendSuccess(res, record);
+});
+
+export const deleteLooms = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = parseOrThrow(loomsIdParamsSchema, req.params);
+    const { companyId } = getAuthContext(req);
+    await deleteLoomsProduction(id, companyId);
+    res.status(204).send();
 });

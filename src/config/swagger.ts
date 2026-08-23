@@ -443,6 +443,8 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     yarnOutputKg: { type: 'number', exclusiveMinimum: 0 },
                     remarks: { type: 'string', maxLength: 500 },
                     overrideReason: { type: 'string', maxLength: 500 },
+                    yarnWasteKg: { type: 'number', minimum: 0, description: 'Omit to leave unchanged, 0 to clear, positive to set/replace.' },
+                    lumpsKg: { type: 'number', minimum: 0, description: 'Omit to leave unchanged, 0 to clear, positive to set/replace.' },
                 },
             },
             PaginationMeta: {

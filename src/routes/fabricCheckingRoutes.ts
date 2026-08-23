@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
   createFabricChecking,
+  deleteFabricChecking,
   getFabricChecking,
   listFabricChecking,
   updateFabricChecking,
@@ -130,12 +131,28 @@ router.get('/', listFabricChecking);
  *         $ref: '#/components/responses/ValidationError'
  *       404:
  *         $ref: '#/components/responses/NotFound'
+ *   delete:
+ *     tags: [Fabric Checking]
+ *     summary: Delete a Fabric Checking record
+ *     description: Deletes the record and any WastageRecords linked to it. Requires the ADMIN, MANAGER, or SUPERVISOR role.
+ *     parameters:
+ *       - $ref: '#/components/parameters/FabricCheckingId'
+ *     responses:
+ *       204:
+ *         description: Deleted.
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
  */
 router.get('/:id', getFabricChecking);
 router.patch(
   '/:id',
   requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
   updateFabricChecking,
+);
+router.delete(
+  '/:id',
+  requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
+  deleteFabricChecking,
 );
 
 export default router;

@@ -43,6 +43,11 @@ export const updateExtruderSchema = z
         yarnOutputKg: kg,
         remarks: z.string().trim().max(500).optional(),
         overrideReason: z.string().trim().min(1).max(500).optional(),
+        // Wastage on an existing record (PRD §9): omit to leave untouched,
+        // 0 to clear it, or a positive number to set/replace it — see
+        // wastageService.applyWastageUpdates.
+        yarnWasteKg: wastageKg,
+        lumpsKg: wastageKg,
     })
     .partial()
     .strict()
