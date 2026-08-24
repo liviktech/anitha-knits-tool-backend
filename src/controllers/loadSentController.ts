@@ -7,6 +7,7 @@ import {
     createLoadSent,
     deleteLoadSent,
     getLoadSentById,
+    getStockBalance,
     listLoadSent,
     updateLoadSent,
 } from '../services/loadSentService.js';
@@ -22,6 +23,12 @@ export const createLoadSentHandler = asyncHandler(async (req: Request, res: Resp
     const { companyId, actor } = getAuthContext(req);
     const record = await createLoadSent(input, companyId, actor);
     sendSuccess(res, record, undefined, 201);
+});
+
+export const getStockBalanceHandler = asyncHandler(async (req: Request, res: Response) => {
+    const { companyId } = getAuthContext(req);
+    const data = await getStockBalance(companyId);
+    sendSuccess(res, data);
 });
 
 export const listLoadSentHandler = asyncHandler(async (req: Request, res: Response) => {

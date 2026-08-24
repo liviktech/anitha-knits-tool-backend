@@ -3,6 +3,7 @@ import {
     createLoadSentHandler,
     deleteLoadSentHandler,
     getLoadSentHandler,
+    getStockBalanceHandler,
     listLoadSentHandler,
     updateLoadSentHandler,
 } from '../controllers/loadSentController.js';
@@ -72,6 +73,40 @@ const router = Router();
  *         $ref: '#/components/responses/ValidationError'
  */
 router.post('/', requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'), createLoadSentHandler);
+/**
+ * @openapi
+ * /api/v1/load-sent/balance-stock:
+ *   get:
+ *     tags: [Load Sent]
+ *     summary: Fetch color- and size-based stock balances
+ *     description: Returns fabric checking output, wastages (FW & BW), load sent weights, and available stock balances grouped by color and size.
+ *     responses:
+ *       200:
+ *         description: OK.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean, example: true }
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       color: { $ref: '#/components/schemas/MasterDataRef' }
+ *                       size: { $ref: '#/components/schemas/MasterDataRef' }
+ *                       fabricCheckingOutputKg: { type: number, example: 500 }
+ *                       loadSentFabricWeightKg: { type: number, example: 350 }
+ *                       availableFabricStockKg: { type: number, example: 150 }
+ *                       wastageFwGeneratedKg: { type: number, example: 20 }
+ *                       loadSentFwWeightKg: { type: number, example: 15 }
+ *                       availableFwStockKg: { type: number, example: 5 }
+ *                       wastageBwGeneratedKg: { type: number, example: 30 }
+ *                       loadSentBwWeightKg: { type: number, example: 10 }
+ *                       availableBwStockKg: { type: number, example: 20 }
+ */
+router.get('/balance-stock', requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'), getStockBalanceHandler);
 router.get('/', listLoadSentHandler);
 
 /**
