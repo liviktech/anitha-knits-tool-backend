@@ -170,7 +170,7 @@ async function main() {
             dayTasks.push(
                 createLoadSent(
                     {
-                        date: day,
+                        productionDate: day,
                         colorId: color.id,
                         sizeId: size.id,
                         fabricWeight: randomFloat(15, 25),
