@@ -12,8 +12,9 @@ export const createLoadSentSchema = z
         date: z.coerce.date().optional(),
         colorId: z.string().uuid(),
         sizeId: z.string().uuid(),
-        pieceCount: z.coerce.number().int().positive('must be a positive integer'),
-        weightKg: z.coerce.number().positive('must be a positive number'),
+        fabricWeight: z.coerce.number().min(0).default(0),
+        fwWeight: z.coerce.number().min(0).default(0),
+        bwWeight: z.coerce.number().min(0).default(0),
     })
     .strict();
 
@@ -22,8 +23,9 @@ export const updateLoadSentSchema = z
         date: z.coerce.date(),
         colorId: z.string().uuid(),
         sizeId: z.string().uuid(),
-        pieceCount: z.coerce.number().int().positive('must be a positive integer'),
-        weightKg: z.coerce.number().positive('must be a positive number'),
+        fabricWeight: z.coerce.number().min(0),
+        fwWeight: z.coerce.number().min(0),
+        bwWeight: z.coerce.number().min(0),
     })
     .partial()
     .strict()

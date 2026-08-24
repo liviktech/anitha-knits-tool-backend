@@ -16,6 +16,8 @@ import type { CreateExtruderInput, UpdateExtruderInput, ListExtruderQuery } from
 // Match the schema's Decimal(12,3) precision when comparing a caller-supplied
 // colour consumption against the configured standard.
 const COLOR_CONSUMPTION_TOLERANCE_KG = 0.0005;
+const DEFAULT_OVERRIDE_REASON = 'Colour consumed was crossing the standard';
+
 
 const extruderSelect = {
     id: true,
@@ -116,11 +118,16 @@ async function resolveColorConsumption(
 
     const deviatesFromStandard = standardKg === null || Math.abs(requestedColorConsumedKg - standardKg) > COLOR_CONSUMPTION_TOLERANCE_KG;
 
+    //default ovverride reason
+    const resolvedOverrideReason = deviatesFromStandard
+        ? overrideReason?.trim() || DEFAULT_OVERRIDE_REASON
+        : null;
+
     // No overrideReason requirement: isRecipeOverridden still records the deviation, just without forcing a reason.
     return {
         colorConsumedKg: requestedColorConsumedKg,
         isRecipeOverridden: deviatesFromStandard,
-        overrideReason: overrideReason && overrideReason.trim().length > 0 ? overrideReason.trim() : null,
+        overrideReason: resolvedOverrideReason,
     };
 }
 

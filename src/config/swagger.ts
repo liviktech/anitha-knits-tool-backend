@@ -580,9 +580,6 @@ const definition: swaggerJsdoc.OAS3Definition = {
                 properties: {
                     fabricInputKg: { type: 'number', format: 'decimal', example: 192, description: 'Total fabric weight received for checking.' },
                     outputKg: { type: 'number', format: 'decimal', nullable: true, example: 170, description: 'Final stock / output weight.' },
-                    pieceCount: { type: 'integer', example: 20, description: 'No longer collected via the entry UI; defaults to 0 when omitted.' },
-                    firstGradeKg: { type: 'number', format: 'decimal', example: 170, description: 'No longer collected via the entry UI; defaults to 0 when omitted.' },
-                    secondGradeKg: { type: 'number', format: 'decimal', example: 18, description: 'No longer collected via the entry UI; defaults to 0 when omitted.' },
                 },
             },
             FabricCheckingRecord: {
@@ -613,9 +610,6 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     sizeId: { type: 'string', format: 'uuid' },
                     fabricInputKg: { type: 'number', exclusiveMinimum: 0, example: 192 },
                     outputKg: { type: 'number', minimum: 0, example: 170, description: 'Final stock / output weight.' },
-                    pieceCount: { type: 'integer', minimum: 0, example: 20, description: 'Deprecated — no longer collected via the entry UI.' },
-                    firstGradeKg: { type: 'number', minimum: 0, example: 170, description: 'Deprecated — no longer collected via the entry UI.' },
-                    secondGradeKg: { type: 'number', minimum: 0, example: 18, description: 'Deprecated — no longer collected via the entry UI.' },
                     remarks: { type: 'string', maxLength: 500 },
                     fwKg: { type: 'number', minimum: 0, description: 'Optional. Creates a WastageRecord (code FW) only if > 0.' },
                     bwKg: {
@@ -635,9 +629,6 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     colorId: { type: 'string', format: 'uuid' },
                     sizeId: { type: 'string', format: 'uuid' },
                     fabricInputKg: { type: 'number', exclusiveMinimum: 0 },
-                    pieceCount: { type: 'integer', exclusiveMinimum: 0 },
-                    firstGradeKg: { type: 'number', minimum: 0 },
-                    secondGradeKg: { type: 'number', minimum: 0 },
                     remarks: { type: 'string', maxLength: 500 },
                 },
             },
