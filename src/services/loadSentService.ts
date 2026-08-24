@@ -46,6 +46,9 @@ const loadSentSelect = {
     loadSent: {
         select: {
             fabricWeight: true,
+            fwWeight: true,
+            bwWeight: true,
+            totalWastageWeight: true,
         },
     },
 
@@ -84,8 +87,11 @@ function mapLoadSentRecord(
 
         loadSent: loadSent
             ? {
-                fabricWeight:
-                    loadSent.fabricWeight.toNumber(),
+                fabricWeight: loadSent.fabricWeight.toNumber(),
+                fwWeight: loadSent.fwWeight.toNumber(),
+                bwWeight: loadSent.bwWeight.toNumber(),
+                totalWastageWeight:
+                    loadSent.totalWastageWeight.toNumber(),
             }
             : null,
     };
@@ -252,51 +258,194 @@ export async function listLoadSent(
     };
 }
 
-export async function getLoadSentById(id: string, companyId: string) {
-    const record = await prisma.loadSent.findFirst({ where: { id, companyId }, select: loadSentSelect });
-    if (!record) throw new NotFoundError('Load Sent record not found', 'LOAD_SENT_NOT_FOUND', { id });
-    return mapLoadSentRecord(record);
-}
-
-export async function updateLoadSent(id: string, input: UpdateLoadSentInput, companyId: string, actor: string) {
-    const existing = await prisma.loadSent.findFirst({
-        where: { id, companyId },
-        select: { id: true, fabricWeight: true, fwWeight: true, bwWeight: true },
-    });
-    if (!existing) throw new NotFoundError('Load Sent record not found', 'LOAD_SENT_NOT_FOUND', { id });
-
-    await Promise.all([
-        input.colorId ? assertColorExists(input.colorId, companyId) : undefined,
-        input.sizeId ? assertSizeExists(input.sizeId, companyId) : undefined,
-    ]);
-
-    const fabricWeight = input.fabricWeight !== undefined ? input.fabricWeight : existing.fabricWeight.toNumber();
-    const fwWeight = input.fwWeight !== undefined ? input.fwWeight : existing.fwWeight.toNumber();
-    const bwWeight = input.bwWeight !== undefined ? input.bwWeight : existing.bwWeight.toNumber();
-    const totalWastageWeight = fwWeight + bwWeight;
-
-    const record = await prisma.loadSent.update({
-        where: { id },
-        data: {
-            ...(input.colorId !== undefined ? { colorId: input.colorId } : {}),
-            ...(input.sizeId !== undefined ? { sizeId: input.sizeId } : {}),
-            fabricWeight,
-            fwWeight,
-            bwWeight,
-            totalWastageWeight,
-            updatedBy: actor,
+export async function getLoadSentById(
+    id: string,
+    companyId: string,
+) {
+    const record = await prisma.productionRecord.findFirst({
+        where: {
+            id,
+            companyId,
+            stage: ProductionStage.DELIVERY,
+            loadSent: {
+                isNot: null,
+            },
         },
         select: loadSentSelect,
     });
 
+    if (!record) {
+        throw new NotFoundError(
+            'Load Sent record not found',
+            'LOAD_SENT_NOT_FOUND',
+            { id },
+        );
+    }
+
     return mapLoadSentRecord(record);
 }
 
-export async function deleteLoadSent(id: string, companyId: string) {
-    const existing = await prisma.loadSent.findFirst({ where: { id, companyId }, select: { id: true } });
-    if (!existing) throw new NotFoundError('Load Sent record not found', 'LOAD_SENT_NOT_FOUND', { id });
+export async function updateLoadSent(
+    id: string,
+    input: UpdateLoadSentInput,
+    companyId: string,
+    actor: string,
+) {
+    const existing =
+        await prisma.productionRecord.findFirst({
+            where: {
+                id,
+                companyId,
+                stage: ProductionStage.DELIVERY,
+                loadSent: {
+                    isNot: null,
+                },
+            },
 
-    await prisma.loadSent.delete({ where: { id } });
+            select: {
+                id: true,
+                productionDate: true,
+                colorId: true,
+                sizeId: true,
+
+                loadSent: {
+                    select: {
+                        fabricWeight: true,
+                        fwWeight: true,
+                        bwWeight: true,
+                    },
+                },
+            },
+        });
+
+    if (!existing || !existing.loadSent) {
+        throw new NotFoundError(
+            'Load Sent record not found',
+            'LOAD_SENT_NOT_FOUND',
+            { id },
+        );
+    }
+
+    // Validate new master-data IDs if supplied
+    await Promise.all([
+        input.colorId
+            ? assertColorExists(
+                input.colorId,
+                companyId,
+            )
+            : undefined,
+
+        input.sizeId
+            ? assertSizeExists(
+                input.sizeId,
+                companyId,
+            )
+            : undefined,
+    ]);
+
+    const fabricWeight =
+        input.fabricWeight !== undefined
+            ? input.fabricWeight
+            : existing.loadSent.fabricWeight.toNumber();
+
+    const fwWeight =
+        input.fwWeight !== undefined
+            ? input.fwWeight
+            : existing.loadSent.fwWeight.toNumber();
+
+    const bwWeight =
+        input.bwWeight !== undefined
+            ? input.bwWeight
+            : existing.loadSent.bwWeight.toNumber();
+
+    const totalWastageWeight =
+        fwWeight + bwWeight;
+
+    const record =
+        await prisma.productionRecord.update({
+            where: {
+                id,
+            },
+
+            data: {
+                ...(input.productionDate !== undefined
+                    ? {
+                        productionDate:
+                            input.productionDate,
+                    }
+                    : {}),
+
+                ...(input.colorId !== undefined
+                    ? {
+                        color: {
+                            connect: {
+                                id: input.colorId,
+                            },
+                        },
+                    }
+                    : {}),
+
+                ...(input.sizeId !== undefined
+                    ? {
+                        size: {
+                            connect: {
+                                id: input.sizeId,
+                            },
+                        },
+                    }
+                    : {}),
+
+                updatedBy: actor,
+
+                loadSent: {
+                    update: {
+                        fabricWeight,
+                        fwWeight,
+                        bwWeight,
+                        totalWastageWeight,
+                        updatedBy: actor,
+                    },
+                },
+            },
+
+            select: loadSentSelect,
+        });
+
+    return mapLoadSentRecord(record);
+}
+
+export async function deleteLoadSent(
+    id: string,
+    companyId: string,
+) {
+    const existing =
+        await prisma.productionRecord.findFirst({
+            where: {
+                id,
+                companyId,
+                stage: ProductionStage.DELIVERY,
+                loadSent: {
+                    isNot: null,
+                },
+            },
+            select: {
+                id: true,
+            },
+        });
+
+    if (!existing) {
+        throw new NotFoundError(
+            'Load Sent record not found',
+            'LOAD_SENT_NOT_FOUND',
+            { id },
+        );
+    }
+
+    await prisma.productionRecord.delete({
+        where: {
+            id,
+        },
+    });
 }
 
 export async function getStockBalance(companyId: string) {
