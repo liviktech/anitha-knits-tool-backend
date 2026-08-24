@@ -8,10 +8,10 @@ export const inventoryIdParamsSchema = z
     })
     .strict();
 
-/** Requires exactly the id field matching `type`: brandId for RAW_MATERIAL, chemicalId for CHEMICAL, colorId for COLOR. */
+/** Requires exactly the id field matching `type`: brandId for HDPE, chemicalId for CHEMICAL, colorId for COLOR. */
 function requireMatchingItemId(data: { type: InventoryType; brandId?: string; chemicalId?: string; colorId?: string }, ctx: z.RefinementCtx) {
     const fieldByType: Record<InventoryType, 'brandId' | 'chemicalId' | 'colorId'> = {
-        [InventoryType.RAW_MATERIAL]: 'brandId',
+        [InventoryType.HDPE]: 'brandId',
         [InventoryType.CHEMICAL]: 'chemicalId',
         [InventoryType.COLOR]: 'colorId',
     };

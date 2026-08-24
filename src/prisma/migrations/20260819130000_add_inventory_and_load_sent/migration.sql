@@ -1,5 +1,5 @@
 -- CreateEnum
-CREATE TYPE "InventoryType" AS ENUM ('RAW_MATERIAL', 'CHEMICAL', 'COLOR');
+CREATE TYPE "InventoryType" AS ENUM ('HDPE', 'CHEMICAL', 'COLOR');
 
 -- CreateTable
 CREATE TABLE "inventory" (

@@ -62,7 +62,7 @@ router.use(stockRoutes);
  *         schema: { type: string, format: date }
  *       - name: type
  *         in: query
- *         schema: { type: string, enum: [RAW_MATERIAL, CHEMICAL, COLOR] }
+ *         schema: { type: string, enum: [HDPE, CHEMICAL, COLOR] }
  *       - name: name
  *         in: query
  *         schema: { type: string }

@@ -35,7 +35,7 @@ function mapInventoryRecord(record: InventoryRow) {
 /** Resolves the linked brand/chemical/colour for an intake and returns its name (used only on first-ever intake of that item) alongside the matching item reference. */
 async function resolveItem(input: CreateInventoryInput, companyId: string) {
   switch (input.type) {
-    case InventoryType.RAW_MATERIAL: {
+    case InventoryType.HDPE: {
       const brand = await prisma.brand.findFirst({
         where: { id: input.brandId, companyId },
         select: { name: true },
@@ -102,11 +102,11 @@ export async function listInventory(
     companyId,
     ...(query.date_from || query.date_to
       ? {
-          date: {
-            ...(query.date_from ? { gte: query.date_from } : {}),
-            ...(query.date_to ? { lte: query.date_to } : {}),
-          },
-        }
+        date: {
+          ...(query.date_from ? { gte: query.date_from } : {}),
+          ...(query.date_to ? { lte: query.date_to } : {}),
+        },
+      }
       : {}),
     ...(query.type ? { type: query.type } : {}),
     ...(query.name
