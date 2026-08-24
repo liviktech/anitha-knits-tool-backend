@@ -38,7 +38,7 @@ export async function createLoadSent(input: CreateLoadSentInput, companyId: stri
     const fabricWeight = input.fabricWeight ?? 0;
     const fwWeight = input.fwWeight ?? 0;
     const bwWeight = input.bwWeight ?? 0;
-    const totalWastageWeight = fabricWeight + fwWeight + bwWeight;
+    const totalWastageWeight = fwWeight + bwWeight;
 
     const record = await prisma.loadSent.create({
         data: {
@@ -110,7 +110,7 @@ export async function updateLoadSent(id: string, input: UpdateLoadSentInput, com
     const fabricWeight = input.fabricWeight !== undefined ? input.fabricWeight : existing.fabricWeight.toNumber();
     const fwWeight = input.fwWeight !== undefined ? input.fwWeight : existing.fwWeight.toNumber();
     const bwWeight = input.bwWeight !== undefined ? input.bwWeight : existing.bwWeight.toNumber();
-    const totalWastageWeight = fabricWeight + fwWeight + bwWeight;
+    const totalWastageWeight = fwWeight + bwWeight;
 
     const record = await prisma.loadSent.update({
         where: { id },
