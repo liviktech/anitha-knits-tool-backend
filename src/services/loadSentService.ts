@@ -65,11 +65,11 @@ export async function listLoadSent(query: ListLoadSentQuery, companyId: string) 
         companyId,
         ...(query.date_from || query.date_to
             ? {
-                  date: {
-                      ...(query.date_from ? { gte: query.date_from } : {}),
-                      ...(query.date_to ? { lte: query.date_to } : {}),
-                  },
-              }
+                sentDate: {
+                    ...(query.date_from ? { gte: query.date_from } : {}),
+                    ...(query.date_to ? { lte: query.date_to } : {}),
+                },
+            }
             : {}),
         ...(query.color_id ? { colorId: query.color_id } : {}),
         ...(query.size_id ? { sizeId: query.size_id } : {}),
@@ -115,7 +115,7 @@ export async function updateLoadSent(id: string, input: UpdateLoadSentInput, com
     const record = await prisma.loadSent.update({
         where: { id },
         data: {
-            ...(input.date !== undefined ? { date: input.date } : {}),
+            ...(input.date !== undefined ? { sentDate: input.date } : {}),
             ...(input.colorId !== undefined ? { colorId: input.colorId } : {}),
             ...(input.sizeId !== undefined ? { sizeId: input.sizeId } : {}),
             fabricWeight,

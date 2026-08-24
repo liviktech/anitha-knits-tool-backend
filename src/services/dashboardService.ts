@@ -88,7 +88,7 @@ export async function getProductionDashboard(query: DashboardProductionQuery, co
             where: { companyId, stage: ProductionStage.FABRIC_CHECKING, productionDate },
             select: {
                 productionDate: true,
-                fabricCheck: { select: { fabricInputKg: true, outputKg: true, firstGradeKg: true, secondGradeKg: true } },
+                fabricCheck: { select: { fabricInputKg: true, outputKg: true } },
             },
         }),
         prisma.wastageRecord.findMany({
@@ -131,12 +131,8 @@ export async function getProductionDashboard(query: DashboardProductionQuery, co
         if (!row.fabricCheck) continue;
         const totals = bucket(row.productionDate).fabricChecking;
         totals.inputKg += row.fabricCheck.fabricInputKg.toNumber();
-        // outputKg is the entry screen's single Final Stock/Output figure;
-        // records created before that field existed fall back to
-        // firstGradeKg + secondGradeKg so old data still totals sensibly.
-        totals.outputKg +=
-            row.fabricCheck.outputKg?.toNumber() ??
-            row.fabricCheck.firstGradeKg.toNumber() + row.fabricCheck.secondGradeKg.toNumber();
+        // outputKg is the entry screen's single Final Stock/Output figure.
+        totals.outputKg += row.fabricCheck.outputKg?.toNumber() ?? 0;
     }
     const stageKeyByStage: Record<ProductionStage, StageKey | undefined> = {
         [ProductionStage.EXTRUDER]: 'extruder',

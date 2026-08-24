@@ -20,8 +20,6 @@ const router = Router();
  *       Creates a ProductionRecord (stage=FABRIC_CHECKING) with its
  *       FabricCheckDetail in one transaction. Validates that colorId/sizeId
  *       exist. No approval workflow — the record is immediately final.
- *       firstGradeKg/secondGradeKg are not validated against fabricInputKg —
- *       reconciliation variances are surfaced for review, not blocked here.
  *       Optionally accepts fwKg/bwKg; each becomes a WastageRecord (codes
  *       FW/BW) in the same transaction, but only when > 0. BW is colour-
  *       tracked (PRD "B White"/"B Blue"), so its WastageRecord.colorId is set

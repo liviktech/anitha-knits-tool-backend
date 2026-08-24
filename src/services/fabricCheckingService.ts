@@ -35,9 +35,6 @@ const fabricCheckingSelect = {
     fabricCheck: {
         select: {
             fabricInputKg: true,
-            pieceCount: true,
-            firstGradeKg: true,
-            secondGradeKg: true,
             outputKg: true,
         },
     },
@@ -57,9 +54,6 @@ function mapFabricCheckingRecord(record: FabricCheckingRecordRow) {
         fabricCheck: fabricCheck
             ? {
                   fabricInputKg: fabricCheck.fabricInputKg.toNumber(),
-                  pieceCount: fabricCheck.pieceCount,
-                  firstGradeKg: fabricCheck.firstGradeKg.toNumber(),
-                  secondGradeKg: fabricCheck.secondGradeKg.toNumber(),
                   outputKg: fabricCheck.outputKg ? fabricCheck.outputKg.toNumber() : null,
               }
             : null,
@@ -89,12 +83,6 @@ export async function createFabricCheckingRecord(input: CreateFabricCheckingInpu
             fabricCheck: {
                 create: {
                     fabricInputKg: input.fabricInputKg,
-                    // pieceCount/firstGradeKg/secondGradeKg are no longer
-                    // collected via the entry UI — the columns stay NOT NULL,
-                    // so default to 0 rather than leave the create() incomplete.
-                    pieceCount: input.pieceCount ?? 0,
-                    firstGradeKg: input.firstGradeKg ?? 0,
-                    secondGradeKg: input.secondGradeKg ?? 0,
                     outputKg: input.outputKg,
                 },
             },
@@ -161,9 +149,6 @@ export async function updateFabricCheckingRecord(id: string, input: UpdateFabric
             where: { productionRecordId: id },
             data: {
                 ...(input.fabricInputKg !== undefined ? { fabricInputKg: input.fabricInputKg } : {}),
-                ...(input.pieceCount !== undefined ? { pieceCount: input.pieceCount } : {}),
-                ...(input.firstGradeKg !== undefined ? { firstGradeKg: input.firstGradeKg } : {}),
-                ...(input.secondGradeKg !== undefined ? { secondGradeKg: input.secondGradeKg } : {}),
             },
         });
 
