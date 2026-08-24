@@ -182,35 +182,74 @@ export async function createLoadSent(
 
     return mapLoadSentRecord(record);
 }
-export async function listLoadSent(query: ListLoadSentQuery, companyId: string) {
+export async function listLoadSent(
+    query: ListLoadSentQuery,
+    companyId: string,
+) {
     const { skip, take } = toSkipTake(query);
 
-    const where: Prisma.LoadSentWhereInput = {
+    const where: Prisma.ProductionRecordWhereInput = {
         companyId,
+        stage: ProductionStage.DELIVERY,
+
         ...(query.date_from || query.date_to
             ? {
-                sentDate: {
-                    ...(query.date_from ? { gte: query.date_from } : {}),
-                    ...(query.date_to ? { lte: query.date_to } : {}),
+                productionDate: {
+                    ...(query.date_from
+                        ? { gte: query.date_from }
+                        : {}),
+
+                    ...(query.date_to
+                        ? { lte: query.date_to }
+                        : {}),
                 },
             }
             : {}),
-        ...(query.color_id ? { colorId: query.color_id } : {}),
-        ...(query.size_id ? { sizeId: query.size_id } : {}),
+
+        ...(query.color_id
+            ? {
+                colorId: query.color_id,
+            }
+            : {}),
+
+        ...(query.size_id
+            ? {
+                sizeId: query.size_id,
+            }
+            : {}),
+
+        loadSent: {
+            isNot: null,
+        },
     };
 
     const [rows, total] = await prisma.$transaction([
-        prisma.loadSent.findMany({
+        prisma.productionRecord.findMany({
             where,
             select: loadSentSelect,
-            orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+
+            orderBy: [
+                {
+                    productionDate: 'desc',
+                },
+                {
+                    createdAt: 'desc',
+                },
+            ],
+
             skip,
             take,
         }),
-        prisma.loadSent.count({ where }),
+
+        prisma.productionRecord.count({
+            where,
+        }),
     ]);
 
-    return { items: rows.map(mapLoadSentRecord), meta: toPageMeta(query, total) };
+    return {
+        items: rows.map(mapLoadSentRecord),
+        meta: toPageMeta(query, total),
+    };
 }
 
 export async function getLoadSentById(id: string, companyId: string) {
