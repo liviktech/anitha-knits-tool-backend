@@ -94,7 +94,7 @@ async function main() {
     // never runs an item negative — plenty of headroom for demo purposes.
     console.log('Seeding opening Inventory balances...');
     await Promise.all([
-        ...brands.map((brand) => createInventory({ type: InventoryType.RAW_MATERIAL, brandId: brand.id, quantityKg: 1_000_000 }, companyId, SYSTEM)),
+        ...brands.map((brand) => createInventory({ type: InventoryType.HDPE, brandId: brand.id, quantityKg: 1_000_000 }, companyId, SYSTEM)),
         ...chemicals.map((chemical) => createInventory({ type: InventoryType.CHEMICAL, chemicalId: chemical.id, quantityKg: 1_000_000 }, companyId, SYSTEM)),
         ...colors.map((color) => createInventory({ type: InventoryType.COLOR, colorId: color.id, quantityKg: 1_000_000 }, companyId, SYSTEM)),
     ]);
@@ -183,13 +183,13 @@ async function main() {
             );
 
             // Occasional top-up intake, representing periodic restocking.
-            const invType = randomItem([InventoryType.RAW_MATERIAL, InventoryType.CHEMICAL, InventoryType.COLOR]);
+            const invType = randomItem([InventoryType.HDPE, InventoryType.CHEMICAL, InventoryType.COLOR]);
             const invInput =
-                invType === InventoryType.RAW_MATERIAL
+                invType === InventoryType.HDPE
                     ? { type: invType, brandId: randomItem(brands).id }
                     : invType === InventoryType.CHEMICAL
-                      ? { type: invType, chemicalId: randomItem(chemicals).id }
-                      : { type: invType, colorId: color.id };
+                        ? { type: invType, chemicalId: randomItem(chemicals).id }
+                        : { type: invType, colorId: color.id };
             dayTasks.push(
                 createInventory(
                     { date: day, quantityKg: randomFloat(100, 500), ...invInput },
