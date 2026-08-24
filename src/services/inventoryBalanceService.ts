@@ -10,7 +10,7 @@ import { ConflictError } from '../utils/errors.js';
  */
 
 type ItemRef =
-    | { type: typeof InventoryType.RAW_MATERIAL; brandId: string }
+    | { type: typeof InventoryType.HDPE; brandId: string }
     | { type: typeof InventoryType.CHEMICAL; chemicalId: string }
     | { type: typeof InventoryType.COLOR; colorId: string };
 
@@ -31,7 +31,7 @@ function roundKg(value: number): number {
 
 function itemWhere(input: ItemRef, companyId: string): Prisma.InventoryWhereInput {
     switch (input.type) {
-        case InventoryType.RAW_MATERIAL:
+        case InventoryType.HDPE:
             return { companyId, type: input.type, brandId: input.brandId };
         case InventoryType.CHEMICAL:
             return { companyId, type: input.type, chemicalId: input.chemicalId };
@@ -42,7 +42,7 @@ function itemWhere(input: ItemRef, companyId: string): Prisma.InventoryWhereInpu
 
 function itemData(input: ItemRef): Pick<Prisma.InventoryUncheckedCreateInput, 'brandId' | 'chemicalId' | 'colorId'> {
     switch (input.type) {
-        case InventoryType.RAW_MATERIAL:
+        case InventoryType.HDPE:
             return { brandId: input.brandId };
         case InventoryType.CHEMICAL:
             return { chemicalId: input.chemicalId };
@@ -53,7 +53,7 @@ function itemData(input: ItemRef): Pick<Prisma.InventoryUncheckedCreateInput, 'b
 
 function itemId(input: ItemRef): string {
     switch (input.type) {
-        case InventoryType.RAW_MATERIAL:
+        case InventoryType.HDPE:
             return input.brandId;
         case InventoryType.CHEMICAL:
             return input.chemicalId;

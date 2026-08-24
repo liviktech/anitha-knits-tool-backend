@@ -43,7 +43,7 @@ enum ProductionRecordType {
 }
 
 enum InventoryType {
-  RAW_MATERIAL
+  HDPE
 
   CHEMICAL
 

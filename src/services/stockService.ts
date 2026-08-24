@@ -53,7 +53,7 @@ export async function getInventoryStockSummary(companyId: string) {
     const intakeByColor = new Map<string, number>();
     for (const row of inventoryRows) {
         const kg = row.weightKg.toNumber();
-        if (row.type === InventoryType.RAW_MATERIAL && row.brandId) intakeByBrand.set(row.brandId, kg);
+        if (row.type === InventoryType.HDPE && row.brandId) intakeByBrand.set(row.brandId, kg);
         else if (row.type === InventoryType.CHEMICAL && row.chemicalId) intakeByChemical.set(row.chemicalId, kg);
         else if (row.type === InventoryType.COLOR && row.colorId) intakeByColor.set(row.colorId, kg);
     }

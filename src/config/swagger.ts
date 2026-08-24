@@ -728,10 +728,10 @@ const definition: swaggerJsdoc.OAS3Definition = {
                 properties: {
                     id: { type: 'string', format: 'uuid' },
                     date: { type: 'string', format: 'date-time' },
-                    type: { type: 'string', enum: ['RAW_MATERIAL', 'CHEMICAL', 'COLOR'] },
+                    type: { type: 'string', enum: ['HDPE', 'CHEMICAL', 'COLOR'] },
                     name: { type: 'string', example: 'Reliance', description: 'Auto-filled from the linked brand/chemical/colour.' },
                     weightKg: { type: 'number', format: 'decimal', example: 250, description: 'Current balance on hand.' },
-                    brand: { allOf: [{ $ref: '#/components/schemas/MasterDataRef' }], nullable: true, description: 'Set when type is RAW_MATERIAL.' },
+                    brand: { allOf: [{ $ref: '#/components/schemas/MasterDataRef' }], nullable: true, description: 'Set when type is HDPE.' },
                     chemical: { allOf: [{ $ref: '#/components/schemas/MasterDataRef' }], nullable: true, description: 'Set when type is CHEMICAL.' },
                     color: { allOf: [{ $ref: '#/components/schemas/MasterDataRef' }], nullable: true, description: 'Set when type is COLOR.' },
                     createdAt: { type: 'string', format: 'date-time' },
@@ -747,8 +747,8 @@ const definition: swaggerJsdoc.OAS3Definition = {
                 additionalProperties: false,
                 properties: {
                     date: { type: 'string', format: 'date', description: 'Optional. Defaults to now.' },
-                    type: { type: 'string', enum: ['RAW_MATERIAL', 'CHEMICAL', 'COLOR'] },
-                    brandId: { type: 'string', format: 'uuid', description: 'Required when type is RAW_MATERIAL.' },
+                    type: { type: 'string', enum: ['HDPE', 'CHEMICAL', 'COLOR'] },
+                    brandId: { type: 'string', format: 'uuid', description: 'Required when type is HDPE.' },
                     chemicalId: { type: 'string', format: 'uuid', description: 'Required when type is CHEMICAL.' },
                     colorId: { type: 'string', format: 'uuid', description: 'Required when type is COLOR.' },
                     quantityKg: { type: 'number', exclusiveMinimum: 0, example: 250 },
