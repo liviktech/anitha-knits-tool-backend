@@ -543,7 +543,7 @@ model LoadSent {
 
   updatedBy String? @map("updated_by") @db.VarChar(100)
 
-  @@index([companyId, date])
+  @@index([companyId])
   @@index([colorId])
   @@index([sizeId])
   @@index([productionRecordId])
