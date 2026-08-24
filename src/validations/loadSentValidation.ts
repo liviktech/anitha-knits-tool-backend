@@ -9,23 +9,23 @@ export const loadSentIdParamsSchema = z
 
 export const createLoadSentSchema = z
     .object({
-        date: z.coerce.date().optional(),
+        productionDate: z.coerce.date(),
         colorId: z.string().uuid(),
         sizeId: z.string().uuid(),
         fabricWeight: z.coerce.number().min(0).default(0),
-        fwWeight: z.coerce.number().min(0).default(0),
-        bwWeight: z.coerce.number().min(0).default(0),
+        fwWeight: z.coerce.number().min(0).default(0).optional(),
+        bwWeight: z.coerce.number().min(0).default(0).optional(),
     })
     .strict();
 
 export const updateLoadSentSchema = z
     .object({
-        date: z.coerce.date(),
+        productionDate: z.coerce.date(),
         colorId: z.string().uuid(),
         sizeId: z.string().uuid(),
         fabricWeight: z.coerce.number().min(0),
-        fwWeight: z.coerce.number().min(0),
-        bwWeight: z.coerce.number().min(0),
+        fwWeight: z.coerce.number().min(0).optional(),
+        bwWeight: z.coerce.number().min(0).optional(),
     })
     .partial()
     .strict()

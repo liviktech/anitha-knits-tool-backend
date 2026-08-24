@@ -1,92 +1,255 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, ProductionStage } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { NotFoundError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import { assertColorExists, assertSizeExists } from './masterDataService.js';
 import type { CreateLoadSentInput, UpdateLoadSentInput, ListLoadSentQuery } from '../validations/loadSentValidation.js';
 
+// const loadSentSelect = {
+//     id: true,
+//     date: true,
+//     color: { select: { id: true, name: true } },
+//     size: { select: { id: true, name: true } },
+//     fabricWeight: true,
+//     fwWeight: true,
+//     bwWeight: true,
+//     totalWastageWeight: true,
+//     createdAt: true,
+//     createdBy: true,
+//     updatedAt: true,
+//     updatedBy: true,
+// } satisfies Prisma.LoadSentSelect;
+
 const loadSentSelect = {
     id: true,
-    date: true,
-    color: { select: { id: true, name: true } },
-    size: { select: { id: true, name: true } },
-    fabricWeight: true,
-    fwWeight: true,
-    bwWeight: true,
-    totalWastageWeight: true,
+
+    stage: true,
+
+    productionDate: true,
+
+    remarks: true,
+
+    color: {
+        select: {
+            id: true,
+            name: true,
+        },
+    },
+
+    size: {
+        select: {
+            id: true,
+            name: true,
+        },
+    },
+
+    loadSent: {
+        select: {
+            fabricWeight: true,
+        },
+    },
+
     createdAt: true,
     createdBy: true,
+
     updatedAt: true,
     updatedBy: true,
-} satisfies Prisma.LoadSentSelect;
+} satisfies Prisma.ProductionRecordSelect;
 
-type LoadSentRow = Prisma.LoadSentGetPayload<{ select: typeof loadSentSelect }>;
+// type LoadSentRow = Prisma.LoadSentGetPayload<{ select: typeof loadSentSelect }>;
+type LoadSentRecordRow =
+    Prisma.ProductionRecordGetPayload<{
+        select: typeof loadSentSelect;
+    }>;
+// function mapLoadSentRecord(record: LoadSentRow) {
+//     return {
+//         ...record,
+//         fabricWeight: record.fabricWeight.toNumber(),
+//         fwWeight: record.fwWeight.toNumber(),
+//         bwWeight: record.bwWeight.toNumber(),
+//         totalWastageWeight: record.totalWastageWeight.toNumber(),
+//     };
+// }
 
-function mapLoadSentRecord(record: LoadSentRow) {
+function mapLoadSentRecord(
+    record: LoadSentRecordRow,
+) {
+    const {
+        loadSent,
+        ...rest
+    } = record;
+
     return {
-        ...record,
-        fabricWeight: record.fabricWeight.toNumber(),
-        fwWeight: record.fwWeight.toNumber(),
-        bwWeight: record.bwWeight.toNumber(),
-        totalWastageWeight: record.totalWastageWeight.toNumber(),
+        ...rest,
+
+        loadSent: loadSent
+            ? {
+                fabricWeight:
+                    loadSent.fabricWeight.toNumber(),
+            }
+            : null,
     };
 }
+// export async function createLoadSent(input: CreateLoadSentInput, companyId: string, actor: string) {
+//     await Promise.all([assertColorExists(input.colorId, companyId), assertSizeExists(input.sizeId, companyId)]);
 
-export async function createLoadSent(input: CreateLoadSentInput, companyId: string, actor: string) {
-    await Promise.all([assertColorExists(input.colorId, companyId), assertSizeExists(input.sizeId, companyId)]);
+//     const fabricWeight = input.fabricWeight ?? 0;
+//     const fwWeight = 0;
+//     const bwWeight = 0;
+//     const totalWastageWeight = 0;
 
-    const fabricWeight = input.fabricWeight ?? 0;
-    const fwWeight = input.fwWeight ?? 0;
-    const bwWeight = input.bwWeight ?? 0;
-    const totalWastageWeight = fwWeight + bwWeight;
+//     const record = await prisma.loadSent.create({
+//         data: {
+//             companyId,
+//             date: input.date,
+//             colorId: input.colorId,
+//             sizeId: input.sizeId,
+//             fabricWeight,
+//             fwWeight,
+//             bwWeight,
+//             totalWastageWeight,
+//             createdBy: actor,
+//         },
+//         select: loadSentSelect,
+//     });
 
-    const record = await prisma.loadSent.create({
-        data: {
+//     return mapLoadSentRecord(record);
+// }
+
+export async function createLoadSent(
+    input: CreateLoadSentInput,
+    companyId: string,
+    actor: string,
+) {
+    await Promise.all([
+        assertColorExists(
+            input.colorId,
             companyId,
-            date: input.date,
-            colorId: input.colorId,
-            sizeId: input.sizeId,
-            fabricWeight,
-            fwWeight,
-            bwWeight,
-            totalWastageWeight,
-            createdBy: actor,
-        },
-        select: loadSentSelect,
-    });
+        ),
+
+        assertSizeExists(
+            input.sizeId,
+            companyId,
+        ),
+    ]);
+
+    const record =
+        await prisma.productionRecord.create({
+            data: {
+                companyId,
+
+                stage:
+                    ProductionStage.DELIVERY,
+
+                productionDate:
+                    input.productionDate,
+
+                colorId:
+                    input.colorId,
+
+                sizeId:
+                    input.sizeId,
+
+                createdBy:
+                    actor,
+
+                loadSent: {
+                    create: {
+                        company: {
+                            connect: {
+                                id: companyId,
+                            },
+                        },
+                        color: {
+                            connect: {
+                                id: input.colorId,
+                            },
+                        },
+                        size: {
+                            connect: {
+                                id: input.sizeId,
+                            },
+                        },
+                        fabricWeight: input.fabricWeight,
+                        createdBy: actor,
+                    },
+                },
+            },
+
+            select:
+                loadSentSelect,
+        });
 
     return mapLoadSentRecord(record);
 }
-
-export async function listLoadSent(query: ListLoadSentQuery, companyId: string) {
+export async function listLoadSent(
+    query: ListLoadSentQuery,
+    companyId: string,
+) {
     const { skip, take } = toSkipTake(query);
 
-    const where: Prisma.LoadSentWhereInput = {
+    const where: Prisma.ProductionRecordWhereInput = {
         companyId,
+        stage: ProductionStage.DELIVERY,
+
         ...(query.date_from || query.date_to
             ? {
-                sentDate: {
-                    ...(query.date_from ? { gte: query.date_from } : {}),
-                    ...(query.date_to ? { lte: query.date_to } : {}),
+                productionDate: {
+                    ...(query.date_from
+                        ? { gte: query.date_from }
+                        : {}),
+
+                    ...(query.date_to
+                        ? { lte: query.date_to }
+                        : {}),
                 },
             }
             : {}),
-        ...(query.color_id ? { colorId: query.color_id } : {}),
-        ...(query.size_id ? { sizeId: query.size_id } : {}),
+
+        ...(query.color_id
+            ? {
+                colorId: query.color_id,
+            }
+            : {}),
+
+        ...(query.size_id
+            ? {
+                sizeId: query.size_id,
+            }
+            : {}),
+
+        loadSent: {
+            isNot: null,
+        },
     };
 
     const [rows, total] = await prisma.$transaction([
-        prisma.loadSent.findMany({
+        prisma.productionRecord.findMany({
             where,
             select: loadSentSelect,
-            orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+
+            orderBy: [
+                {
+                    productionDate: 'desc',
+                },
+                {
+                    createdAt: 'desc',
+                },
+            ],
+
             skip,
             take,
         }),
-        prisma.loadSent.count({ where }),
+
+        prisma.productionRecord.count({
+            where,
+        }),
     ]);
 
-    return { items: rows.map(mapLoadSentRecord), meta: toPageMeta(query, total) };
+    return {
+        items: rows.map(mapLoadSentRecord),
+        meta: toPageMeta(query, total),
+    };
 }
 
 export async function getLoadSentById(id: string, companyId: string) {
@@ -115,7 +278,6 @@ export async function updateLoadSent(id: string, input: UpdateLoadSentInput, com
     const record = await prisma.loadSent.update({
         where: { id },
         data: {
-            ...(input.date !== undefined ? { sentDate: input.date } : {}),
             ...(input.colorId !== undefined ? { colorId: input.colorId } : {}),
             ...(input.sizeId !== undefined ? { sizeId: input.sizeId } : {}),
             fabricWeight,

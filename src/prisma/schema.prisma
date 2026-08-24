@@ -523,7 +523,6 @@ model LoadSent {
   companyId String  @map("company_id") @db.Uuid
   company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  date               DateTime          @default(now())
   productionRecordId String?           @unique @map("production_record_id") @db.Uuid
   productionRecord   ProductionRecord? @relation(fields: [productionRecordId], references: [id], onDelete: Cascade)
 
@@ -544,7 +543,7 @@ model LoadSent {
 
   updatedBy String? @map("updated_by") @db.VarChar(100)
 
-  @@index([companyId, date])
+  @@index([companyId])
   @@index([colorId])
   @@index([sizeId])
   @@index([productionRecordId])
