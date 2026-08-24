@@ -465,9 +465,6 @@ model WastageRecord {
 
   updatedBy String? @map("updated_by") @db.VarChar(100)
 
-  loadSent   LoadSent? @relation(fields: [loadSentId], references: [id])
-  loadSentId String?   @db.Uuid
-
   @@index([companyId])
   @@index([productionRecordId])
   @@index([wastageTypeId])
@@ -530,14 +527,14 @@ model LoadSent {
   productionRecordId String?           @unique @map("production_record_id") @db.Uuid
   productionRecord   ProductionRecord? @relation(fields: [productionRecordId], references: [id], onDelete: Cascade)
 
-  colorId       String  @map("color_id") @db.Uuid
-  color         Color   @relation(fields: [colorId], references: [id])
-  sizeId        String  @map("size_id") @db.Uuid
-  size          Size    @relation(fields: [sizeId], references: [id])
-  fabricWeight  Decimal @default(0) @map("fabric_weight") @db.Decimal(12, 3)
-  fwWeight      Decimal @default(0) @map("fw_weight") @db.Decimal(12, 3)
-  bwWeight      Decimal @default(0) @map("bw_weight") @db.Decimal(12, 3)
-  totalWeightkg Decimal @default(0) @map("total_weight_kg") @db.Decimal(12, 3)
+  colorId            String  @map("color_id") @db.Uuid
+  color              Color   @relation(fields: [colorId], references: [id])
+  sizeId             String  @map("size_id") @db.Uuid
+  size               Size    @relation(fields: [sizeId], references: [id])
+  fabricWeight       Decimal @default(0) @map("fabric_weight") @db.Decimal(12, 3)
+  fwWeight           Decimal @default(0) @map("fw_weight") @db.Decimal(12, 3)
+  bwWeight           Decimal @default(0) @map("bw_weight") @db.Decimal(12, 3)
+  totalWastageWeight Decimal @default(0) @map("total_wastage_weight") @db.Decimal(12, 3)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -545,8 +542,7 @@ model LoadSent {
 
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  updatedBy      String?         @map("updated_by") @db.VarChar(100)
-  wastageRecords WastageRecord[]
+  updatedBy String? @map("updated_by") @db.VarChar(100)
 
   @@index([companyId, date])
   @@index([colorId])

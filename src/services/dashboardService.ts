@@ -138,6 +138,7 @@ export async function getProductionDashboard(query: DashboardProductionQuery, co
         [ProductionStage.EXTRUDER]: 'extruder',
         [ProductionStage.LOOMS]: 'looms',
         [ProductionStage.FABRIC_CHECKING]: 'fabricChecking',
+        [ProductionStage.DELIVERY]: undefined,
     };
     for (const row of wastageRows) {
         const key = stageKeyByStage[row.productionRecord.stage];

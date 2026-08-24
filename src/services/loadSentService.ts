@@ -13,7 +13,7 @@ const loadSentSelect = {
     fabricWeight: true,
     fwWeight: true,
     bwWeight: true,
-    totalWeightkg: true,
+    totalWastageWeight: true,
     createdAt: true,
     createdBy: true,
     updatedAt: true,
@@ -28,7 +28,7 @@ function mapLoadSentRecord(record: LoadSentRow) {
         fabricWeight: record.fabricWeight.toNumber(),
         fwWeight: record.fwWeight.toNumber(),
         bwWeight: record.bwWeight.toNumber(),
-        totalWeightkg: record.totalWeightkg.toNumber(),
+        totalWastageWeight: record.totalWastageWeight.toNumber(),
     };
 }
 
@@ -38,7 +38,7 @@ export async function createLoadSent(input: CreateLoadSentInput, companyId: stri
     const fabricWeight = input.fabricWeight ?? 0;
     const fwWeight = input.fwWeight ?? 0;
     const bwWeight = input.bwWeight ?? 0;
-    const totalWeightkg = fabricWeight + fwWeight + bwWeight;
+    const totalWastageWeight = fabricWeight + fwWeight + bwWeight;
 
     const record = await prisma.loadSent.create({
         data: {
@@ -49,7 +49,7 @@ export async function createLoadSent(input: CreateLoadSentInput, companyId: stri
             fabricWeight,
             fwWeight,
             bwWeight,
-            totalWeightkg,
+            totalWastageWeight,
             createdBy: actor,
         },
         select: loadSentSelect,
@@ -110,7 +110,7 @@ export async function updateLoadSent(id: string, input: UpdateLoadSentInput, com
     const fabricWeight = input.fabricWeight !== undefined ? input.fabricWeight : existing.fabricWeight.toNumber();
     const fwWeight = input.fwWeight !== undefined ? input.fwWeight : existing.fwWeight.toNumber();
     const bwWeight = input.bwWeight !== undefined ? input.bwWeight : existing.bwWeight.toNumber();
-    const totalWeightkg = fabricWeight + fwWeight + bwWeight;
+    const totalWastageWeight = fabricWeight + fwWeight + bwWeight;
 
     const record = await prisma.loadSent.update({
         where: { id },
@@ -121,7 +121,7 @@ export async function updateLoadSent(id: string, input: UpdateLoadSentInput, com
             fabricWeight,
             fwWeight,
             bwWeight,
-            totalWeightkg,
+            totalWastageWeight,
             updatedBy: actor,
         },
         select: loadSentSelect,
