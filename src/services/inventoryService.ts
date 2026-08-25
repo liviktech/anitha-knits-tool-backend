@@ -85,6 +85,7 @@ export async function createInventory(
       deltaKg: input.quantityKg,
       actor,
       name,
+      DC: input.DC,
       date: input.date,
     }),
   );

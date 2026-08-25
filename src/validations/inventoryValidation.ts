@@ -25,6 +25,7 @@ export const createInventorySchema = z
     .object({
         date: z.coerce.date().optional(),
         type: z.nativeEnum(InventoryType),
+        DC: z.string().trim().max(8),
         brandId: z.string().uuid().optional(),
         chemicalId: z.string().uuid().optional(),
         colorId: z.string().uuid().optional(),

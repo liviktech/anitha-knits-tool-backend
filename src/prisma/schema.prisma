@@ -42,6 +42,11 @@ enum ProductionRecordType {
   REVERSAL
 }
 
+enum ProductionType{
+  PRODUCTION
+  SAMPLE
+}
+
 enum InventoryType {
   HDPE
 
@@ -298,6 +303,8 @@ model ProductionRecord {
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  type ProductionType @default("PRODUCTION")
+
   stage ProductionStage
 
   productionDate DateTime @map("production_date") @db.Date
@@ -401,6 +408,40 @@ model FabricCheckDetail {
 
   @@map("fabric_check_details")
 }
+model KoraBalance {
+  id        String   @id @default(uuid()) @db.Uuid
+  colorId   String   @map("color_id") @db.Uuid
+  color     Color    @relation(fields: [colorId], references: [id])
+  sizeId    String   @map("size_id") @db.Uuid
+  size      Size     @relation(fields: [sizeId], references: [id])
+  balanceKg Decimal  @default(0) @map("balance_kg") @db.Decimal(14, 3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  entries KoraLedgerEntry[]
+
+  @@unique([colorId, sizeId])
+  @@map("kora_balances")
+}
+
+model KoraLedgerEntry {
+  id            String      @id @default(uuid()) @db.Uuid
+  koraBalanceId String      @map("kora_balance_id") @db.Uuid
+  koraBalance   KoraBalance @relation(fields: [koraBalanceId], references: [id])
+
+  stockDate  DateTime @map("production_date") @db.Date
+  productionRecordId String?           @unique @map("production_record_id") @db.Uuid
+  productionRecord   ProductionRecord? @relation(fields: [productionRecordId], references: [id])
+
+  koraBalance    Decimal       @map("quantity_kg") @db.Decimal(12, 3)
+  updatedKoraBalance Decimal      @map("updated_kg") @db.Decimal(14, 3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy String   @map("created_by") @db.VarChar(100)
+
+  @@index([koraBalanceId, createdAt])
+  @@index([entryType])
+  @@map("kora_ledger_entries")
+}
 
 model WastageType {
   id String @id @default(uuid()) @db.Uuid
@@ -482,6 +523,8 @@ model Inventory {
   date DateTime @default(now())
 
   type InventoryType
+
+  DC_NUMBER String 
 
   name String @db.VarChar(150)
 

@@ -23,6 +23,8 @@ export type AdjustInventoryBalanceInput = ItemRef & {
     name: string;
     /** Defaults to now if omitted. */
     date?: Date;
+    /** Distribution Center */
+    DC: string;
 };
 
 function roundKg(value: number): number {
@@ -72,7 +74,7 @@ function itemId(input: ItemRef): string {
  * Time: O(1) — one lock, one lookup, one write.
  */
 export async function adjustInventoryBalance(tx: Prisma.TransactionClient, input: AdjustInventoryBalanceInput): Promise<{ id: string }> {
-    const { companyId, deltaKg, actor, name, date } = input;
+    const { companyId, deltaKg, actor, name, date, DC } = input;
     const lockKey = `${companyId}:${input.type}:${itemId(input)}`;
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
 
@@ -107,6 +109,7 @@ export async function adjustInventoryBalance(tx: Prisma.TransactionClient, input
             type: input.type,
             name,
             weightKg: newBalance,
+            DC_NUMBER: DC,
             createdBy: actor,
             ...(date ? { date } : {}),
             ...itemData(input),
