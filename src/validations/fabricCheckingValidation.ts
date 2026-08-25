@@ -15,6 +15,7 @@ export const createFabricCheckingSchema = z
         colorId: z.string().uuid(),
         sizeId: z.string().uuid(),
         fabricInputKg: z.coerce.number().positive('must be a positive number'),
+        type: z.enum(['PRODUCTION', 'SAMPLE']).default('PRODUCTION'),
         // No longer collected via the entry UI (PRD terminology now favours a
         // single Output/Final Stock figure) — kept optional rather than
         // removed so the fabric_check_details columns stay populated for any

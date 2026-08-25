@@ -44,9 +44,9 @@ function mapLoomsRecord(record: LoomsRecordRow) {
         ...rest,
         loom: loom
             ? {
-                  yarnInputKg: loom.yarnInputKg.toNumber(),
-                  fabricOutputKg: loom.fabricOutputKg.toNumber(),
-              }
+                yarnInputKg: loom.yarnInputKg.toNumber(),
+                fabricOutputKg: loom.fabricOutputKg.toNumber(),
+            }
             : null,
         wastages: wastages.map(mapWastageRecord),
     };

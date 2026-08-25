@@ -54,9 +54,9 @@ function mapFabricCheckingRecord(record: FabricCheckingRecordRow) {
         ...rest,
         fabricCheck: fabricCheck
             ? {
-                  fabricInputKg: fabricCheck.fabricInputKg.toNumber(),
-                  outputKg: fabricCheck.outputKg ? fabricCheck.outputKg.toNumber() : null,
-              }
+                fabricInputKg: fabricCheck.fabricInputKg.toNumber(),
+                outputKg: fabricCheck.outputKg ? fabricCheck.outputKg.toNumber() : null,
+            }
             : null,
         wastages: wastages.map(mapWastageRecord),
     };
