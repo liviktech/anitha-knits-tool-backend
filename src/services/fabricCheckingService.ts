@@ -6,6 +6,7 @@ import { buildProductionWhere } from '../utils/productionFilters.js';
 import { assertColorExists, assertSizeExists } from './masterDataService.js';
 import { buildWastageCreates, mapWastageRecord, wastageSelect } from './wastageService.js';
 import { WASTAGE_CODES } from '../constants/wastageCodes.js';
+import { debitKoraBalance } from './koraBalanceService.js';
 import type { CreateFabricCheckingInput, UpdateFabricCheckingInput, ListFabricCheckingQuery } from '../validations/fabricCheckingValidation.js';
 
 /**
@@ -71,24 +72,39 @@ export async function createFabricCheckingRecord(input: CreateFabricCheckingInpu
         { code: WASTAGE_CODES.BW, quantityKg: input.bwKg, colorId: input.colorId },
     ]);
 
-    const record = await prisma.productionRecord.create({
-        data: {
-            companyId,
-            stage: ProductionStage.FABRIC_CHECKING,
-            productionDate: input.productionDate,
-            colorId: input.colorId,
-            sizeId: input.sizeId,
-            remarks: input.remarks,
-            createdBy: actor,
-            fabricCheck: {
-                create: {
-                    fabricInputKg: input.fabricInputKg,
-                    outputKg: input.outputKg,
+    const record = await prisma.$transaction(async (tx) => {
+        const created = await tx.productionRecord.create({
+            data: {
+                companyId,
+                stage: ProductionStage.FABRIC_CHECKING,
+                productionDate: input.productionDate,
+                colorId: input.colorId,
+                sizeId: input.sizeId,
+                remarks: input.remarks,
+                createdBy: actor,
+                fabricCheck: {
+                    create: {
+                        fabricInputKg: input.fabricInputKg,
+                        outputKg: input.outputKg,
+                    },
                 },
+                ...(wastageCreates.length > 0 ? { wastages: { create: wastageCreates } } : {}),
             },
-            ...(wastageCreates.length > 0 ? { wastages: { create: wastageCreates } } : {}),
-        },
-        select: fabricCheckingSelect,
+            select: fabricCheckingSelect,
+        });
+
+        // Debit kora balance with the fabric input consumed
+        await debitKoraBalance(
+            input.colorId,
+            input.sizeId,
+            input.fabricInputKg,
+            input.productionDate,
+            created.id,
+            actor,
+            tx,
+        );
+
+        return created;
     });
 
     return mapFabricCheckingRecord(record);

@@ -6,6 +6,7 @@ import userRoutes from './userRoutes.js';
 import extruderRoutes from './extruderRoutes.js';
 import loomsRoutes from './loomsRoutes.js';
 import fabricCheckingRoutes from './fabricCheckingRoutes.js';
+import koraBalanceRoutes from './koraBalanceRoutes.js';
 import lookupRoutes from './lookup.js';
 import dashboardRoutes from './dashboardRoutes.js';
 import inventoryRoutes from './inventoryRoutes.js';
@@ -54,6 +55,12 @@ router.use(
   '/lookups',
   requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
   lookupRoutes,
+);
+
+router.use(
+  '/kora-balance',
+  requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
+  koraBalanceRoutes,
 );
 
 // Mount additional feature routers here, e.g.:

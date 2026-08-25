@@ -42,7 +42,7 @@ enum ProductionRecordType {
   REVERSAL
 }
 
-enum ProductionType{
+enum ProductionType {
   PRODUCTION
   SAMPLE
 }
@@ -226,6 +226,8 @@ model Color {
 
   inventories Inventory[]
 
+  koraBalances KoraBalance[]
+
   consumptionStandard ColorConsumptionStandard?
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -251,6 +253,8 @@ model Size {
   name String @db.VarChar(30)
 
   productionRecords ProductionRecord[]
+
+  koraBalances KoraBalance[]
 
   loadSents LoadSent[]
 
@@ -303,7 +307,7 @@ model ProductionRecord {
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  type ProductionType @default("PRODUCTION")
+  type ProductionType @default(PRODUCTION)
 
   stage ProductionStage
 
@@ -334,6 +338,7 @@ model ProductionRecord {
   fabricCheck FabricCheckDetail?
   wastages    WastageRecord[]
   loadSent    LoadSent?
+  koraEntries KoraLedgerEntry?
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -408,6 +413,12 @@ model FabricCheckDetail {
 
   @@map("fabric_check_details")
 }
+
+enum KoraEntryType {
+  CREDIT
+  DEBIT
+}
+
 model KoraBalance {
   id        String   @id @default(uuid()) @db.Uuid
   colorId   String   @map("color_id") @db.Uuid
@@ -428,12 +439,14 @@ model KoraLedgerEntry {
   koraBalanceId String      @map("kora_balance_id") @db.Uuid
   koraBalance   KoraBalance @relation(fields: [koraBalanceId], references: [id])
 
-  stockDate  DateTime @map("production_date") @db.Date
+  entryType KoraEntryType @map("entry_type")
+  stockDate DateTime      @map("stock_date") @db.Date
+
   productionRecordId String?           @unique @map("production_record_id") @db.Uuid
   productionRecord   ProductionRecord? @relation(fields: [productionRecordId], references: [id])
 
-  koraBalance    Decimal       @map("quantity_kg") @db.Decimal(12, 3)
-  updatedKoraBalance Decimal      @map("updated_kg") @db.Decimal(14, 3)
+  quantityKg     Decimal @map("quantity_kg") @db.Decimal(12, 3)
+  balanceAfterKg Decimal @map("balance_after_kg") @db.Decimal(14, 3)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   createdBy String   @map("created_by") @db.VarChar(100)
@@ -524,7 +537,7 @@ model Inventory {
 
   type InventoryType
 
-  DC_NUMBER String 
+  DC_NUMBER String
 
   name String @db.VarChar(150)
 
