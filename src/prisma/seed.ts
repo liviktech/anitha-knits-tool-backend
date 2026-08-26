@@ -93,6 +93,11 @@ async function main() {
           colorId: color.id,
           gramsPerBasis: c.gramsPerBasis,
           basisWeightKg: 25,
+          hdpematerialbag: 1,
+          chemicalWeight: 1.2,
+          // "latest as of" lookups filter on date <= asOf, so a null date
+          // would never match — stamp it effective immediately.
+          date: new Date(),
           createdBy: SYSTEM,
         },
       })
