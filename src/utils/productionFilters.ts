@@ -5,6 +5,7 @@ export type ProductionListFilters = {
     date_to?: Date;
     color_id?: string;
     size?: string;
+    type?: 'PRODUCTION' | 'SAMPLE';
 };
 
 /** Builds the common ProductionRecord `where` clause shared by every stage's list endpoint (PRD §17). */
@@ -18,6 +19,7 @@ export function buildProductionWhere(
         stage,
         ...(filters.color_id ? { colorId: filters.color_id } : {}),
         ...(filters.size ? { sizeId: filters.size } : {}),
+        ...(filters.type ? { type: filters.type } : {}),
         ...(filters.date_from || filters.date_to
             ? {
                   productionDate: {

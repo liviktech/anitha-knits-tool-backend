@@ -6,6 +6,7 @@ import { buildProductionWhere } from '../utils/productionFilters.js';
 import { assertColorExists, assertSizeExists } from './masterDataService.js';
 import { buildWastageCreates, mapWastageRecord, wastageSelect } from './wastageService.js';
 import { WASTAGE_CODES } from '../constants/wastageCodes.js';
+import { creditKoraBalance } from './koraBalanceService.js';
 import type { CreateLoomsInput, UpdateLoomsInput, ListLoomsQuery } from '../validations/loomsValidation.js';
 
 /**
@@ -43,9 +44,9 @@ function mapLoomsRecord(record: LoomsRecordRow) {
         ...rest,
         loom: loom
             ? {
-                  yarnInputKg: loom.yarnInputKg.toNumber(),
-                  fabricOutputKg: loom.fabricOutputKg.toNumber(),
-              }
+                yarnInputKg: loom.yarnInputKg.toNumber(),
+                fabricOutputKg: loom.fabricOutputKg.toNumber(),
+            }
             : null,
         wastages: wastages.map(mapWastageRecord),
     };
@@ -54,28 +55,45 @@ function mapLoomsRecord(record: LoomsRecordRow) {
 export async function createLoomsProduction(input: CreateLoomsInput, companyId: string, actor: string) {
     await Promise.all([assertColorExists(input.colorId, companyId), assertSizeExists(input.sizeId, companyId)]);
 
+    // BW (\"Bit Wastage\") is colour-tracked (PRD \"B White\"/\"B Blue\"), so it's
+    // stored against this record's own colour; FW (\"Fabric Wastage\") is not.
     const wastageCreates = await buildWastageCreates(ProductionStage.LOOMS, companyId, actor, [
         { code: WASTAGE_CODES.LOOMS_WASTE, quantityKg: input.loomsWasteKg },
     ]);
 
-    const record = await prisma.productionRecord.create({
-        data: {
-            companyId,
-            stage: ProductionStage.LOOMS,
-            productionDate: input.productionDate,
-            colorId: input.colorId,
-            sizeId: input.sizeId,
-            remarks: input.remarks,
-            createdBy: actor,
-            loom: {
-                create: {
-                    yarnInputKg: input.yarnInputKg,
-                    fabricOutputKg: input.fabricOutputKg,
+    const record = await prisma.$transaction(async (tx) => {
+        const created = await tx.productionRecord.create({
+            data: {
+                companyId,
+                stage: ProductionStage.LOOMS,
+                productionDate: input.productionDate,
+                colorId: input.colorId,
+                sizeId: input.sizeId,
+                remarks: input.remarks,
+                createdBy: actor,
+                loom: {
+                    create: {
+                        yarnInputKg: input.yarnInputKg,
+                        fabricOutputKg: input.fabricOutputKg,
+                    },
                 },
+                ...(wastageCreates.length > 0 ? { wastages: { create: wastageCreates } } : {}),
             },
-            ...(wastageCreates.length > 0 ? { wastages: { create: wastageCreates } } : {}),
-        },
-        select: loomsSelect,
+            select: loomsSelect,
+        });
+
+        // Credit kora balance with the fabric output
+        await creditKoraBalance(
+            input.colorId,
+            input.sizeId,
+            input.fabricOutputKg,
+            input.productionDate,
+            created.id,
+            actor,
+            tx,
+        );
+
+        return created;
     });
 
     return mapLoomsRecord(record);

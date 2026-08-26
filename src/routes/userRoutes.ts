@@ -38,7 +38,13 @@ const router = Router();
  *       400:
  *         $ref: '#/components/responses/ValidationError'
  *       401:
- *         description: No valid session, or not an ADMIN (AUTH_REQUIRED / INSUFFICIENT_ROLE).
+ *         description: Missing, invalid, or expired access token (AUTH_REQUIRED / AUTH_TOKEN_EXPIRED / AUTH_TOKEN_INVALID).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       403:
+ *         description: Authenticated, but not an ADMIN (INSUFFICIENT_ROLE).
  *         content:
  *           application/json:
  *             schema:
@@ -77,7 +83,13 @@ const router = Router();
  *             schema:
  *               $ref: '#/components/schemas/CompanyUserListResponse'
  *       401:
- *         description: No valid session, or not an ADMIN (AUTH_REQUIRED / INSUFFICIENT_ROLE).
+ *         description: Missing, invalid, or expired access token (AUTH_REQUIRED / AUTH_TOKEN_EXPIRED / AUTH_TOKEN_INVALID).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       403:
+ *         description: Authenticated, but not an ADMIN (INSUFFICIENT_ROLE).
  *         content:
  *           application/json:
  *             schema:
@@ -118,7 +130,13 @@ router.get('/', listUsersHandler);
  *             schema:
  *               $ref: '#/components/schemas/PlatformAdminUserListResponse'
  *       401:
- *         description: No valid session, or not an ADMIN (AUTH_REQUIRED / INSUFFICIENT_ROLE).
+ *         description: Missing, invalid, or expired access token (AUTH_REQUIRED / AUTH_TOKEN_EXPIRED / AUTH_TOKEN_INVALID).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       403:
+ *         description: Authenticated, but not an ADMIN (INSUFFICIENT_ROLE).
  *         content:
  *           application/json:
  *             schema:
@@ -146,7 +164,13 @@ router.get('/all', listAllUsersHandler); // must be registered before '/:id'
  *             schema:
  *               $ref: '#/components/schemas/CompanyUserResponse'
  *       401:
- *         description: No valid session, or not an ADMIN (AUTH_REQUIRED / INSUFFICIENT_ROLE).
+ *         description: Missing, invalid, or expired access token (AUTH_REQUIRED / AUTH_TOKEN_EXPIRED / AUTH_TOKEN_INVALID).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       403:
+ *         description: Authenticated, but not an ADMIN (INSUFFICIENT_ROLE).
  *         content:
  *           application/json:
  *             schema:
@@ -180,7 +204,13 @@ router.get('/all', listAllUsersHandler); // must be registered before '/:id'
  *       400:
  *         $ref: '#/components/responses/ValidationError'
  *       401:
- *         description: No valid session, or not an ADMIN (AUTH_REQUIRED / INSUFFICIENT_ROLE).
+ *         description: Missing, invalid, or expired access token (AUTH_REQUIRED / AUTH_TOKEN_EXPIRED / AUTH_TOKEN_INVALID).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       403:
+ *         description: Authenticated, but not an ADMIN (INSUFFICIENT_ROLE).
  *         content:
  *           application/json:
  *             schema:
@@ -208,7 +238,13 @@ router.get('/all', listAllUsersHandler); // must be registered before '/:id'
  *       204:
  *         description: Deactivated.
  *       401:
- *         description: No valid session, or not an ADMIN (AUTH_REQUIRED / INSUFFICIENT_ROLE).
+ *         description: Missing, invalid, or expired access token (AUTH_REQUIRED / AUTH_TOKEN_EXPIRED / AUTH_TOKEN_INVALID).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ErrorResponse'
+ *       403:
+ *         description: Authenticated, but not an ADMIN (INSUFFICIENT_ROLE).
  *         content:
  *           application/json:
  *             schema:

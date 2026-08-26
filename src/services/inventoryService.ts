@@ -2,6 +2,7 @@ import { InventoryType, Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { NotFoundError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
+import { roundKg } from '../utils/decimal.js';
 import { adjustInventoryBalance } from './inventoryBalanceService.js';
 import type {
   CreateInventoryInput,
@@ -85,6 +86,7 @@ export async function createInventory(
       deltaKg: input.quantityKg,
       actor,
       name,
+      DC: input.DC,
       date: input.date,
     }),
   );
@@ -173,6 +175,51 @@ export async function updateInventory(
   });
 
   return mapInventoryRecord(record);
+}
+
+export type InventoryTypeSummary = {
+  type: InventoryType;
+  items: ReturnType<typeof mapInventoryRecord>[];
+  totalWeightKg: number;
+};
+
+/**
+ * Inventory balances for a date range, grouped by type (HDPE/CHEMICAL/COLOR)
+ * with a per-type total — backs the dashboard's monthly inventory panel.
+ * Reuses the same `date` filter semantics as listInventory (the balance's
+ * last-touched date), just unpaginated since the dashboard needs the whole
+ * month's picture at once.
+ *
+ * Time: O(n) — n = inventory rows touched in the range (one query, one pass).
+ */
+export async function getInventorySummaryByDateRange(
+  companyId: string,
+  dateFrom: Date,
+  dateTo: Date,
+): Promise<Record<InventoryType, InventoryTypeSummary>> {
+  const rows = await prisma.inventory.findMany({
+    where: { companyId, date: { gte: dateFrom, lte: dateTo } },
+    select: inventorySelect,
+    orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+  });
+
+  const byType: Record<InventoryType, InventoryRow[]> = {
+    [InventoryType.HDPE]: [],
+    [InventoryType.CHEMICAL]: [],
+    [InventoryType.COLOR]: [],
+  };
+  for (const row of rows) byType[row.type].push(row);
+
+  function summarize(type: InventoryType): InventoryTypeSummary {
+    const items = byType[type].map(mapInventoryRecord);
+    return { type, items, totalWeightKg: roundKg(items.reduce((sum, item) => sum + item.weightKg, 0)) };
+  }
+
+  return {
+    [InventoryType.HDPE]: summarize(InventoryType.HDPE),
+    [InventoryType.CHEMICAL]: summarize(InventoryType.CHEMICAL),
+    [InventoryType.COLOR]: summarize(InventoryType.COLOR),
+  };
 }
 
 export async function deleteInventory(id: string, companyId: string) {

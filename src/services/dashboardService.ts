@@ -1,7 +1,11 @@
 import { ProductionStage } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { ValidationError } from '../utils/errors.js';
-import type { DashboardProductionQuery } from '../validations/dashboardValidation.js';
+import { getInventorySummaryByDateRange } from './inventoryService.js';
+import { getLoadSentSummaryByDateRange } from './loadSentService.js';
+import { getFabricProductionSummaryByDateRange } from './fabricCheckingService.js';
+import { getWastageSummaryByDateRange } from './wastageService.js';
+import type { DashboardMonthlyQuery, DashboardProductionQuery } from '../validations/dashboardValidation.js';
 
 /**
  * Backs the "Daily Production & Wastage" dashboard (PRD §16.10, GET
@@ -172,5 +176,44 @@ export async function getProductionDashboard(query: DashboardProductionQuery, co
             fabricChecking: withSummaryMetrics(grandTotals.fabricChecking),
         },
         daily,
+    };
+}
+
+/** Resolves a 1-indexed month + a year into that calendar month's UTC date span, defaulting to the current month. */
+function resolveMonthRange(query: DashboardMonthlyQuery): { month: number; year: number; dateFrom: Date; dateTo: Date } {
+    const now = new Date();
+    const year = query.year ?? now.getUTCFullYear();
+    const month = query.month ?? now.getUTCMonth() + 1;
+    const dateFrom = new Date(Date.UTC(year, month - 1, 1));
+    const dateTo = new Date(Date.UTC(year, month, 0));
+    return { month, year, dateFrom, dateTo };
+}
+
+/**
+ * Backs the monthly management dashboard (GET /api/v1/dashboard): inventory
+ * on hand (HDPE/chemical/colour), stock delivered (Load Sent), fabric
+ * production (variant-wise colour+size, plus overall), and wastage across
+ * all 5 client-terminology categories — all scoped to one calendar month.
+ * Each section is computed by a reusable per-domain function shared with
+ * that domain's own list/summary endpoints.
+ *
+ * Time: O(n) — n = rows across the 4 underlying queries, run concurrently.
+ */
+export async function getMonthlyDashboard(query: DashboardMonthlyQuery, companyId: string) {
+    const { month, year, dateFrom, dateTo } = resolveMonthRange(query);
+
+    const [inventory, loadSent, fabricProduction, wastage] = await Promise.all([
+        getInventorySummaryByDateRange(companyId, dateFrom, dateTo),
+        getLoadSentSummaryByDateRange(companyId, dateFrom, dateTo),
+        getFabricProductionSummaryByDateRange(companyId, dateFrom, dateTo),
+        getWastageSummaryByDateRange(companyId, dateFrom, dateTo),
+    ]);
+
+    return {
+        range: { month, year, dateFrom: dateKey(dateFrom), dateTo: dateKey(dateTo) },
+        inventory,
+        loadSent,
+        fabricProduction,
+        wastage,
     };
 }

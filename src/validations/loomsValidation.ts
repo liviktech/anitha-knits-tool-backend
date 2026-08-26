@@ -17,6 +17,7 @@ export const createLoomsSchema = z
         sizeId: z.string().uuid(),
         yarnInputKg: kg,
         fabricOutputKg: kg,
+        type: z.enum(['PRODUCTION', 'SAMPLE']).default('PRODUCTION'),
         remarks: z.string().trim().max(500).optional(),
         // Wastage entered alongside this production record (PRD §9): optional,
         // and only turns into a WastageRecord when > 0 — see wastageService.ts.

@@ -2,10 +2,12 @@ import { Prisma, ProductionStage } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { NotFoundError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
+import { roundKg } from '../utils/decimal.js';
 import { buildProductionWhere } from '../utils/productionFilters.js';
 import { assertColorExists, assertSizeExists } from './masterDataService.js';
 import { buildWastageCreates, mapWastageRecord, wastageSelect } from './wastageService.js';
 import { WASTAGE_CODES } from '../constants/wastageCodes.js';
+import { debitKoraBalance } from './koraBalanceService.js';
 import type { CreateFabricCheckingInput, UpdateFabricCheckingInput, ListFabricCheckingQuery } from '../validations/fabricCheckingValidation.js';
 
 /**
@@ -53,9 +55,9 @@ function mapFabricCheckingRecord(record: FabricCheckingRecordRow) {
         ...rest,
         fabricCheck: fabricCheck
             ? {
-                  fabricInputKg: fabricCheck.fabricInputKg.toNumber(),
-                  outputKg: fabricCheck.outputKg ? fabricCheck.outputKg.toNumber() : null,
-              }
+                fabricInputKg: fabricCheck.fabricInputKg.toNumber(),
+                outputKg: fabricCheck.outputKg ? fabricCheck.outputKg.toNumber() : null,
+            }
             : null,
         wastages: wastages.map(mapWastageRecord),
     };
@@ -71,24 +73,39 @@ export async function createFabricCheckingRecord(input: CreateFabricCheckingInpu
         { code: WASTAGE_CODES.BW, quantityKg: input.bwKg, colorId: input.colorId },
     ]);
 
-    const record = await prisma.productionRecord.create({
-        data: {
-            companyId,
-            stage: ProductionStage.FABRIC_CHECKING,
-            productionDate: input.productionDate,
-            colorId: input.colorId,
-            sizeId: input.sizeId,
-            remarks: input.remarks,
-            createdBy: actor,
-            fabricCheck: {
-                create: {
-                    fabricInputKg: input.fabricInputKg,
-                    outputKg: input.outputKg,
+    const record = await prisma.$transaction(async (tx) => {
+        const created = await tx.productionRecord.create({
+            data: {
+                companyId,
+                stage: ProductionStage.FABRIC_CHECKING,
+                productionDate: input.productionDate,
+                colorId: input.colorId,
+                sizeId: input.sizeId,
+                remarks: input.remarks,
+                createdBy: actor,
+                fabricCheck: {
+                    create: {
+                        fabricInputKg: input.fabricInputKg,
+                        outputKg: input.outputKg,
+                    },
                 },
+                ...(wastageCreates.length > 0 ? { wastages: { create: wastageCreates } } : {}),
             },
-            ...(wastageCreates.length > 0 ? { wastages: { create: wastageCreates } } : {}),
-        },
-        select: fabricCheckingSelect,
+            select: fabricCheckingSelect,
+        });
+
+        // Debit kora balance with the fabric input consumed
+        await debitKoraBalance(
+            input.colorId,
+            input.sizeId,
+            input.fabricInputKg,
+            input.productionDate,
+            created.id,
+            actor,
+            tx,
+        );
+
+        return created;
     });
 
     return mapFabricCheckingRecord(record);
@@ -156,6 +173,70 @@ export async function updateFabricCheckingRecord(id: string, input: UpdateFabric
     });
 
     return mapFabricCheckingRecord(updated);
+}
+
+export type FabricProductionVariantSummary = {
+    color: { id: string; name: string };
+    size: { id: string; name: string };
+    fabricInputKg: number;
+    outputKg: number;
+};
+
+export type FabricProductionSummary = {
+    byVariant: FabricProductionVariantSummary[];
+    overall: { fabricInputKg: number; outputKg: number };
+};
+
+/**
+ * Fabric Checking output for a date range, broken down by colour+size
+ * variant plus an overall total — backs the dashboard's monthly "fabric
+ * production" panel (variant-wise, with an overall rollup).
+ *
+ * Time: O(n) — n = Fabric Checking records in the range (one query, one pass).
+ */
+export async function getFabricProductionSummaryByDateRange(
+    companyId: string,
+    dateFrom: Date,
+    dateTo: Date,
+): Promise<FabricProductionSummary> {
+    const rows = await prisma.productionRecord.findMany({
+        where: { companyId, stage: ProductionStage.FABRIC_CHECKING, productionDate: { gte: dateFrom, lte: dateTo } },
+        select: {
+            color: { select: { id: true, name: true } },
+            size: { select: { id: true, name: true } },
+            fabricCheck: { select: { fabricInputKg: true, outputKg: true } },
+        },
+    });
+
+    const byVariantMap = new Map<string, FabricProductionVariantSummary>();
+    const overall = { fabricInputKg: 0, outputKg: 0 };
+
+    for (const row of rows) {
+        if (!row.fabricCheck) continue;
+        const inputKg = row.fabricCheck.fabricInputKg.toNumber();
+        const outputKg = row.fabricCheck.outputKg ? row.fabricCheck.outputKg.toNumber() : 0;
+
+        overall.fabricInputKg += inputKg;
+        overall.outputKg += outputKg;
+
+        const key = `${row.color.id}_${row.size.id}`;
+        let entry = byVariantMap.get(key);
+        if (!entry) {
+            entry = { color: row.color, size: row.size, fabricInputKg: 0, outputKg: 0 };
+            byVariantMap.set(key, entry);
+        }
+        entry.fabricInputKg += inputKg;
+        entry.outputKg += outputKg;
+    }
+
+    return {
+        byVariant: Array.from(byVariantMap.values()).map((entry) => ({
+            ...entry,
+            fabricInputKg: roundKg(entry.fabricInputKg),
+            outputKg: roundKg(entry.outputKg),
+        })),
+        overall: { fabricInputKg: roundKg(overall.fabricInputKg), outputKg: roundKg(overall.outputKg) },
+    };
 }
 
 export async function deleteFabricCheckingRecord(id: string, companyId: string): Promise<void> {

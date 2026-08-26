@@ -36,7 +36,9 @@ const definition: swaggerJsdoc.OAS3Definition = {
         { name: 'Health', description: 'Process and database liveness checks' },
         {
             name: 'Auth',
-            description: 'Company signup and (future) login. Signup creates a Company and its first ADMIN User.',
+            description:
+                'Company-user login/refresh (POST /api/v1/company/auth/login, /refresh). Company signup ' +
+                'is not public — it now lives under Platform Admin (POST /api/v1/platform/admin/companies).',
         },
         {
             name: 'Platform Admin',
@@ -92,6 +94,12 @@ const definition: swaggerJsdoc.OAS3Definition = {
         {
             name: 'Load Sent',
             description: 'Load Sent records — the outward-load operation (PRD terminology "Load Sent"). Full CRUD.',
+        },
+        {
+            name: 'Kora Balance',
+            description:
+                'Current fabric stock (kora) per color+size variant, credited by Looms output and debited ' +
+                'by Fabric Checking input, plus the append-only ledger of those movements. Read-only.',
         },
     ],
     components: {
@@ -410,6 +418,7 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     chemicalId: { type: 'string', format: 'uuid' },
                     rawMaterialKg: { type: 'number', exclusiveMinimum: 0, example: 25 },
                     chemicalKg: { type: 'number', exclusiveMinimum: 0, example: 0.5 },
+                    type: { type: 'string', enum: ['PRODUCTION', 'SAMPLE'], default: 'PRODUCTION' },
                     colorConsumedKg: {
                         type: 'number',
                         exclusiveMinimum: 0,
@@ -542,6 +551,7 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     sizeId: { type: 'string', format: 'uuid' },
                     yarnInputKg: { type: 'number', exclusiveMinimum: 0, example: 500 },
                     fabricOutputKg: { type: 'number', exclusiveMinimum: 0, example: 470 },
+                    type: { type: 'string', enum: ['PRODUCTION', 'SAMPLE'], default: 'PRODUCTION' },
                     remarks: { type: 'string', maxLength: 500 },
                     loomsWasteKg: { type: 'number', minimum: 0, description: 'Optional. Creates a WastageRecord (code LOOMS_WASTE) only if > 0.' },
                 },
@@ -609,6 +619,7 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     colorId: { type: 'string', format: 'uuid' },
                     sizeId: { type: 'string', format: 'uuid' },
                     fabricInputKg: { type: 'number', exclusiveMinimum: 0, example: 192 },
+                    type: { type: 'string', enum: ['PRODUCTION', 'SAMPLE'], default: 'PRODUCTION' },
                     outputKg: { type: 'number', minimum: 0, example: 170, description: 'Final stock / output weight.' },
                     remarks: { type: 'string', maxLength: 500 },
                     fwKg: { type: 'number', minimum: 0, description: 'Optional. Creates a WastageRecord (code FW) only if > 0.' },
@@ -722,6 +733,116 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     data: { $ref: '#/components/schemas/DashboardProductionData' },
                 },
             },
+            DashboardInventoryTypeSummary: {
+                type: 'object',
+                description: 'Inventory balances of one type (HDPE/CHEMICAL/COLOR) touched during the month.',
+                properties: {
+                    type: { type: 'string', enum: ['HDPE', 'CHEMICAL', 'COLOR'] },
+                    items: { type: 'array', items: { $ref: '#/components/schemas/InventoryRecord' } },
+                    totalWeightKg: { type: 'number', example: 750 },
+                },
+            },
+            DashboardInventorySummary: {
+                type: 'object',
+                properties: {
+                    HDPE: { $ref: '#/components/schemas/DashboardInventoryTypeSummary' },
+                    CHEMICAL: { $ref: '#/components/schemas/DashboardInventoryTypeSummary' },
+                    COLOR: { $ref: '#/components/schemas/DashboardInventoryTypeSummary' },
+                },
+            },
+            DashboardLoadSentVariantSummary: {
+                type: 'object',
+                properties: {
+                    color: { $ref: '#/components/schemas/MasterDataRef' },
+                    size: { $ref: '#/components/schemas/MasterDataRef' },
+                    fabricWeightKg: { type: 'number', example: 200 },
+                    fwWeightKg: { type: 'number', example: 15 },
+                    bwWeightKg: { type: 'number', example: 8 },
+                    totalWastageWeightKg: { type: 'number', example: 23 },
+                },
+            },
+            DashboardLoadSentSummary: {
+                type: 'object',
+                description: '"Stock delivered" for the month.',
+                properties: {
+                    items: { type: 'array', items: { $ref: '#/components/schemas/LoadSentRecord' } },
+                    totals: {
+                        type: 'object',
+                        properties: {
+                            fabricWeightKg: { type: 'number', example: 200 },
+                            fwWeightKg: { type: 'number', example: 15 },
+                            bwWeightKg: { type: 'number', example: 8 },
+                            totalWastageWeightKg: { type: 'number', example: 23 },
+                        },
+                    },
+                    byVariant: { type: 'array', items: { $ref: '#/components/schemas/DashboardLoadSentVariantSummary' } },
+                },
+            },
+            DashboardFabricProductionVariantSummary: {
+                type: 'object',
+                properties: {
+                    color: { $ref: '#/components/schemas/MasterDataRef' },
+                    size: { $ref: '#/components/schemas/MasterDataRef' },
+                    fabricInputKg: { type: 'number', example: 500 },
+                    outputKg: { type: 'number', example: 470 },
+                },
+            },
+            DashboardFabricProductionSummary: {
+                type: 'object',
+                description: 'Fabric Checking output for the month, colour+size variant-wise plus an overall total.',
+                properties: {
+                    byVariant: { type: 'array', items: { $ref: '#/components/schemas/DashboardFabricProductionVariantSummary' } },
+                    overall: {
+                        type: 'object',
+                        properties: {
+                            fabricInputKg: { type: 'number', example: 2000 },
+                            outputKg: { type: 'number', example: 1880 },
+                        },
+                    },
+                },
+            },
+            DashboardWastageCategorySummary: {
+                type: 'object',
+                description: 'One of the 5 client-terminology wastage categories (PRD §9/§26): Yarn Waste, LUMS/LUMPS, Looms Waste, FW, BW.',
+                properties: {
+                    code: { type: 'string', example: 'YARN_WASTE' },
+                    name: { type: 'string', example: 'Yarn Waste' },
+                    stage: { type: 'string', enum: ['EXTRUDER', 'LOOMS', 'FABRIC_CHECKING', 'DELIVERY'] },
+                    quantityKg: { type: 'number', example: 12 },
+                },
+            },
+            DashboardWastageSummary: {
+                type: 'object',
+                properties: {
+                    byType: { type: 'array', items: { $ref: '#/components/schemas/DashboardWastageCategorySummary' } },
+                    totalKg: { type: 'number', example: 45 },
+                },
+            },
+            DashboardMonthlyData: {
+                type: 'object',
+                properties: {
+                    range: {
+                        type: 'object',
+                        properties: {
+                            month: { type: 'integer', example: 8 },
+                            year: { type: 'integer', example: 2026 },
+                            dateFrom: { type: 'string', format: 'date' },
+                            dateTo: { type: 'string', format: 'date' },
+                        },
+                    },
+                    inventory: { $ref: '#/components/schemas/DashboardInventorySummary' },
+                    loadSent: { $ref: '#/components/schemas/DashboardLoadSentSummary' },
+                    fabricProduction: { $ref: '#/components/schemas/DashboardFabricProductionSummary' },
+                    wastage: { $ref: '#/components/schemas/DashboardWastageSummary' },
+                },
+            },
+            DashboardMonthlyResponse: {
+                type: 'object',
+                properties: {
+                    success: { type: 'boolean', example: true },
+                    data: { $ref: '#/components/schemas/DashboardMonthlyData' },
+                },
+            },
             InventoryRecord: {
                 type: 'object',
                 description: 'The current standing balance for one item — updated in place, not a per-transaction log entry.',
@@ -804,17 +925,27 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     data: { $ref: '#/components/schemas/InventoryStockSummary' },
                 },
             },
-            LoadSentRecord: {
+            LoadSentDetail: {
                 type: 'object',
+                nullable: true,
                 properties: {
-                    id: { type: 'string', format: 'uuid' },
-                    date: { type: 'string', format: 'date-time' },
-                    color: { $ref: '#/components/schemas/MasterDataRef' },
-                    size: { $ref: '#/components/schemas/MasterDataRef' },
                     fabricWeight: { type: 'number', format: 'decimal', example: 20 },
                     fwWeight: { type: 'number', format: 'decimal', example: 2 },
                     bwWeight: { type: 'number', format: 'decimal', example: 1 },
                     totalWastageWeight: { type: 'number', format: 'decimal', example: 3 },
+                },
+            },
+            LoadSentRecord: {
+                type: 'object',
+                description: 'A ProductionRecord (stage=DELIVERY) with its LoadSent detail embedded.',
+                properties: {
+                    id: { type: 'string', format: 'uuid' },
+                    stage: { type: 'string', enum: ['DELIVERY'] },
+                    productionDate: { type: 'string', format: 'date-time' },
+                    remarks: { type: 'string', nullable: true },
+                    color: { $ref: '#/components/schemas/MasterDataRef' },
+                    size: { $ref: '#/components/schemas/MasterDataRef' },
+                    loadSent: { $ref: '#/components/schemas/LoadSentDetail' },
                     createdAt: { type: 'string', format: 'date-time' },
                     createdBy: { type: 'string' },
                     updatedAt: { type: 'string', format: 'date-time' },
@@ -823,15 +954,17 @@ const definition: swaggerJsdoc.OAS3Definition = {
             },
             LoadSentCreateRequest: {
                 type: 'object',
-                required: ['colorId', 'sizeId'],
+                required: ['productionDate', 'colorId', 'sizeId'],
                 additionalProperties: false,
                 properties: {
-                    date: { type: 'string', format: 'date', description: 'Optional. Defaults to now.' },
+                    productionDate: { type: 'string', format: 'date', example: '2026-08-19' },
                     colorId: { type: 'string', format: 'uuid' },
                     sizeId: { type: 'string', format: 'uuid' },
-                    fabricWeight: { type: 'number', minimum: 0, example: 20 },
-                    fwWeight: { type: 'number', minimum: 0, example: 2 },
-                    bwWeight: { type: 'number', minimum: 0, example: 1 },
+                    fabricWeight: { type: 'number', minimum: 0, example: 20, description: 'Optional. Defaults to 0.' },
+                    fwWeight: { type: 'number', minimum: 0, example: 2, description: 'Optional. Defaults to 0.' },
+                    bwWeight: { type: 'number', minimum: 0, example: 1, description: 'Optional. Defaults to 0.' },
+                    driverName: { type: 'string', maxLength: 100, example: 'Ramesh Kumar', description: 'Optional.' },
+                    vehicleNo: { type: 'string', maxLength: 20, example: 'TN-39-AB-1234', description: 'Optional.' },
                 },
             },
             LoadSentUpdateRequest: {
@@ -840,12 +973,14 @@ const definition: swaggerJsdoc.OAS3Definition = {
                 minProperties: 1,
                 additionalProperties: false,
                 properties: {
-                    date: { type: 'string', format: 'date' },
+                    productionDate: { type: 'string', format: 'date' },
                     colorId: { type: 'string', format: 'uuid' },
                     sizeId: { type: 'string', format: 'uuid' },
                     fabricWeight: { type: 'number', minimum: 0 },
                     fwWeight: { type: 'number', minimum: 0 },
                     bwWeight: { type: 'number', minimum: 0 },
+                    driverName: { type: 'string', maxLength: 100, nullable: true },
+                    vehicleNo: { type: 'string', maxLength: 20, nullable: true },
                 },
             },
             LoadSentResponse: {
@@ -861,6 +996,66 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     success: { type: 'boolean', example: true },
                     data: { type: 'array', items: { $ref: '#/components/schemas/LoadSentRecord' } },
                     meta: { $ref: '#/components/schemas/PaginationMeta' },
+                },
+            },
+            KoraBalanceEntry: {
+                type: 'object',
+                description: 'Current fabric stock for one color+size variant (fabric_output_kg - fabric_input_kg).',
+                properties: {
+                    id: { type: 'string', format: 'uuid' },
+                    color: { $ref: '#/components/schemas/MasterDataRef' },
+                    size: { $ref: '#/components/schemas/MasterDataRef' },
+                    balanceKg: { type: 'number', example: 120.5 },
+                    updatedAt: { type: 'string', format: 'date-time' },
+                },
+            },
+            KoraBalanceListResponse: {
+                type: 'object',
+                description: 'Not paginated — every color+size variant is returned in one call.',
+                properties: {
+                    success: { type: 'boolean', example: true },
+                    data: { type: 'array', items: { $ref: '#/components/schemas/KoraBalanceEntry' } },
+                },
+            },
+            KoraLedgerEntry: {
+                type: 'object',
+                properties: {
+                    id: { type: 'string', format: 'uuid' },
+                    entryType: { type: 'string', enum: ['CREDIT', 'DEBIT'], description: 'CREDIT = Looms output added to balance; DEBIT = Fabric Checking input consumed from balance.' },
+                    stockDate: { type: 'string', format: 'date-time' },
+                    quantityKg: { type: 'number', example: 25 },
+                    balanceAfterKg: { type: 'number', example: 120.5, description: 'Running balance immediately after this entry.' },
+                    productionRecordId: { type: 'string', format: 'uuid', description: 'The Looms or Fabric Checking ProductionRecord that generated this entry.' },
+                    createdAt: { type: 'string', format: 'date-time' },
+                    createdBy: { type: 'string' },
+                },
+            },
+            KoraLedgerBalance: {
+                type: 'object',
+                description: 'The variant\'s current balance, echoed alongside the ledger page. balanceKg is 0 when no KoraBalance row exists yet for this variant.',
+                properties: {
+                    colorId: { type: 'string', format: 'uuid' },
+                    sizeId: { type: 'string', format: 'uuid' },
+                    balanceKg: { type: 'number', example: 120.5 },
+                },
+            },
+            KoraLedgerMeta: {
+                allOf: [
+                    { $ref: '#/components/schemas/PaginationMeta' },
+                    {
+                        type: 'object',
+                        properties: {
+                            balance: { $ref: '#/components/schemas/KoraLedgerBalance' },
+                        },
+                    },
+                ],
+            },
+            KoraLedgerListResponse: {
+                type: 'object',
+                properties: {
+                    success: { type: 'boolean', example: true },
+                    data: { type: 'array', items: { $ref: '#/components/schemas/KoraLedgerEntry' } },
+                    meta: { $ref: '#/components/schemas/KoraLedgerMeta' },
                 },
             },
         },
@@ -898,7 +1093,7 @@ const definition: swaggerJsdoc.OAS3Definition = {
                 in: 'path',
                 required: true,
                 schema: { type: 'string', format: 'uuid' },
-                description: 'Load Sent record id.',
+                description: 'ProductionRecord id (stage=DELIVERY).',
             },
         },
         responses: {

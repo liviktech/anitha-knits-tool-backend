@@ -19,6 +19,7 @@ export const createExtruderSchema = z
         chemicalId: z.string().uuid(),
         rawMaterialKg: kg,
         chemicalKg: kg,
+        type:z.enum(['PRODUCTION','SAMPLE']).default('PRODUCTION'),
         colorConsumedKg: kg.optional(),
         yarnOutputKg: kg,
         remarks: z.string().trim().max(500).optional(),
@@ -59,6 +60,7 @@ export const listExtruderQuerySchema = paginationSchema
         date_to: z.coerce.date().optional(),
         color_id: z.string().uuid().optional(),
         size: z.string().uuid().optional(),
+        type: z.enum(['PRODUCTION','SAMPLE']).optional(),
     })
     .strict();
 

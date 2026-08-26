@@ -137,7 +137,7 @@ router.post('/refresh', refresh);
  *       400:
  *         $ref: '#/components/responses/ValidationError'
  *       401:
- *         description: No valid platform-admin session (AUTH_REQUIRED).
+ *         description: Missing, invalid, or expired platform-admin session (AUTH_REQUIRED / AUTH_TOKEN_EXPIRED / AUTH_TOKEN_INVALID).
  *         content:
  *           application/json:
  *             schema:
@@ -180,7 +180,7 @@ router.post('/companies', requirePlatformAdmin, createCompany);
  *             schema:
  *               $ref: '#/components/schemas/CompanyListResponse'
  *       401:
- *         description: No valid platform-admin session (AUTH_REQUIRED).
+ *         description: Missing, invalid, or expired platform-admin session (AUTH_REQUIRED / AUTH_TOKEN_EXPIRED / AUTH_TOKEN_INVALID).
  *         content:
  *           application/json:
  *             schema:
@@ -207,7 +207,7 @@ router.get('/companies', requirePlatformAdmin, listCompaniesHandler);
  *             schema:
  *               $ref: '#/components/schemas/CompanyResponse'
  *       401:
- *         description: No valid platform-admin session (AUTH_REQUIRED).
+ *         description: Missing, invalid, or expired platform-admin session (AUTH_REQUIRED / AUTH_TOKEN_EXPIRED / AUTH_TOKEN_INVALID).
  *         content:
  *           application/json:
  *             schema:
@@ -241,7 +241,7 @@ router.get('/companies', requirePlatformAdmin, listCompaniesHandler);
  *       400:
  *         $ref: '#/components/responses/ValidationError'
  *       401:
- *         description: No valid platform-admin session (AUTH_REQUIRED).
+ *         description: Missing, invalid, or expired platform-admin session (AUTH_REQUIRED / AUTH_TOKEN_EXPIRED / AUTH_TOKEN_INVALID).
  *         content:
  *           application/json:
  *             schema:
@@ -296,7 +296,7 @@ router.patch('/companies/:id', requirePlatformAdmin, updateCompanyHandler);
  *             schema:
  *               $ref: '#/components/schemas/PlatformAdminUserListResponse'
  *       401:
- *         description: No valid platform-admin session (AUTH_REQUIRED).
+ *         description: Missing, invalid, or expired platform-admin session (AUTH_REQUIRED / AUTH_TOKEN_EXPIRED / AUTH_TOKEN_INVALID).
  *         content:
  *           application/json:
  *             schema:

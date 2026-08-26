@@ -5,8 +5,8 @@ import { hashPassword } from '../utils/password.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import type { CreateUserInput, ListAllUsersQuery, ListUsersQuery, UpdateUserInput } from '../validations/userValidation.js';
 
-// This endpoint only manages MANAGER/SUPERVISOR accounts — ADMIN and EMPLOYEE rows are never touched here.
-const MANAGED_ROLES: UserRole[] = [UserRole.MANAGER, UserRole.SUPERVISOR];
+// This endpoint only manages MANAGER/SUPERVISOR accounts — ADMIN row never touched here.
+const MANAGED_ROLES: UserRole[] = [UserRole.MANAGER, UserRole.SUPERVISOR, UserRole.EMPLOYEE];
 
 const managedUserSelect = {
     id: true,

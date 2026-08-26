@@ -1,6 +1,8 @@
 import { Prisma, ProductionStage } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { NotFoundError } from '../utils/errors.js';
+import { roundKg } from '../utils/decimal.js';
+import { WASTAGE_CODES } from '../constants/wastageCodes.js';
 
 /**
  * Wastage entered alongside a production record (PRD §9/§26: "Wastage must be
@@ -146,4 +148,51 @@ export async function applyWastageUpdates(
             await tx.wastageRecord.delete({ where: { id: existing.id } });
         }
     }
+}
+
+export type WastageCategorySummary = { code: string; name: string; stage: ProductionStage; quantityKg: number };
+
+/**
+ * Wastage totals for a date range, one entry per configured WastageType
+ * (the 5 client-terminology categories: YARN_WASTE, LUMPS, LOOMS_WASTE, FW,
+ * BW) — backs the dashboard's monthly wastage panel. Names/stages are read
+ * from WastageType rather than hard-coded, since operators may rename them
+ * (see WASTAGE_CODES). A category with no activity this month still appears,
+ * at 0, rather than being silently omitted.
+ *
+ * Time: O(n) — n = WastageRecord rows in the range (two queries, one pass).
+ */
+export async function getWastageSummaryByDateRange(
+    companyId: string,
+    dateFrom: Date,
+    dateTo: Date,
+): Promise<{ byType: WastageCategorySummary[]; totalKg: number }> {
+    const codes: string[] = Object.values(WASTAGE_CODES);
+
+    const [types, rows] = await Promise.all([
+        prisma.wastageType.findMany({
+            where: { companyId, code: { in: codes } },
+            select: { code: true, name: true, stage: true },
+        }),
+        prisma.wastageRecord.findMany({
+            where: { companyId, productionRecord: { productionDate: { gte: dateFrom, lte: dateTo } } },
+            select: { quantityKg: true, wastageType: { select: { code: true } } },
+        }),
+    ]);
+
+    const quantityByCode = new Map<string, number>();
+    for (const row of rows) {
+        const code = row.wastageType.code;
+        quantityByCode.set(code, (quantityByCode.get(code) ?? 0) + row.quantityKg.toNumber());
+    }
+
+    const byType = types.map((type) => ({
+        code: type.code,
+        name: type.name,
+        stage: type.stage,
+        quantityKg: roundKg(quantityByCode.get(type.code) ?? 0),
+    }));
+
+    const totalKg = roundKg(byType.reduce((sum, type) => sum + type.quantityKg, 0));
+    return { byType, totalKg };
 }

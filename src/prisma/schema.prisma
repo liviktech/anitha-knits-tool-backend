@@ -42,6 +42,11 @@ enum ProductionRecordType {
   REVERSAL
 }
 
+enum ProductionType {
+  PRODUCTION
+  SAMPLE
+}
+
 enum InventoryType {
   HDPE
 
@@ -221,6 +226,8 @@ model Color {
 
   inventories Inventory[]
 
+  koraBalances KoraBalance[]
+
   consumptionStandard ColorConsumptionStandard?
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -246,6 +253,8 @@ model Size {
   name String @db.VarChar(30)
 
   productionRecords ProductionRecord[]
+
+  koraBalances KoraBalance[]
 
   loadSents LoadSent[]
 
@@ -298,6 +307,8 @@ model ProductionRecord {
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  type ProductionType @default(PRODUCTION)
+
   stage ProductionStage
 
   productionDate DateTime @map("production_date") @db.Date
@@ -327,6 +338,7 @@ model ProductionRecord {
   fabricCheck FabricCheckDetail?
   wastages    WastageRecord[]
   loadSent    LoadSent?
+  koraEntries KoraLedgerEntry?
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -400,6 +412,47 @@ model FabricCheckDetail {
   outputKg Decimal? @map("output_kg") @db.Decimal(12, 3)
 
   @@map("fabric_check_details")
+}
+
+enum KoraEntryType {
+  CREDIT
+  DEBIT
+}
+
+model KoraBalance {
+  id        String   @id @default(uuid()) @db.Uuid
+  colorId   String   @map("color_id") @db.Uuid
+  color     Color    @relation(fields: [colorId], references: [id])
+  sizeId    String   @map("size_id") @db.Uuid
+  size      Size     @relation(fields: [sizeId], references: [id])
+  balanceKg Decimal  @default(0) @map("balance_kg") @db.Decimal(14, 3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  entries KoraLedgerEntry[]
+
+  @@unique([colorId, sizeId])
+  @@map("kora_balances")
+}
+
+model KoraLedgerEntry {
+  id            String      @id @default(uuid()) @db.Uuid
+  koraBalanceId String      @map("kora_balance_id") @db.Uuid
+  koraBalance   KoraBalance @relation(fields: [koraBalanceId], references: [id])
+
+  entryType KoraEntryType @map("entry_type")
+  stockDate DateTime      @map("stock_date") @db.Date
+
+  productionRecordId String?           @unique @map("production_record_id") @db.Uuid
+  productionRecord   ProductionRecord? @relation(fields: [productionRecordId], references: [id])
+
+  quantityKg     Decimal @map("quantity_kg") @db.Decimal(12, 3)
+  balanceAfterKg Decimal @map("balance_after_kg") @db.Decimal(14, 3)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy String   @map("created_by") @db.VarChar(100)
+
+  @@index([koraBalanceId, createdAt])
+  @@map("kora_ledger_entries")
 }
 
 model WastageType {
@@ -483,6 +536,8 @@ model Inventory {
 
   type InventoryType
 
+  DC_NUMBER String
+
   name String @db.VarChar(150)
 
   weightKg Decimal @map("weight_kg") @db.Decimal(12, 3)
@@ -534,6 +589,9 @@ model LoadSent {
   fwWeight           Decimal @default(0) @map("fw_weight") @db.Decimal(12, 3)
   bwWeight           Decimal @default(0) @map("bw_weight") @db.Decimal(12, 3)
   totalWastageWeight Decimal @default(0) @map("total_wastage_weight") @db.Decimal(12, 3)
+
+  driverName String? @map("driver_name") @db.VarChar(100)
+  vehicleNo  String? @map("vehicle_no") @db.VarChar(20)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 

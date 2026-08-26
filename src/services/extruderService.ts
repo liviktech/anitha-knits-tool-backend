@@ -157,6 +157,7 @@ export async function createExtruderProduction(input: CreateExtruderInput, compa
             stage: ProductionStage.EXTRUDER,
             productionDate: input.productionDate,
             colorId: input.colorId,
+            type: input.type,
             sizeId: input.sizeId,
             remarks: input.remarks,
             createdBy: actor,

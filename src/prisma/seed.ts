@@ -32,12 +32,9 @@ async function main() {
   // 1. Brands — the HDPE suppliers the factory buys from.
   //    The Production Module PRD (§4) only confirms the raw material is HDPE
   //    and doesn't list brands. The baseline PRD (§12 Raw Material Management)
-  //    does: "Known brands include: Reliance, Haldia / TATA, Opel / Bangalore,
-  //    Ghail / Madurai." Names kept verbatim from that PRD, including the
-  //    "X / Y" pairings — confirm with the client if any is actually a typo
-  //    (e.g. "Ghail" vs "GAIL").
+  //    does: "Known brands include: Reliance, Haldia, Opel, Ghail." 
   // -------------------------------------------------------------------------
-  const brands = ['Reliance', 'Haldia / TATA', 'Opel / Bangalore', 'Ghail / Madurai']
+  const brands = ['Reliance', 'Haldia', 'Opel', 'Ghail']
   for (const name of brands) {
     await prisma.brand.upsert({
       where: { companyId_name: { companyId, name } },
