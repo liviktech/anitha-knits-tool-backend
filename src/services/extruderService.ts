@@ -4,6 +4,7 @@ import { NotFoundError, ValidationError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import { buildProductionWhere } from '../utils/productionFilters.js';
 import { assertBrandExists, assertChemicalExists, assertColorExists, assertSizeExists } from './masterDataService.js';
+import { getGramsPerBasisForColor } from './adminConfig.js';
 import { applyWastageUpdates, buildWastageCreates, mapWastageRecord, wastageSelect } from './wastageService.js';
 import { WASTAGE_CODES } from '../constants/wastageCodes.js';
 import type { CreateExtruderInput, UpdateExtruderInput, ListExtruderQuery } from '../validations/extruderValidation.js';
@@ -95,23 +96,25 @@ type ColorConsumptionResolution = {
  *   recorded as a recipe override, which requires a reason (PRD §6, "Store
  *   original recipe, overridden values, user, timestamp and reason").
  *
- * Time: O(1) — one indexed lookup plus arithmetic.
+ * The standard is one record per company covering every colour (white/blue/
+ * green); a colour outside that set has no configured standard.
+ *
+ * Time: O(1) — two indexed lookups plus arithmetic.
  */
 async function resolveColorConsumption(
     colorId: string,
+    companyId: string,
+    productionDate: Date,
     rawMaterialKg: number,
     requestedColorConsumedKg: number | undefined,
     overrideReason: string | undefined,
 ): Promise<ColorConsumptionResolution> {
-    const standard = await prisma.colorConsumptionStandard.findUnique({
-        where: { colorId },
-        select: { gramsPerBasis: true, basisWeightKg: true, isActive: true },
-    });
+    const color = await prisma.color.findFirst({ where: { id: colorId, companyId }, select: { name: true } });
+    const standard = color ? await getGramsPerBasisForColor(companyId, color.name, productionDate) : null;
 
-    const standardKg =
-        standard && standard.isActive
-            ? roundKg((standard.gramsPerBasis.toNumber() / 1000) * (rawMaterialKg / standard.basisWeightKg.toNumber()))
-            : null;
+    const standardKg = standard
+        ? roundKg((standard.gramsPerBasis.toNumber() / 1000) * (rawMaterialKg / standard.basisWeightKg.toNumber()))
+        : null;
 
     if (requestedColorConsumedKg === undefined) {
         if (standardKg === null) {
@@ -149,6 +152,8 @@ export async function createExtruderProduction(input: CreateExtruderInput, compa
 
     const consumption = await resolveColorConsumption(
         input.colorId,
+        companyId,
+        input.productionDate,
         input.rawMaterialKg,
         input.colorConsumedKg,
         input.overrideReason,
@@ -223,7 +228,7 @@ export async function getExtruderProductionById(id: string, companyId: string) {
 export async function updateExtruderProduction(id: string, input: UpdateExtruderInput, companyId: string, actor: string) {
     const existing = await prisma.productionRecord.findFirst({
         where: { id, companyId, stage: ProductionStage.EXTRUDER },
-        select: { id: true, colorId: true, extruder: { select: { rawMaterialKg: true } } },
+        select: { id: true, colorId: true, productionDate: true, extruder: { select: { rawMaterialKg: true } } },
     });
     if (!existing) throw new NotFoundError('Extruder production not found', 'EXTRUDER_NOT_FOUND', { id });
 
@@ -238,6 +243,8 @@ export async function updateExtruderProduction(id: string, input: UpdateExtruder
     if (input.colorConsumedKg !== undefined || input.rawMaterialKg !== undefined || input.colorId !== undefined) {
         consumption = await resolveColorConsumption(
             input.colorId ?? existing.colorId,
+            companyId,
+            input.productionDate ?? existing.productionDate,
             input.rawMaterialKg ?? (existing.extruder?.rawMaterialKg.toNumber() ?? 0),
             input.colorConsumedKg,
             input.overrideReason,
