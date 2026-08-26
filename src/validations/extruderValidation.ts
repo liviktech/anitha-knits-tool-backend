@@ -9,6 +9,8 @@ export const extruderIdParamsSchema = z
 
 const kg = z.coerce.number().positive('must be a positive number');
 const wastageKg = z.coerce.number().nonnegative('must not be negative').optional();
+const nonNegativeKg = z.coerce.number().nonnegative('must not be negative').optional();
+const bagCount = z.coerce.number().int('must be a whole number').nonnegative('must not be negative').optional();
 
 export const createExtruderSchema = z
     .object({
@@ -28,6 +30,10 @@ export const createExtruderSchema = z
         // and only turns into a WastageRecord when > 0 — see wastageService.ts.
         yarnWasteKg: wastageKg,
         lumpsKg: wastageKg,
+        bagCount,
+        bagWeightKg: nonNegativeKg,
+        looseWeightKg: nonNegativeKg,
+        totalWeightKg: nonNegativeKg,
     })
     .strict();
 
@@ -49,6 +55,10 @@ export const updateExtruderSchema = z
         // wastageService.applyWastageUpdates.
         yarnWasteKg: wastageKg,
         lumpsKg: wastageKg,
+        bagCount,
+        bagWeightKg: nonNegativeKg,
+        looseWeightKg: nonNegativeKg,
+        totalWeightKg: nonNegativeKg,
     })
     .partial()
     .strict()
