@@ -864,6 +864,7 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     type: { type: 'string', enum: ['HDPE', 'CHEMICAL', 'COLOR'] },
                     name: { type: 'string', example: 'Reliance', description: 'Auto-filled from the linked brand/chemical/colour.' },
                     weightKg: { type: 'number', format: 'decimal', example: 250, description: 'Current balance on hand.' },
+                    DC_NUMBER: { type: 'string', example: 'DC1234', description: 'Distribution Center / delivery challan number.' },
                     brand: { allOf: [{ $ref: '#/components/schemas/MasterDataRef' }], nullable: true, description: 'Set when type is HDPE.' },
                     chemical: { allOf: [{ $ref: '#/components/schemas/MasterDataRef' }], nullable: true, description: 'Set when type is CHEMICAL.' },
                     color: { allOf: [{ $ref: '#/components/schemas/MasterDataRef' }], nullable: true, description: 'Set when type is COLOR.' },
@@ -895,6 +896,7 @@ const definition: swaggerJsdoc.OAS3Definition = {
                 properties: {
                     date: { type: 'string', format: 'date' },
                     weightKg: { type: 'number', minimum: 0 },
+                    DC: { type: 'string', maxLength: 8, example: 'DC1234' },
                 },
             },
             InventoryResponse: {
