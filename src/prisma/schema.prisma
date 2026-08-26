@@ -286,6 +286,10 @@ model ColorConsumptionStandard {
 
   basisWeightKg Decimal @default(25) @map("basis_weight_kg") @db.Decimal(10, 3)
 
+  hdpematerialbag Int       @default(1) @map("hdpe_material_bag")
+  chemicalWeight  Decimal?  @map("chemical_weight_kg") @db.Decimal(12, 3)
+  date            DateTime? @map("date") @db.Date
+
   isActive Boolean @default(true) @map("is_active")
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)

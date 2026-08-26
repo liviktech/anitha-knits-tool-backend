@@ -11,6 +11,7 @@ import lookupRoutes from './lookup.js';
 import dashboardRoutes from './dashboardRoutes.js';
 import inventoryRoutes from './inventoryRoutes.js';
 import loadSentRoutes from './loadSentRoutes.js';
+import adminConfigRoutes from './adminConfig.js';
 import { requireAuth } from '../middlewares/auth.js';
 
 const router = Router();
@@ -32,7 +33,7 @@ router.use(
   requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
   loadSentRoutes,
 );
-
+router.use('/color-consumption-standard', adminConfigRoutes);
 router.use('/platform/admin', platformAdminRoutes);
 router.use('/company/user', requireAuth('ADMIN'), userRoutes);
 router.use(
