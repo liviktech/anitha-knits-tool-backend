@@ -386,6 +386,10 @@ const definition: swaggerJsdoc.OAS3Definition = {
                         nullable: true,
                         description: 'Required and stored only when isRecipeOverridden is true.',
                     },
+                    bagCount: { type: 'integer', nullable: true, example: 5 },
+                    bagWeightKg: { type: 'number', format: 'decimal', nullable: true, example: 20 },
+                    looseWeightKg: { type: 'number', format: 'decimal', nullable: true, example: 4 },
+                    totalWeightKg: { type: 'number', format: 'decimal', nullable: true, example: 24 },
                 },
             },
             ExtruderProduction: {
@@ -433,6 +437,10 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     },
                     yarnWasteKg: { type: 'number', minimum: 0, description: 'Optional. Creates a WastageRecord (code YARN_WASTE) only if > 0.' },
                     lumpsKg: { type: 'number', minimum: 0, description: 'Optional. Creates a WastageRecord (code LUMPS) only if > 0.' },
+                    bagCount: { type: 'integer', minimum: 0, example: 5, description: 'Optional.' },
+                    bagWeightKg: { type: 'number', minimum: 0, example: 20, description: 'Optional.' },
+                    looseWeightKg: { type: 'number', minimum: 0, example: 4, description: 'Optional.' },
+                    totalWeightKg: { type: 'number', minimum: 0, example: 24, description: 'Optional.' },
                 },
             },
             ExtruderUpdateRequest: {
@@ -454,6 +462,10 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     overrideReason: { type: 'string', maxLength: 500 },
                     yarnWasteKg: { type: 'number', minimum: 0, description: 'Omit to leave unchanged, 0 to clear, positive to set/replace.' },
                     lumpsKg: { type: 'number', minimum: 0, description: 'Omit to leave unchanged, 0 to clear, positive to set/replace.' },
+                    bagCount: { type: 'integer', minimum: 0 },
+                    bagWeightKg: { type: 'number', minimum: 0 },
+                    looseWeightKg: { type: 'number', minimum: 0 },
+                    totalWeightKg: { type: 'number', minimum: 0 },
                 },
             },
             PaginationMeta: {
