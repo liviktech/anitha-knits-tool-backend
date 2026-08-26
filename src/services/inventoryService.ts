@@ -16,6 +16,7 @@ const inventorySelect = {
   type: true,
   name: true,
   weightKg: true,
+  DC_NUMBER: true,
   brand: { select: { id: true, name: true } },
   chemical: { select: { id: true, name: true } },
   color: { select: { id: true, name: true } },
@@ -169,6 +170,7 @@ export async function updateInventory(
     data: {
       ...(input.date !== undefined ? { date: input.date } : {}),
       ...(input.weightKg !== undefined ? { weightKg: input.weightKg } : {}),
+      ...(input.DC !== undefined ? { DC_NUMBER: input.DC } : {}),
       updatedBy: actor,
     },
     select: inventorySelect,

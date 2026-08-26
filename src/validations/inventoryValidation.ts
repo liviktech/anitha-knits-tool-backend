@@ -36,14 +36,15 @@ export const createInventorySchema = z
 
 /**
  * Manual correction of a balance already on file (e.g. physical stock count
- * doesn't match the system) — only `weightKg`/`date` are adjustable. The item
- * identity (type/brandId/chemicalId/colorId) is fixed once a row exists;
+ * doesn't match the system) — only `weightKg`/`date`/`DC` are adjustable. The
+ * item identity (type/brandId/chemicalId/colorId) is fixed once a row exists;
  * if it's wrong, delete the row and let it get recreated by the next intake.
  */
 export const updateInventorySchema = z
     .object({
         date: z.coerce.date(),
         weightKg: z.coerce.number().nonnegative('must not be negative'),
+        DC: z.string().trim().max(8),
     })
     .partial()
     .strict()
