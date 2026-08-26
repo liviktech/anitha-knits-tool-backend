@@ -70,6 +70,9 @@ const router = Router();
  *         in: query
  *         schema: { type: string, format: uuid }
  *         description: Size master-data id (PRD filter name is "size", not "size_id").
+ *       - name: type
+ *         in: query
+ *         schema: { type: string, enum: [PRODUCTION, SAMPLE] }
  *       - name: page
  *         in: query
  *         schema: { type: integer, minimum: 1, default: 1 }

@@ -16,6 +16,10 @@ const router = Router();
  *     responses:
  *       200:
  *         description: OK.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/KoraBalanceListResponse'
  */
 router.get('/', listBalances);
 
@@ -53,7 +57,15 @@ router.get('/', listBalances);
  *         schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
  *     responses:
  *       200:
- *         description: OK.
+ *         description: >
+ *           OK. meta.balance echoes the variant's current balance even when
+ *           no KoraBalance row exists yet (balanceKg 0, empty data array).
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/KoraLedgerListResponse'
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
  */
 router.get('/:colorId/:sizeId/ledger', getLedger);
 

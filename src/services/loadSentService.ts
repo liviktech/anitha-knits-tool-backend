@@ -2,6 +2,7 @@ import { Prisma, ProductionStage } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { NotFoundError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
+import { roundKg } from '../utils/decimal.js';
 import { assertColorExists, assertSizeExists } from './masterDataService.js';
 import type { CreateLoadSentInput, UpdateLoadSentInput, ListLoadSentQuery } from '../validations/loadSentValidation.js';
 
@@ -49,6 +50,8 @@ const loadSentSelect = {
             fwWeight: true,
             bwWeight: true,
             totalWastageWeight: true,
+            driverName: true,
+            vehicleNo: true,
         },
     },
 
@@ -92,6 +95,8 @@ function mapLoadSentRecord(
                 bwWeight: loadSent.bwWeight.toNumber(),
                 totalWastageWeight:
                     loadSent.totalWastageWeight.toNumber(),
+                driverName: loadSent.driverName,
+                vehicleNo: loadSent.vehicleNo,
             }
             : null,
     };
@@ -177,6 +182,8 @@ export async function createLoadSent(
                             },
                         },
                         fabricWeight: input.fabricWeight,
+                        driverName: input.driverName,
+                        vehicleNo: input.vehicleNo,
                         createdBy: actor,
                     },
                 },
@@ -313,6 +320,8 @@ export async function updateLoadSent(
                         fabricWeight: true,
                         fwWeight: true,
                         bwWeight: true,
+                        driverName: true,
+                        vehicleNo: true,
                     },
                 },
             },
@@ -361,6 +370,16 @@ export async function updateLoadSent(
     const totalWastageWeight =
         fwWeight + bwWeight;
 
+    const driverName =
+        input.driverName !== undefined
+            ? input.driverName
+            : existing.loadSent.driverName;
+
+    const vehicleNo =
+        input.vehicleNo !== undefined
+            ? input.vehicleNo
+            : existing.loadSent.vehicleNo;
+
     const record =
         await prisma.productionRecord.update({
             where: {
@@ -403,6 +422,8 @@ export async function updateLoadSent(
                         fwWeight,
                         bwWeight,
                         totalWastageWeight,
+                        driverName,
+                        vehicleNo,
                         updatedBy: actor,
                     },
                 },
@@ -446,6 +467,86 @@ export async function deleteLoadSent(
             id,
         },
     });
+}
+
+export type LoadSentVariantSummary = {
+    color: { id: string; name: string };
+    size: { id: string; name: string };
+    fabricWeightKg: number;
+    fwWeightKg: number;
+    bwWeightKg: number;
+    totalWastageWeightKg: number;
+};
+
+export type LoadSentSummary = {
+    items: ReturnType<typeof mapLoadSentRecord>[];
+    totals: { fabricWeightKg: number; fwWeightKg: number; bwWeightKg: number; totalWastageWeightKg: number };
+    byVariant: LoadSentVariantSummary[];
+};
+
+/**
+ * Load Sent ("stock delivered") records for a date range, with grand totals
+ * and a per colour+size breakdown — backs the dashboard's monthly Load Sent
+ * panel. Filters on productionDate (like listLoadSent), just unpaginated.
+ *
+ * Time: O(n) — n = Load Sent records in the range (one query, one pass).
+ */
+export async function getLoadSentSummaryByDateRange(
+    companyId: string,
+    dateFrom: Date,
+    dateTo: Date,
+): Promise<LoadSentSummary> {
+    const rows = await prisma.productionRecord.findMany({
+        where: {
+            companyId,
+            stage: ProductionStage.DELIVERY,
+            productionDate: { gte: dateFrom, lte: dateTo },
+            loadSent: { isNot: null },
+        },
+        select: loadSentSelect,
+        orderBy: [{ productionDate: 'desc' }, { createdAt: 'desc' }],
+    });
+
+    const items = rows.map(mapLoadSentRecord);
+
+    const totals = { fabricWeightKg: 0, fwWeightKg: 0, bwWeightKg: 0, totalWastageWeightKg: 0 };
+    const byVariantMap = new Map<string, LoadSentVariantSummary>();
+
+    for (const item of items) {
+        if (!item.loadSent) continue;
+        totals.fabricWeightKg += item.loadSent.fabricWeight;
+        totals.fwWeightKg += item.loadSent.fwWeight;
+        totals.bwWeightKg += item.loadSent.bwWeight;
+        totals.totalWastageWeightKg += item.loadSent.totalWastageWeight;
+
+        const key = `${item.color.id}_${item.size.id}`;
+        let entry = byVariantMap.get(key);
+        if (!entry) {
+            entry = { color: item.color, size: item.size, fabricWeightKg: 0, fwWeightKg: 0, bwWeightKg: 0, totalWastageWeightKg: 0 };
+            byVariantMap.set(key, entry);
+        }
+        entry.fabricWeightKg += item.loadSent.fabricWeight;
+        entry.fwWeightKg += item.loadSent.fwWeight;
+        entry.bwWeightKg += item.loadSent.bwWeight;
+        entry.totalWastageWeightKg += item.loadSent.totalWastageWeight;
+    }
+
+    return {
+        items,
+        totals: {
+            fabricWeightKg: roundKg(totals.fabricWeightKg),
+            fwWeightKg: roundKg(totals.fwWeightKg),
+            bwWeightKg: roundKg(totals.bwWeightKg),
+            totalWastageWeightKg: roundKg(totals.totalWastageWeightKg),
+        },
+        byVariant: Array.from(byVariantMap.values()).map((entry) => ({
+            ...entry,
+            fabricWeightKg: roundKg(entry.fabricWeightKg),
+            fwWeightKg: roundKg(entry.fwWeightKg),
+            bwWeightKg: roundKg(entry.bwWeightKg),
+            totalWastageWeightKg: roundKg(entry.totalWastageWeightKg),
+        })),
+    };
 }
 
 export async function getStockBalance(companyId: string) {

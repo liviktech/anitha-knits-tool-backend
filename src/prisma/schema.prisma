@@ -236,7 +236,7 @@ model Color {
 
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  updatedBy    String?       @map("updated_by") @db.VarChar(100)
+  updatedBy String? @map("updated_by") @db.VarChar(100)
 
   @@unique([companyId, name])
   @@index([companyId])
@@ -264,7 +264,7 @@ model Size {
 
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  updatedBy    String?       @map("updated_by") @db.VarChar(100)
+  updatedBy String? @map("updated_by") @db.VarChar(100)
 
   @@unique([companyId, name])
   @@index([companyId])
@@ -346,7 +346,7 @@ model ProductionRecord {
 
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  updatedBy       String?          @map("updated_by") @db.VarChar(100)
+  updatedBy String? @map("updated_by") @db.VarChar(100)
 
   @@index([companyId])
   @@index([companyId, productionDate])
@@ -589,6 +589,9 @@ model LoadSent {
   fwWeight           Decimal @default(0) @map("fw_weight") @db.Decimal(12, 3)
   bwWeight           Decimal @default(0) @map("bw_weight") @db.Decimal(12, 3)
   totalWastageWeight Decimal @default(0) @map("total_wastage_weight") @db.Decimal(12, 3)
+
+  driverName String? @map("driver_name") @db.VarChar(100)
+  vehicleNo  String? @map("vehicle_no") @db.VarChar(20)
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 

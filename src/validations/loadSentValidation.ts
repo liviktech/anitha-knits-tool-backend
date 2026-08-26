@@ -15,6 +15,8 @@ export const createLoadSentSchema = z
         fabricWeight: z.coerce.number().min(0).default(0),
         fwWeight: z.coerce.number().min(0).default(0).optional(),
         bwWeight: z.coerce.number().min(0).default(0).optional(),
+        driverName: z.string().trim().min(1).max(100).optional(),
+        vehicleNo: z.string().trim().min(1).max(20).optional(),
     })
     .strict();
 
@@ -26,6 +28,8 @@ export const updateLoadSentSchema = z
         fabricWeight: z.coerce.number().min(0),
         fwWeight: z.coerce.number().min(0).optional(),
         bwWeight: z.coerce.number().min(0).optional(),
+        driverName: z.string().trim().min(1).max(100).nullable(),
+        vehicleNo: z.string().trim().min(1).max(20).nullable(),
     })
     .partial()
     .strict()

@@ -1,7 +1,42 @@
 import { Router } from 'express';
-import { getProductionDashboardData } from '../controllers/dashboardController.js';
+import { getMonthlyDashboardData, getProductionDashboardData } from '../controllers/dashboardController.js';
 
 const router = Router();
+
+/**
+ * @openapi
+ * /api/v1/dashboard:
+ *   get:
+ *     tags: [Dashboard]
+ *     summary: Monthly management dashboard
+ *     description: >
+ *       One call backing the monthly dashboard: inventory on hand
+ *       (HDPE/chemical/colour), stock delivered (Load Sent), fabric
+ *       production (Fabric Checking output, colour+size variant-wise plus an
+ *       overall total), and wastage across all 5 client-terminology
+ *       categories (Yarn Waste, LUMS/LUMPS, Looms Waste, FW, BW) — all scoped
+ *       to one calendar month. Defaults to the current UTC calendar month
+ *       when month/year are omitted.
+ *     parameters:
+ *       - name: month
+ *         in: query
+ *         schema: { type: integer, minimum: 1, maximum: 12 }
+ *         description: 1-12. Defaults to the current UTC month.
+ *       - name: year
+ *         in: query
+ *         schema: { type: integer, minimum: 2000, maximum: 2100 }
+ *         description: Defaults to the current UTC year.
+ *     responses:
+ *       200:
+ *         description: OK.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/DashboardMonthlyResponse'
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ */
+router.get('/', getMonthlyDashboardData);
 
 /**
  * @openapi
