@@ -49,7 +49,7 @@ router.post('/', requireAuth('ADMIN'), createColorConsumption);
 
 /**
  * @openapi
- * /api/v1/lookups/color-consumption-standard/latest:
+ * /api/v1/color-consumption-standard/latest:
  *   get:
  *     tags: [Lookups]
  *     summary: Get latest color consumption configuration as of a date
