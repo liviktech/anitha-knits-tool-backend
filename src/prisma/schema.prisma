@@ -383,10 +383,10 @@ model ExtruderDetail {
 
   overrideReason String? @map("override_reason") @db.VarChar(500)
 
-  bagCount       Int?     @map("bag_count")
-  bagWeightKg    Decimal? @map("bag_weight_kg") @db.Decimal(12, 3)
-  looseWeightKg  Decimal? @map("loose_weight_kg") @db.Decimal(12, 3)
-  totalWeightKg  Decimal? @map("total_weight_kg") @db.Decimal(12, 3)
+  bagCount      Int?     @map("bag_count")
+  bagWeightKg   Decimal? @map("bag_weight_kg") @db.Decimal(12, 3)
+  looseWeightKg Decimal? @map("loose_weight_kg") @db.Decimal(12, 3)
+  totalWeightKg Decimal? @map("total_weight_kg") @db.Decimal(12, 3)
 
   @@index([brandId])
   @@index([chemicalId])
