@@ -75,8 +75,12 @@ function resolveRange(query: DashboardProductionQuery): { dateFrom: Date; dateTo
     return { dateFrom, dateTo };
 }
 
-export async function getProductionDashboard(query: DashboardProductionQuery, companyId: string) {
-    const { dateFrom, dateTo } = resolveRange(query);
+/** Shared by getProductionDashboard (needs the day-wise breakdown) and getStageProductionSummaryByDateRange (totals only). */
+async function computeStageTotals(
+    companyId: string,
+    dateFrom: Date,
+    dateTo: Date,
+): Promise<{ byDate: Map<string, Record<StageKey, StageTotals>>; grandTotals: Record<StageKey, StageTotals> }> {
     const productionDate = { gte: dateFrom, lte: dateTo };
 
     const [extruderRows, loomsRows, fabricRows, wastageRows] = await Promise.all([
@@ -150,15 +154,6 @@ export async function getProductionDashboard(query: DashboardProductionQuery, co
         bucket(row.productionRecord.productionDate)[key].wastageKg += row.quantityKg.toNumber();
     }
 
-    const daily = [...byDate.entries()]
-        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-        .map(([date, stages]) => ({
-            date,
-            extruder: withWastePct(stages.extruder),
-            looms: withWastePct(stages.looms),
-            fabricChecking: withWastePct(stages.fabricChecking),
-        }));
-
     const grandTotals: Record<StageKey, StageTotals> = { extruder: emptyTotals(), looms: emptyTotals(), fabricChecking: emptyTotals() };
     for (const stages of byDate.values()) {
         for (const key of STAGE_KEYS) {
@@ -168,6 +163,22 @@ export async function getProductionDashboard(query: DashboardProductionQuery, co
         }
     }
 
+    return { byDate, grandTotals };
+}
+
+export async function getProductionDashboard(query: DashboardProductionQuery, companyId: string) {
+    const { dateFrom, dateTo } = resolveRange(query);
+    const { byDate, grandTotals } = await computeStageTotals(companyId, dateFrom, dateTo);
+
+    const daily = [...byDate.entries()]
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        .map(([date, stages]) => ({
+            date,
+            extruder: withWastePct(stages.extruder),
+            looms: withWastePct(stages.looms),
+            fabricChecking: withWastePct(stages.fabricChecking),
+        }));
+
     return {
         range: { dateFrom: dateKey(dateFrom), dateTo: dateKey(dateTo) },
         summary: {
@@ -176,6 +187,16 @@ export async function getProductionDashboard(query: DashboardProductionQuery, co
             fabricChecking: withSummaryMetrics(grandTotals.fabricChecking),
         },
         daily,
+    };
+}
+
+/** Overall per-stage production totals (Extruder/Looms/Fabric Checking) for a date range — the monthly dashboard's "overall month production" section. */
+export async function getStageProductionSummaryByDateRange(companyId: string, dateFrom: Date, dateTo: Date) {
+    const { grandTotals } = await computeStageTotals(companyId, dateFrom, dateTo);
+    return {
+        extruder: withSummaryMetrics(grandTotals.extruder),
+        looms: withSummaryMetrics(grandTotals.looms),
+        fabricChecking: withSummaryMetrics(grandTotals.fabricChecking),
     };
 }
 
@@ -192,21 +213,23 @@ function resolveMonthRange(query: DashboardMonthlyQuery): { month: number; year:
 /**
  * Backs the monthly management dashboard (GET /api/v1/dashboard): inventory
  * on hand (HDPE/chemical/colour), stock delivered (Load Sent), fabric
- * production (variant-wise colour+size, plus overall), and wastage across
- * all 5 client-terminology categories — all scoped to one calendar month.
- * Each section is computed by a reusable per-domain function shared with
- * that domain's own list/summary endpoints.
+ * production (variant-wise colour+size, plus overall), overall production
+ * totals across all three stages (Extruder/Looms/Fabric Checking), and
+ * wastage across all 5 client-terminology categories — all scoped to one
+ * calendar month. Each section is computed by a reusable per-domain function
+ * shared with that domain's own list/summary endpoints.
  *
- * Time: O(n) — n = rows across the 4 underlying queries, run concurrently.
+ * Time: O(n) — n = rows across the 5 underlying queries, run concurrently.
  */
 export async function getMonthlyDashboard(query: DashboardMonthlyQuery, companyId: string) {
     const { month, year, dateFrom, dateTo } = resolveMonthRange(query);
 
-    const [inventory, loadSent, fabricProduction, wastage] = await Promise.all([
+    const [inventory, loadSent, fabricProduction, wastage, production] = await Promise.all([
         getInventorySummaryByDateRange(companyId, dateFrom, dateTo),
         getLoadSentSummaryByDateRange(companyId, dateFrom, dateTo),
         getFabricProductionSummaryByDateRange(companyId, dateFrom, dateTo),
         getWastageSummaryByDateRange(companyId, dateFrom, dateTo),
+        getStageProductionSummaryByDateRange(companyId, dateFrom, dateTo),
     ]);
 
     return {
@@ -214,6 +237,7 @@ export async function getMonthlyDashboard(query: DashboardMonthlyQuery, companyI
         inventory,
         loadSent,
         fabricProduction,
+        production,
         wastage,
     };
 }

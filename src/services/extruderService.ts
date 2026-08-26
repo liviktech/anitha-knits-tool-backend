@@ -4,7 +4,7 @@ import { NotFoundError, ValidationError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import { buildProductionWhere } from '../utils/productionFilters.js';
 import { assertBrandExists, assertChemicalExists, assertColorExists, assertSizeExists } from './masterDataService.js';
-import { getGramsPerBasisForColor } from './adminConfig.js';
+import { getKgPerBasisForColor } from './adminConfig.js';
 import { applyWastageUpdates, buildWastageCreates, mapWastageRecord, wastageSelect } from './wastageService.js';
 import { WASTAGE_CODES } from '../constants/wastageCodes.js';
 import type { CreateExtruderInput, UpdateExtruderInput, ListExtruderQuery } from '../validations/extruderValidation.js';
@@ -88,7 +88,7 @@ type ColorConsumptionResolution = {
 
 /**
  * Resolves the colour consumption to store for an Extruder entry (PRD §5, §6).
- * - No value supplied: falls back to the configured standard (grams/25kg,
+ * - No value supplied: falls back to the configured standard (kg/25kg,
  *   scaled to the actual raw-material input). Requires a standard to exist.
  * - Value supplied and it matches the standard (within tolerance): recorded
  *   as-is, not an override.
@@ -110,10 +110,10 @@ async function resolveColorConsumption(
     overrideReason: string | undefined,
 ): Promise<ColorConsumptionResolution> {
     const color = await prisma.color.findFirst({ where: { id: colorId, companyId }, select: { name: true } });
-    const standard = color ? await getGramsPerBasisForColor(companyId, color.name, productionDate) : null;
+    const standard = color ? await getKgPerBasisForColor(companyId, color.name, productionDate) : null;
 
     const standardKg = standard
-        ? roundKg((standard.gramsPerBasis.toNumber() / 1000) * (rawMaterialKg / standard.basisWeightKg.toNumber()))
+        ? roundKg(standard.kgPerBasis.toNumber() * (rawMaterialKg / standard.basisWeightKg.toNumber()))
         : null;
 
     if (requestedColorConsumedKg === undefined) {
