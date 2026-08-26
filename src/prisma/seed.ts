@@ -13,34 +13,36 @@
  * go-live (PRD §20).
  */
 
-import { ProductionStage } from '@prisma/client'
-import { prisma } from '../config/prisma.js'
+import { ProductionStage } from '@prisma/client';
+import { prisma } from '../config/prisma.js';
 
-const SYSTEM = 'system:seed'
+const SYSTEM = 'system:seed';
 
 // A ternary (not an `if` guard) so TypeScript keeps this narrowed to `string`
 // inside the closures below — control-flow narrowing on a bare `const` doesn't
 // survive being captured by a function declared later in the same module.
-const companyId: string = process.env.SEED_COMPANY_ID ?? (() => {
-  throw new Error(
-    'SEED_COMPANY_ID is required — sign up a company first, then run: SEED_COMPANY_ID=<company.id> npx prisma db seed',
-  )
-})()
+const companyId: string =
+  process.env.SEED_COMPANY_ID ??
+  (() => {
+    throw new Error(
+      'SEED_COMPANY_ID is required — sign up a company first, then run: SEED_COMPANY_ID=<company.id> npx prisma db seed',
+    );
+  })();
 
 async function main() {
   // -------------------------------------------------------------------------
   // 1. Brands — the HDPE suppliers the factory buys from.
   //    The Production Module PRD (§4) only confirms the raw material is HDPE
   //    and doesn't list brands. The baseline PRD (§12 Raw Material Management)
-  //    does: "Known brands include: Reliance, Haldia, Opel, Ghail." 
+  //    does: "Known brands include: Reliance, Haldia, Opel, Ghail."
   // -------------------------------------------------------------------------
-  const brands = ['Reliance', 'Haldia', 'Opel', 'Ghail']
+  const brands = ['Reliance', 'Haldia', 'Opel', 'Ghail'];
   for (const name of brands) {
     await prisma.brand.upsert({
       where: { companyId_name: { companyId, name } },
       update: {},
       create: { companyId, name, createdBy: SYSTEM },
-    })
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -51,7 +53,7 @@ async function main() {
       where: { companyId_name: { companyId, name } },
       update: {},
       create: { companyId, name, createdBy: SYSTEM },
-    })
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -62,7 +64,7 @@ async function main() {
       where: { companyId_name: { companyId, name } },
       update: {},
       create: { companyId, name, createdBy: SYSTEM },
-    })
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -75,31 +77,34 @@ async function main() {
       where: { companyId_name: { companyId, name } },
       update: {},
       create: { companyId, name, createdBy: SYSTEM },
-    })
+    });
   }
 
   // -------------------------------------------------------------------------
   // 4b. Colour consumption standard — one record covers every colour, not
   //     one row per colour. PRD §5, confirmed: White 150 g, Blue 100 g,
-  //     Green 200 g per 25 KG; chemical weight (1.2 kg) is common to all.
+  //     Green 200 g per 25 KG — stored in kg (0.150/0.100/0.200), not grams;
+  //     chemical weight (1.2 kg) is common to all.
   // -------------------------------------------------------------------------
-  const existingStandard = await prisma.colorConsumptionStandard.findFirst({ where: { companyId } })
+  const existingStandard = await prisma.colorConsumptionStandard.findFirst({
+    where: { companyId },
+  });
   if (!existingStandard) {
     await prisma.colorConsumptionStandard.create({
       data: {
         companyId,
         basisWeightKg: 25,
         hdpematerialbag: 1,
-        whiteGramsPerBasis: 150,
-        blueGramsPerBasis: 100,
-        greenGramsPerBasis: 200,
+        whiteKgBasis: 0.15,
+        blueKgBasis: 0.1,
+        greenKgBasis: 0.2,
         chemicalWeight: 1.2,
         // "latest as of" lookups filter on date <= asOf, so a null date
         // would never match — stamp it effective immediately.
         date: new Date(),
         createdBy: SYSTEM,
       },
-    })
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -108,29 +113,56 @@ async function main() {
   //    LUMS and LUMPS are the same thing, so there is one code, not two.
   // -------------------------------------------------------------------------
   const wastageTypes = [
-    { stage: ProductionStage.EXTRUDER,        code: 'YARN_WASTE',  name: 'Yarn Waste',     isColorTracked: false },
-    { stage: ProductionStage.EXTRUDER,        code: 'LUMPS',       name: 'LUMS / LUMPS',   isColorTracked: false },
-    { stage: ProductionStage.LOOMS,           code: 'LOOMS_WASTE', name: 'Looms Waste',    isColorTracked: false },
-    { stage: ProductionStage.FABRIC_CHECKING, code: 'FW',          name: 'Fabric Wastage', isColorTracked: false },
-    { stage: ProductionStage.FABRIC_CHECKING, code: 'BW',          name: 'Bit Wastage',    isColorTracked: true  },
-  ]
+    {
+      stage: ProductionStage.EXTRUDER,
+      code: 'YARN_WASTE',
+      name: 'Yarn Waste',
+      isColorTracked: false,
+    },
+    {
+      stage: ProductionStage.EXTRUDER,
+      code: 'LUMPS',
+      name: 'LUMS / LUMPS',
+      isColorTracked: false,
+    },
+    {
+      stage: ProductionStage.LOOMS,
+      code: 'LOOMS_WASTE',
+      name: 'Looms Waste',
+      isColorTracked: false,
+    },
+    {
+      stage: ProductionStage.FABRIC_CHECKING,
+      code: 'FW',
+      name: 'Fabric Wastage',
+      isColorTracked: false,
+    },
+    {
+      stage: ProductionStage.FABRIC_CHECKING,
+      code: 'BW',
+      name: 'Bit Wastage',
+      isColorTracked: true,
+    },
+  ];
 
   for (const wt of wastageTypes) {
     await prisma.wastageType.upsert({
-      where: { companyId_stage_code: { companyId, stage: wt.stage, code: wt.code } },
+      where: {
+        companyId_stage_code: { companyId, stage: wt.stage, code: wt.code },
+      },
       update: { name: wt.name, isColorTracked: wt.isColorTracked },
       create: { ...wt, companyId, createdBy: SYSTEM },
-    })
+    });
   }
 
-  console.log('Seed complete.')
+  console.log('Seed complete.');
 }
 
 main()
   .catch((e) => {
-    console.error(e)
-    process.exit(1)
+    console.error(e);
+    process.exit(1);
   })
   .finally(async () => {
-    await prisma.$disconnect()
-  })
+    await prisma.$disconnect();
+  });

@@ -13,10 +13,13 @@ const router = Router();
  *       One call backing the monthly dashboard: inventory on hand
  *       (HDPE/chemical/colour), stock delivered (Load Sent), fabric
  *       production (Fabric Checking output, colour+size variant-wise plus an
- *       overall total), and wastage across all 5 client-terminology
- *       categories (Yarn Waste, LUMS/LUMPS, Looms Waste, FW, BW) — all scoped
- *       to one calendar month. Defaults to the current UTC calendar month
- *       when month/year are omitted.
+ *       overall total), overall production totals for the month across all
+ *       three stages (Extruder/Looms/Fabric Checking — same shape as
+ *       GET /api/v1/dashboard/production's summary cards, but for the whole
+ *       calendar month rather than an arbitrary range), and wastage across
+ *       all 5 client-terminology categories (Yarn Waste, LUMS/LUMPS, Looms
+ *       Waste, FW, BW) — all scoped to one calendar month. Defaults to the
+ *       current UTC calendar month when month/year are omitted.
  *     parameters:
  *       - name: month
  *         in: query
