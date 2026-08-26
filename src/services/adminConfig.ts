@@ -1,7 +1,4 @@
-import { Prisma } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
-import { assertColorExists } from './masterDataService.js';
-import { ConflictError } from '../utils/errors.js';
 import type { CreateColorConsumptionStandardInput } from '../validations/adminConfigValidation.js';
 
 export async function getLatestColorConsumptionStandard(
@@ -29,36 +26,46 @@ export async function getLatestColorConsumptionStandard(
   return record ?? null;
 }
 
-/** Creates a colour consumption standard. Fails with 409 if one already exists for the colour (colorId is unique). */
+/** Creates a colour consumption standard — one record covers every colour (white/blue/green), not one row per colour. */
 export async function createColorConsumptionStandard(
   input: CreateColorConsumptionStandardInput,
   companyId: string,
   actor: string,
 ) {
-  await assertColorExists(input.colorId, companyId);
+  return prisma.colorConsumptionStandard.create({
+    data: {
+      companyId,
+      basisWeightKg: input.basisWeightKg,
+      hdpematerialbag: input.hdpematerialbag,
+      whiteGramsPerBasis: input.whiteGramsPerBasis,
+      blueGramsPerBasis: input.blueGramsPerBasis,
+      greenGramsPerBasis: input.greenGramsPerBasis,
+      chemicalWeight: input.chemicalWeight,
+      date: input.date,
+      isActive: input.isActive,
+      createdBy: actor,
+    },
+  });
+}
 
-  try {
-    return await prisma.colorConsumptionStandard.create({
-      data: {
-        companyId,
-        colorId: input.colorId,
-        gramsPerBasis: input.gramsPerBasis,
-        basisWeightKg: input.basisWeightKg,
-        hdpematerialbag: input.hdpematerialbag,
-        chemicalWeight: input.chemicalWeight,
-        date: input.date,
-        isActive: input.isActive,
-        createdBy: actor,
-      },
-    });
-  } catch (err) {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-      throw new ConflictError(
-        'A consumption standard already exists for this colour',
-        'COLOR_CONSUMPTION_STANDARD_EXISTS',
-        { colorId: input.colorId },
-      );
-    }
-    throw err;
-  }
+const COLOR_GRAMS_FIELD = {
+  white: 'whiteGramsPerBasis',
+  blue: 'blueGramsPerBasis',
+  green: 'greenGramsPerBasis',
+} as const;
+
+/**
+ * Resolves the configured grams-per-basis for one named colour (PRD §5) out of
+ * the latest active standard as of `asOf`. Colours outside the fixed
+ * white/blue/green set (e.g. custom colours added later) have no standard —
+ * callers must treat `null` as "not configured", not an error.
+ */
+export async function getGramsPerBasisForColor(companyId: string, colorName: string, asOf?: Date) {
+  const field = COLOR_GRAMS_FIELD[colorName.trim().toLowerCase() as keyof typeof COLOR_GRAMS_FIELD];
+  if (!field) return null;
+
+  const standard = await getLatestColorConsumptionStandard(companyId, asOf?.toISOString());
+  if (!standard || !standard.isActive) return null;
+
+  return { gramsPerBasis: standard[field], basisWeightKg: standard.basisWeightKg };
 }

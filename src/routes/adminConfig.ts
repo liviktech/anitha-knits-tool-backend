@@ -14,23 +14,26 @@ const router = Router();
  *     tags: [Lookups]
  *     summary: Create a color consumption standard configuration
  *     description: >
- *       Creates a ColorConsumptionStandard for a colour. Requires the ADMIN role.
- *       Fails with 409 (COLOR_CONSUMPTION_STANDARD_EXISTS) if a standard already
- *       exists for the colour (colorId is unique).
+ *       Creates a ColorConsumptionStandard. This is a single record covering
+ *       every colour (white/blue/green), not one row per colour — the
+ *       Extruder recipe lookup (PRD §5, §6) resolves grams-per-basis for a
+ *       production record's colour by name against the latest active record
+ *       as of that record's production date. Requires the ADMIN role.
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required: [colorId, gramsPerBasis]
+ *             required: [whiteGramsPerBasis, blueGramsPerBasis, greenGramsPerBasis]
  *             properties:
- *               colorId: { type: string, format: uuid }
- *               gramsPerBasis: { type: number }
- *               basisWeightKg: { type: number, default: 25 }
- *               hdpematerialbag: { type: integer, default: 1 }
- *               chemicalWeight: { type: number }
- *               date: { type: string, format: date }
+ *               date: { type: string, format: date, description: Effective date of this standard (used by the "latest as of" lookup). }
+ *               basisWeightKg: { type: number, default: 25, description: How much HDPE one bag contains. }
+ *               hdpematerialbag: { type: integer, default: 1, description: Number of HDPE bags per basis. }
+ *               whiteGramsPerBasis: { type: number, description: Grams of colour per basis for White. }
+ *               blueGramsPerBasis: { type: number, description: Grams of colour per basis for Blue. }
+ *               greenGramsPerBasis: { type: number, description: Grams of colour per basis for Green. }
+ *               chemicalWeight: { type: number, description: Chemical weight in kg, common to all colours. }
  *               isActive: { type: boolean, default: true }
  *     responses:
  *       201:
@@ -41,18 +44,6 @@ const router = Router();
  *               $ref: '#/components/schemas/ColorConsumptionStandard'
  *       400:
  *         $ref: '#/components/responses/ValidationError'
- *       404:
- *         description: colorId does not exist (COLOR_NOT_FOUND).
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
- *       409:
- *         description: A consumption standard already exists for this colour (COLOR_CONSUMPTION_STANDARD_EXISTS).
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.post('/', requireAuth('ADMIN'), createColorConsumption);
 

@@ -66,42 +66,40 @@ async function main() {
   }
 
   // -------------------------------------------------------------------------
-  // 4. Colours + their consumption standard.
-  //    PRD §5, confirmed: White 150 g, Blue 100 g, Green 200 g per 25 KG.
-  //    Custom colours are added later through the UI; a colour with no
-  //    standard simply means the extruder form does not pre-fill.
+  // 4. Colours. Custom colours are added later through the UI; a colour
+  //    outside the fixed white/blue/green set simply has no consumption
+  //    standard (the extruder form does not pre-fill for it).
   // -------------------------------------------------------------------------
-  const colors: Array<{ name: string; gramsPerBasis: number | null }> = [
-    { name: 'White', gramsPerBasis: 150 },
-    { name: 'Blue', gramsPerBasis: 100 },
-    { name: 'Green', gramsPerBasis: 200 },
-  ]
-
-  for (const c of colors) {
-    const color = await prisma.color.upsert({
-      where: { companyId_name: { companyId, name: c.name } },
+  for (const name of ['White', 'Blue', 'Green']) {
+    await prisma.color.upsert({
+      where: { companyId_name: { companyId, name } },
       update: {},
-      create: { companyId, name: c.name, createdBy: SYSTEM },
+      create: { companyId, name, createdBy: SYSTEM },
     })
+  }
 
-    if (c.gramsPerBasis !== null) {
-      await prisma.colorConsumptionStandard.upsert({
-        where: { colorId: color.id },
-        update: {},                   // do not silently reset a tuned value
-        create: {
-          companyId,
-          colorId: color.id,
-          gramsPerBasis: c.gramsPerBasis,
-          basisWeightKg: 25,
-          hdpematerialbag: 1,
-          chemicalWeight: 1.2,
-          // "latest as of" lookups filter on date <= asOf, so a null date
-          // would never match — stamp it effective immediately.
-          date: new Date(),
-          createdBy: SYSTEM,
-        },
-      })
-    }
+  // -------------------------------------------------------------------------
+  // 4b. Colour consumption standard — one record covers every colour, not
+  //     one row per colour. PRD §5, confirmed: White 150 g, Blue 100 g,
+  //     Green 200 g per 25 KG; chemical weight (1.2 kg) is common to all.
+  // -------------------------------------------------------------------------
+  const existingStandard = await prisma.colorConsumptionStandard.findFirst({ where: { companyId } })
+  if (!existingStandard) {
+    await prisma.colorConsumptionStandard.create({
+      data: {
+        companyId,
+        basisWeightKg: 25,
+        hdpematerialbag: 1,
+        whiteGramsPerBasis: 150,
+        blueGramsPerBasis: 100,
+        greenGramsPerBasis: 200,
+        chemicalWeight: 1.2,
+        // "latest as of" lookups filter on date <= asOf, so a null date
+        // would never match — stamp it effective immediately.
+        date: new Date(),
+        createdBy: SYSTEM,
+      },
+    })
   }
 
   // -------------------------------------------------------------------------

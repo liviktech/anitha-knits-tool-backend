@@ -477,6 +477,36 @@ const definition: swaggerJsdoc.OAS3Definition = {
                     totalPages: { type: 'integer', example: 3 },
                 },
             },
+            ColorConsumptionStandard: {
+                type: 'object',
+                description:
+                    'A single record covering every colour (white/blue/green), not one row per colour. ' +
+                    'The Extruder recipe lookup (PRD §5, §6) resolves grams-per-basis for a colour by name ' +
+                    'against the latest active record as of a given date.',
+                properties: {
+                    success: { type: 'boolean', example: true },
+                    data: {
+                        type: 'object',
+                        nullable: true,
+                        properties: {
+                            id: { type: 'string', format: 'uuid' },
+                            companyId: { type: 'string', format: 'uuid' },
+                            date: { type: 'string', format: 'date', nullable: true },
+                            basisWeightKg: { type: 'number', example: 25, description: 'How much HDPE one bag contains.' },
+                            hdpematerialbag: { type: 'integer', example: 1, description: 'Number of HDPE bags per basis.' },
+                            whiteGramsPerBasis: { type: 'number', example: 150 },
+                            blueGramsPerBasis: { type: 'number', example: 100 },
+                            greenGramsPerBasis: { type: 'number', example: 200 },
+                            chemicalWeight: { type: 'number', nullable: true, example: 1.2, description: 'Chemical weight in kg, common to all colours.' },
+                            isActive: { type: 'boolean', example: true },
+                            createdAt: { type: 'string', format: 'date-time' },
+                            createdBy: { type: 'string', nullable: true },
+                            updatedAt: { type: 'string', format: 'date-time' },
+                            updatedBy: { type: 'string', nullable: true },
+                        },
+                    },
+                },
+            },
             ExtruderResponse: {
                 type: 'object',
                 properties: {

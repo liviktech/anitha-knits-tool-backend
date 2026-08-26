@@ -228,8 +228,6 @@ model Color {
 
   koraBalances KoraBalance[]
 
-  consumptionStandard ColorConsumptionStandard?
-
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   createdBy String? @map("created_by") @db.VarChar(100)
@@ -278,17 +276,16 @@ model ColorConsumptionStandard {
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  colorId String @unique @map("color_id") @db.Uuid
-
-  color Color @relation(fields: [colorId], references: [id])
-
-  gramsPerBasis Decimal @map("grams_per_basis") @db.Decimal(10, 3)
-
   basisWeightKg Decimal @default(25) @map("basis_weight_kg") @db.Decimal(10, 3)
 
-  hdpematerialbag Int       @default(1) @map("hdpe_material_bag")
-  chemicalWeight  Decimal?  @map("chemical_weight_kg") @db.Decimal(12, 3)
-  date            DateTime? @map("date") @db.Date
+  hdpematerialbag Int @default(1) @map("hdpe_material_bag")
+
+  whiteGramsPerBasis Decimal @map("white_grams_per_basis") @db.Decimal(10, 3)
+  blueGramsPerBasis  Decimal @map("blue_grams_per_basis") @db.Decimal(10, 3)
+  greenGramsPerBasis Decimal @map("green_grams_per_basis") @db.Decimal(10, 3)
+
+  chemicalWeight Decimal?  @map("chemical_weight_kg") @db.Decimal(12, 3)
+  date           DateTime? @map("date") @db.Date
 
   isActive Boolean @default(true) @map("is_active")
 
