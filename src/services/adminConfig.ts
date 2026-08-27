@@ -1,7 +1,9 @@
 import { prisma } from '../config/prisma.js';
 import { NotFoundError } from '../utils/errors.js';
+import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import type {
   CreateColorConsumptionStandardInput,
+  ListColorConsumptionStandardsQuery,
   UpdateColorConsumptionStandardInput,
 } from '../validations/adminConfigValidation.js';
 
@@ -26,19 +28,23 @@ async function findLatestStandardRow(companyId: string, dateStr?: string) {
   });
 }
 
-/** The only fields exposed to API callers — companyId/isActive/audit columns stay internal. `id` is included so update/delete can target this record. */
+/**
+ * The only fields exposed to API callers — companyId/isActive/audit columns stay internal.
+ * `id` is included so update/delete can target this record. Decimal fields are converted to
+ * numbers explicitly — Prisma's Decimal serializes to a JSON string otherwise, not a number.
+ */
 function toPublicStandard(
   record: NonNullable<Awaited<ReturnType<typeof findLatestStandardRow>>>,
 ) {
   return {
     id: record.id,
     date: record.date,
-    basisWeightKg: record.basisWeightKg,
+    basisWeightKg: record.basisWeightKg.toNumber(),
     hdpematerialbag: record.hdpematerialbag,
-    whiteKgBasis: record.whiteKgBasis,
-    blueKgBasis: record.blueKgBasis,
-    greenKgBasis: record.greenKgBasis,
-    chemicalWeight: record.chemicalWeight,
+    whiteKgBasis: record.whiteKgBasis.toNumber(),
+    blueKgBasis: record.blueKgBasis.toNumber(),
+    greenKgBasis: record.greenKgBasis.toNumber(),
+    chemicalWeight: record.chemicalWeight ? record.chemicalWeight.toNumber() : null,
   };
 }
 
@@ -48,6 +54,27 @@ export async function getLatestColorConsumptionStandard(
 ) {
   const record = await findLatestStandardRow(companyId, dateStr);
   return record ? toPublicStandard(record) : null;
+}
+
+/** Configuration history — every standard ever recorded for this company, most recent first. */
+export async function listColorConsumptionStandards(
+  companyId: string,
+  query: ListColorConsumptionStandardsQuery,
+) {
+  const { skip, take } = toSkipTake(query);
+  const where = { companyId };
+
+  const [rows, total] = await prisma.$transaction([
+    prisma.colorConsumptionStandard.findMany({
+      where,
+      orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+      skip,
+      take,
+    }),
+    prisma.colorConsumptionStandard.count({ where }),
+  ]);
+
+  return { items: rows.map(toPublicStandard), meta: toPageMeta(query, total) };
 }
 
 /** Creates a colour consumption standard — one record covers every colour (white/blue/green), not one row per colour. */

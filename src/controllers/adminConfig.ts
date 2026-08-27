@@ -7,11 +7,13 @@ import {
   createColorConsumptionStandard,
   deleteColorConsumptionStandard,
   getLatestColorConsumptionStandard,
+  listColorConsumptionStandards,
   updateColorConsumptionStandard,
 } from '../services/adminConfig.js';
 import {
   colorConsumptionStandardIdParamsSchema,
   createColorConsumptionStandardSchema,
+  listColorConsumptionStandardsQuerySchema,
   updateColorConsumptionStandardSchema,
 } from '../validations/adminConfigValidation.js';
 
@@ -22,6 +24,15 @@ export const getLatestColorConsumption = asyncHandler(
       typeof req.query.date === 'string' ? req.query.date : undefined;
     const record = await getLatestColorConsumptionStandard(companyId, date);
     sendSuccess(res, record);
+  },
+);
+
+export const listColorConsumption = asyncHandler(
+  async (req: Request, res: Response) => {
+    const query = parseOrThrow(listColorConsumptionStandardsQuerySchema, req.query);
+    const { companyId } = getAuthContext(req);
+    const { items, meta } = await listColorConsumptionStandards(companyId, query);
+    sendSuccess(res, items, meta);
   },
 );
 

@@ -4,6 +4,7 @@ import { ConflictError, ForbiddenError, NotFoundError, UnauthorizedError } from 
 import { comparePassword, dummyPasswordHash, hashPassword } from '../utils/password.js';
 import { signAccessToken, signRefreshToken } from '../utils/jwt.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
+import { employeeDetailsSelect, nextCustomUserId, withMappedEmployeeDetails } from './userService.js';
 import type { TokenPayload } from '../types/auth.js';
 import type {
     LoginInput,
@@ -33,6 +34,7 @@ const adminUserSelect = {
     role: true,
     isActive: true,
     createdAt: true,
+    employeeDetails: { select: employeeDetailsSelect },
 } satisfies Prisma.UserSelect;
 
 /** Maps a Prisma unique-constraint violation on Company to the field that caused it. */
@@ -81,6 +83,9 @@ export async function signupCompany(input: SignupInput) {
                 select: companySelect,
             });
 
+            // First user of a brand-new company — employeeSeq starts at 1, so this is always "001".
+            const customUserId = await nextCustomUserId(tx, company.id);
+
             const admin = await tx.user.create({
                 data: {
                     companyId: company.id,
@@ -88,11 +93,12 @@ export async function signupCompany(input: SignupInput) {
                     mobile: input.adminMobile,
                     passwordHash,
                     role: 'ADMIN',
+                    employeeDetails: { create: { customUserId } },
                 },
                 select: adminUserSelect,
             });
 
-            return { company, admin };
+            return { company, admin: withMappedEmployeeDetails(admin) };
         });
     } catch (err) {
         mapUniqueConstraintError(err);

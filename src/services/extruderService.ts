@@ -313,3 +313,39 @@ export async function deleteExtruderProduction(id: string, companyId: string): P
         await tx.productionRecord.delete({ where: { id } });
     });
 }
+
+export async function getExtruderProductionSummaryByDateRange(companyId: string, dateFrom: Date, dateTo: Date) {
+    const rows = await prisma.productionRecord.findMany({
+        where: { companyId, stage: ProductionStage.EXTRUDER, productionDate: { gte: dateFrom, lte: dateTo } },
+        select: {
+            color: { select: { id: true, name: true } },
+            extruder: { select: { yarnOutputKg: true } },
+            wastages: { select: { quantityKg: true, wastageType: { select: { code: true } } } },
+        },
+    });
+
+    const byColorMap = new Map<string, { color: { id: string; name: string }; production: number; lumsKg: number; yarnWasteKg: number }>();
+
+    for (const row of rows) {
+        const colorKey = row.color?.id ?? 'UNSPECIFIED';
+        let entry = byColorMap.get(colorKey);
+        if (!entry) {
+            entry = { color: row.color ?? { id: 'UNSPECIFIED', name: 'Unspecified' }, production: 0, lumsKg: 0, yarnWasteKg: 0 };
+            byColorMap.set(colorKey, entry);
+        }
+        entry.production += row.extruder?.yarnOutputKg?.toNumber() ?? 0;
+        for (const w of row.wastages) {
+            if (w.wastageType.code === WASTAGE_CODES.LUMPS) entry.lumsKg += w.quantityKg.toNumber();
+            else if (w.wastageType.code === WASTAGE_CODES.YARN_WASTE) entry.yarnWasteKg += w.quantityKg.toNumber();
+        }
+    }
+
+    return Array.from(byColorMap.values()).map(e => ({
+        ...e,
+        production: roundKg(e.production),
+        lumsKg: roundKg(e.lumsKg),
+        yarnWasteKg: roundKg(e.yarnWasteKg),
+        waste: roundKg(e.lumsKg + e.yarnWasteKg),
+        total: roundKg(e.production + e.lumsKg + e.yarnWasteKg),
+    }));
+}
