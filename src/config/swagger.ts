@@ -109,6 +109,12 @@ const definition: swaggerJsdoc.OAS3Definition = {
         'Current fabric stock (kora) per color+size variant, credited by Looms output and debited ' +
         'by Fabric Checking input, plus the append-only ledger of those movements. Read-only.',
     },
+    {
+      name: 'Expenses',
+      description:
+        'Factory/employee expense log. expenseId (e.g. "EXP-001") is generated server-side on ' +
+        'create and is never accepted in a request body. Full CRUD.',
+    },
   ],
   components: {
     schemas: {
@@ -1611,6 +1617,69 @@ const definition: swaggerJsdoc.OAS3Definition = {
           meta: { $ref: '#/components/schemas/KoraLedgerMeta' },
         },
       },
+      ExpenseRecord: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          expenseId: {
+            type: 'string',
+            example: 'EXP-001',
+            description: 'Generated server-side on create; sequential per company.',
+          },
+          date: { type: 'string', format: 'date-time' },
+          expenseName: { type: 'string', example: 'Electricity Bill - Loom Shed' },
+          amount: { type: 'number', format: 'decimal', example: 18500 },
+          createdAt: { type: 'string', format: 'date-time' },
+          createdBy: { type: 'string' },
+          updatedAt: { type: 'string', format: 'date-time' },
+          updatedBy: { type: 'string', nullable: true },
+        },
+      },
+      ExpenseCreateRequest: {
+        type: 'object',
+        description: 'expenseId must not be included — it is generated server-side.',
+        required: ['expenseName', 'amount'],
+        additionalProperties: false,
+        properties: {
+          date: {
+            type: 'string',
+            format: 'date',
+            description: 'Optional. Defaults to now.',
+            example: '2026-08-20',
+          },
+          expenseName: { type: 'string', maxLength: 150, example: 'Electricity Bill - Loom Shed' },
+          amount: { type: 'number', exclusiveMinimum: 0, example: 18500 },
+        },
+      },
+      ExpenseUpdateRequest: {
+        type: 'object',
+        description: 'Every field is optional, but at least one must be present. expenseId is immutable.',
+        minProperties: 1,
+        additionalProperties: false,
+        properties: {
+          date: { type: 'string', format: 'date' },
+          expenseName: { type: 'string', maxLength: 150 },
+          amount: { type: 'number', exclusiveMinimum: 0 },
+        },
+      },
+      ExpenseResponse: {
+        type: 'object',
+        properties: {
+          success: { type: 'boolean', example: true },
+          data: { $ref: '#/components/schemas/ExpenseRecord' },
+        },
+      },
+      ExpenseListResponse: {
+        type: 'object',
+        properties: {
+          success: { type: 'boolean', example: true },
+          data: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/ExpenseRecord' },
+          },
+          meta: { $ref: '#/components/schemas/PaginationMeta' },
+        },
+      },
     },
     parameters: {
       ExtruderId: {
@@ -1647,6 +1716,13 @@ const definition: swaggerJsdoc.OAS3Definition = {
         required: true,
         schema: { type: 'string', format: 'uuid' },
         description: 'ProductionRecord id (stage=DELIVERY).',
+      },
+      ExpenseId: {
+        name: 'id',
+        in: 'path',
+        required: true,
+        schema: { type: 'string', format: 'uuid' },
+        description: 'Expense record id.',
       },
     },
     responses: {

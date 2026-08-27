@@ -70,7 +70,7 @@ async function main() {
   // -------------------------------------------------------------------------
   // 3. Sizes — PRD §4.
   // -------------------------------------------------------------------------
-  const sizes = ['150mm', '160mm', '170mm', '180mm', '190mm'];
+  const sizes = ['150cm', '160cm', '170cm', '180cm', '190cm'];
   for (const [index, name] of sizes.entries()) {
     await prisma.size.upsert({
       where: { companyId_name: { companyId, name } },

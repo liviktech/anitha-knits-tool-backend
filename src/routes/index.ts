@@ -11,6 +11,7 @@ import lookupRoutes from './lookup.js';
 import dashboardRoutes from './dashboardRoutes.js';
 import inventoryRoutes from './inventoryRoutes.js';
 import loadSentRoutes from './loadSentRoutes.js';
+import expenseRoutes from './expenseRoutes.js';
 import adminConfigRoutes from './adminConfig.js';
 import { requireAuth } from '../middlewares/auth.js';
 
@@ -21,6 +22,7 @@ router.use('/health', healthRoutes);
 //Done
 router.use('/company/auth', authRoutes);
 router.use('/inventory', inventoryRoutes);
+router.use('/expenses', expenseRoutes);
 router.use(
   '/dashboard',
   requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
