@@ -178,3 +178,40 @@ export async function deleteLoomsProduction(id: string, companyId: string): Prom
         await tx.productionRecord.delete({ where: { id } });
     });
 }
+
+export async function getLoomsProductionSummaryByDateRange(companyId: string, dateFrom: Date, dateTo: Date) {
+    const rows = await prisma.productionRecord.findMany({
+        where: { companyId, stage: ProductionStage.LOOMS, productionDate: { gte: dateFrom, lte: dateTo } },
+        select: {
+            color: { select: { id: true, name: true } },
+            loom: { select: { fabricOutputKg: true } },
+            wastages: { select: { quantityKg: true, wastageType: { select: { code: true } } } },
+        },
+    });
+
+    const byColorMap = new Map<string, { color: { id: string; name: string }; production: number; waste: number }>();
+
+    for (const row of rows) {
+        const colorKey = row.color?.id ?? 'UNSPECIFIED';
+        let entry = byColorMap.get(colorKey);
+        if (!entry) {
+            entry = { color: row.color ?? { id: 'UNSPECIFIED', name: 'Unspecified' }, production: 0, waste: 0 };
+            byColorMap.set(colorKey, entry);
+        }
+        entry.production += row.loom?.fabricOutputKg?.toNumber() ?? 0;
+        for (const w of row.wastages) {
+            if (w.wastageType.code === WASTAGE_CODES.LOOMS_WASTE) {
+                entry.waste += w.quantityKg.toNumber();
+            }
+        }
+    }
+
+    const roundKg = (val: number) => Math.round(val * 1000) / 1000;
+
+    return Array.from(byColorMap.values()).map(e => ({
+        ...e,
+        production: roundKg(e.production),
+        waste: roundKg(e.waste),
+        total: roundKg(e.production + e.waste),
+    }));
+}
