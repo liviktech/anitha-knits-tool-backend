@@ -199,6 +199,8 @@ model EmployeeDetails {
 
   salary Decimal? @db.Decimal(12, 2)
 
+  aadhaarNumber String? @map("aadhaar_number") @db.VarChar(20)
+
   aadhaarDocumentUrl String? @map("aadhaar_document_url") @db.VarChar(500)
 
   documentName String? @map("document_name") @db.VarChar(255)
