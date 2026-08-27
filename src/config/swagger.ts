@@ -483,6 +483,25 @@ const definition: swaggerJsdoc.OAS3Definition = {
         },
         required: ['id', 'name'],
       },
+      LookupItem: {
+        type: 'object',
+        description: 'A color/size/chemical/brand master-data row, as managed on the Raw Materials admin screen.',
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          itemCode: { type: 'string', example: 'CR001', description: 'Server-generated, never accepted from the client.' },
+          name: { type: 'string' },
+          createdAt: { type: 'string', format: 'date-time' },
+          updatedAt: { type: 'string', format: 'date-time' },
+        },
+        required: ['id', 'itemCode', 'name', 'createdAt', 'updatedAt'],
+      },
+      LookupItemResponse: {
+        type: 'object',
+        properties: {
+          success: { type: 'boolean', example: true },
+          data: { $ref: '#/components/schemas/LookupItem' },
+        },
+      },
       ExtruderDetail: {
         type: 'object',
         properties: {
@@ -1001,19 +1020,19 @@ const definition: swaggerJsdoc.OAS3Definition = {
         properties: {
           brands: {
             type: 'array',
-            items: { $ref: '#/components/schemas/MasterDataRef' },
+            items: { $ref: '#/components/schemas/LookupItem' },
           },
           colors: {
             type: 'array',
-            items: { $ref: '#/components/schemas/MasterDataRef' },
+            items: { $ref: '#/components/schemas/LookupItem' },
           },
           chemicals: {
             type: 'array',
-            items: { $ref: '#/components/schemas/MasterDataRef' },
+            items: { $ref: '#/components/schemas/LookupItem' },
           },
           sizes: {
             type: 'array',
-            items: { $ref: '#/components/schemas/MasterDataRef' },
+            items: { $ref: '#/components/schemas/LookupItem' },
           },
         },
       },

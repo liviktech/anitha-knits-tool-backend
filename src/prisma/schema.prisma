@@ -103,6 +103,13 @@ model Company {
   // reissue a number after a user/employeeDetails row is later deleted.
   employeeSeq Int @default(1) @map("employee_seq")
 
+  // Next sequence number to assign as a lookup item's itemCode suffix (prefix + zero-padded seq,
+  // e.g. "CR" + "001"). Same atomic-counter-never-reissued rule as employeeSeq, one per lookup type.
+  colorSeq    Int @default(1) @map("color_seq")
+  sizeSeq     Int @default(1) @map("size_seq")
+  chemicalSeq Int @default(1) @map("chemical_seq")
+  brandSeq    Int @default(1) @map("brand_seq")
+
   isActive Boolean @default(true) @map("is_active")
 
   users User[]
@@ -208,13 +215,15 @@ model EmployeeDetails {
   @@map("employee_details")
 }
 
-
 model Brand {
   id String @id @default(uuid()) @db.Uuid
 
   companyId String @map("company_id") @db.Uuid
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  // Server-generated only (never accepted from a client): "BD" + zero-padded per-company sequence (Company.brandSeq).
+  itemCode String @map("item_code") @db.VarChar(20)
 
   name String @db.VarChar(100)
 
@@ -231,6 +240,7 @@ model Brand {
   updatedBy String? @map("updated_by") @db.VarChar(100)
 
   @@unique([companyId, name])
+  @@unique([companyId, itemCode])
   @@index([companyId])
   @@map("brands")
 }
@@ -242,6 +252,9 @@ model Chemical {
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  // Server-generated only (never accepted from a client): "CL" + zero-padded per-company sequence (Company.chemicalSeq).
+  itemCode String @map("item_code") @db.VarChar(20)
+
   name String @db.VarChar(100)
 
   extruderDetails ExtruderDetail[]
@@ -257,6 +270,7 @@ model Chemical {
   updatedBy String? @map("updated_by") @db.VarChar(100)
 
   @@unique([companyId, name])
+  @@unique([companyId, itemCode])
   @@index([companyId])
   @@map("chemicals")
 }
@@ -267,6 +281,9 @@ model Color {
   companyId String @map("company_id") @db.Uuid
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  // Server-generated only (never accepted from a client): "CR" + zero-padded per-company sequence (Company.colorSeq).
+  itemCode String @map("item_code") @db.VarChar(20)
 
   name String @db.VarChar(50)
 
@@ -289,6 +306,7 @@ model Color {
   updatedBy String? @map("updated_by") @db.VarChar(100)
 
   @@unique([companyId, name])
+  @@unique([companyId, itemCode])
   @@index([companyId])
   @@map("colors")
 }
@@ -299,6 +317,9 @@ model Size {
   companyId String @map("company_id") @db.Uuid
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  // Server-generated only (never accepted from a client): "SE" + zero-padded per-company sequence (Company.sizeSeq).
+  itemCode String @map("item_code") @db.VarChar(20)
 
   name String @db.VarChar(30)
 
@@ -317,6 +338,7 @@ model Size {
   updatedBy String? @map("updated_by") @db.VarChar(100)
 
   @@unique([companyId, name])
+  @@unique([companyId, itemCode])
   @@index([companyId])
   @@map("sizes")
 }
