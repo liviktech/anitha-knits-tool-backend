@@ -64,7 +64,9 @@ router.use(
   koraBalanceRoutes,
 );
 
+import employeeRoutes from './employeeRoutes.js';
+
 // Mount additional feature routers here, e.g.:
-// router.use('/users', userRoutes);
+router.use('/company/employee', requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'), employeeRoutes);
 
 export default router;
