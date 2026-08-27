@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { paginationSchema } from '../utils/pagination.js';
 
 const requiredKg = z.coerce.number().positive('must be a positive number');
 const optionalKg = z.coerce.number().nonnegative('must not be negative').optional();
@@ -36,5 +37,8 @@ export const colorConsumptionStandardIdParamsSchema = z
     })
     .strict();
 
+export const listColorConsumptionStandardsQuerySchema = paginationSchema.strict();
+
 export type CreateColorConsumptionStandardInput = z.infer<typeof createColorConsumptionStandardSchema>;
 export type UpdateColorConsumptionStandardInput = z.infer<typeof updateColorConsumptionStandardSchema>;
+export type ListColorConsumptionStandardsQuery = z.infer<typeof listColorConsumptionStandardsQuerySchema>;

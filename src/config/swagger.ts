@@ -213,6 +213,7 @@ const definition: swaggerJsdoc.OAS3Definition = {
           lastLoginAt: { type: 'string', format: 'date-time', nullable: true },
           createdAt: { type: 'string', format: 'date-time' },
           updatedAt: { type: 'string', format: 'date-time' },
+          employeeDetails: { $ref: '#/components/schemas/EmployeeDetails' },
         },
       },
       PlatformAdminUserListResponse: {
@@ -236,6 +237,10 @@ const definition: swaggerJsdoc.OAS3Definition = {
           role: { type: 'string', enum: ['ADMIN'] },
           isActive: { type: 'boolean' },
           createdAt: { type: 'string', format: 'date-time' },
+          employeeDetails: {
+            allOf: [{ $ref: '#/components/schemas/EmployeeDetails' }],
+            description: 'customUserId is always companyCode + "001" for this first user of a newly created company.',
+          },
         },
       },
       SignupResponse: {
@@ -362,6 +367,40 @@ const definition: swaggerJsdoc.OAS3Definition = {
           },
         },
       },
+      EmployeeDetailsInput: {
+        type: 'object',
+        description:
+          'HR profile fields. Document fields (aadhaarDocumentUrl/documentName/aadhaarDocumentUploadedAt) ' +
+          'are read-only — there is no upload endpoint yet, so they cannot be set through this body.',
+        additionalProperties: false,
+        properties: {
+          designation: { type: 'string', maxLength: 100, example: 'Machine Operator' },
+          address: { type: 'string', maxLength: 500 },
+          gender: { type: 'string', enum: ['MALE', 'FEMALE', 'OTHER'] },
+          salary: { type: 'number', minimum: 0, example: 25000 },
+          joiningDate: { type: 'string', format: 'date' },
+        },
+      },
+      EmployeeDetails: {
+        type: 'object',
+        nullable: true,
+        description: 'HR profile for this user, if any has been recorded.',
+        properties: {
+          customUserId: {
+            type: 'string',
+            example: 'AK001002',
+            description: 'Server-generated (companyCode + zero-padded sequence) — never accepted from a client, and never changes after creation.',
+          },
+          designation: { type: 'string', nullable: true, example: 'Machine Operator' },
+          address: { type: 'string', nullable: true },
+          gender: { type: 'string', enum: ['MALE', 'FEMALE', 'OTHER'], nullable: true },
+          salary: { type: 'number', nullable: true, example: 25000 },
+          joiningDate: { type: 'string', format: 'date', nullable: true },
+          aadhaarDocumentUrl: { type: 'string', nullable: true, description: 'Set only once a document upload endpoint exists.' },
+          documentName: { type: 'string', nullable: true },
+          aadhaarDocumentUploadedAt: { type: 'string', format: 'date-time', nullable: true },
+        },
+      },
       CompanyUserCreateRequest: {
         type: 'object',
         required: ['mobile', 'password', 'role'],
@@ -385,6 +424,7 @@ const definition: swaggerJsdoc.OAS3Definition = {
             description:
               'ADMIN and EMPLOYEE cannot be created through this endpoint.',
           },
+          employeeDetails: { $ref: '#/components/schemas/EmployeeDetailsInput' },
         },
       },
       CompanyUserSummary: {
@@ -400,6 +440,7 @@ const definition: swaggerJsdoc.OAS3Definition = {
           isActive: { type: 'boolean' },
           createdAt: { type: 'string', format: 'date-time' },
           updatedAt: { type: 'string', format: 'date-time' },
+          employeeDetails: { $ref: '#/components/schemas/EmployeeDetails' },
         },
       },
       CompanyUserResponse: {
@@ -430,6 +471,7 @@ const definition: swaggerJsdoc.OAS3Definition = {
           name: { type: 'string', maxLength: 150 },
           role: { type: 'string', enum: ['MANAGER', 'SUPERVISOR'] },
           isActive: { type: 'boolean' },
+          employeeDetails: { $ref: '#/components/schemas/EmployeeDetailsInput' },
         },
       },
       MasterDataRef: {
@@ -637,42 +679,56 @@ const definition: swaggerJsdoc.OAS3Definition = {
           totalPages: { type: 'integer', example: 3 },
         },
       },
-      ColorConsumptionStandard: {
+      ColorConsumptionStandardItem: {
         type: 'object',
         description:
           'A single record covering every colour (white/blue/green), not one row per colour. ' +
           'The Extruder recipe lookup (PRD §5, §6) resolves kg-per-basis for a colour by name ' +
           'against the latest active record as of a given date. Only the fields below are ' +
-          'exposed — id/companyId/isActive/audit columns stay internal.',
+          'exposed — companyId/isActive/audit columns stay internal.',
+        properties: {
+          id: { type: 'string', format: 'uuid', description: 'Needed to target this record via PATCH/DELETE.' },
+          date: { type: 'string', format: 'date', nullable: true },
+          basisWeightKg: {
+            type: 'number',
+            example: 25,
+            description: 'How much HDPE one bag contains.',
+          },
+          hdpematerialbag: {
+            type: 'integer',
+            example: 1,
+            description: 'Number of HDPE bags per basis.',
+          },
+          whiteKgBasis: { type: 'number', example: 0.15, description: 'Kilograms of colour per basis for White.' },
+          blueKgBasis: { type: 'number', example: 0.1, description: 'Kilograms of colour per basis for Blue.' },
+          greenKgBasis: { type: 'number', example: 0.2, description: 'Kilograms of colour per basis for Green.' },
+          chemicalWeight: {
+            type: 'number',
+            nullable: true,
+            example: 1.2,
+            description: 'Chemical weight in kg, common to all colours.',
+          },
+        },
+      },
+      ColorConsumptionStandard: {
+        type: 'object',
         properties: {
           success: { type: 'boolean', example: true },
           data: {
-            type: 'object',
+            allOf: [{ $ref: '#/components/schemas/ColorConsumptionStandardItem' }],
             nullable: true,
-            properties: {
-              id: { type: 'string', format: 'uuid', description: 'Needed to target this record via PATCH/DELETE.' },
-              date: { type: 'string', format: 'date', nullable: true },
-              basisWeightKg: {
-                type: 'number',
-                example: 25,
-                description: 'How much HDPE one bag contains.',
-              },
-              hdpematerialbag: {
-                type: 'integer',
-                example: 1,
-                description: 'Number of HDPE bags per basis.',
-              },
-              whiteKgBasis: { type: 'number', example: 0.15, description: 'Kilograms of colour per basis for White.' },
-              blueKgBasis: { type: 'number', example: 0.1, description: 'Kilograms of colour per basis for Blue.' },
-              greenKgBasis: { type: 'number', example: 0.2, description: 'Kilograms of colour per basis for Green.' },
-              chemicalWeight: {
-                type: 'number',
-                nullable: true,
-                example: 1.2,
-                description: 'Chemical weight in kg, common to all colours.',
-              },
-            },
           },
+        },
+      },
+      ColorConsumptionStandardListResponse: {
+        type: 'object',
+        properties: {
+          success: { type: 'boolean', example: true },
+          data: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/ColorConsumptionStandardItem' },
+          },
+          meta: { $ref: '#/components/schemas/PaginationMeta' },
         },
       },
       ExtruderResponse: {
