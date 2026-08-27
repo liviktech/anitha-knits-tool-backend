@@ -63,6 +63,13 @@ enum Gender {
   OTHER
 }
 
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  HALF_DAY
+  COMPANY_HOLIDAY
+}
+
 model PlatformAdmin {
   id String @id @default(uuid()) @db.Uuid
 
@@ -134,6 +141,8 @@ model Company {
 
   loadSents LoadSent[]
 
+  attendances Attendance[]
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -163,6 +172,8 @@ model User {
   lastLoginAt DateTime? @map("last_login_at") @db.Timestamptz(6)
 
   employeeDetails EmployeeDetails?
+
+  attendances Attendance[]
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -215,6 +226,28 @@ model EmployeeDetails {
 
   @@index([userId])
   @@map("employee_details")
+}
+
+model Attendance {
+  id String @id @default(uuid()) @db.Uuid
+
+  companyId String  @map("company_id") @db.Uuid
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  employeeId String @map("employee_id") @db.Uuid
+  employee   User   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  date      DateTime         @db.Date
+  status    AttendanceStatus
+  remarks   String?          @db.VarChar(500)
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy String?          @map("created_by") @db.VarChar(100)
+  updatedAt DateTime         @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy String?          @map("updated_by") @db.VarChar(100)
+
+  @@unique([companyId, employeeId, date])
+  @@index([companyId, date])
+  @@map("attendances")
 }
 
 model Brand {

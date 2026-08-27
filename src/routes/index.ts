@@ -65,8 +65,10 @@ router.use(
 );
 
 import employeeRoutes from './employeeRoutes.js';
+import attendanceRoutes from './attendanceRoutes.js';
 
 // Mount additional feature routers here, e.g.:
 router.use('/company/employee', requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'), employeeRoutes);
+router.use('/company/attendance', requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'), attendanceRoutes);
 
 export default router;
