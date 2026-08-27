@@ -37,48 +37,69 @@ async function main() {
   //    does: "Known brands include: Reliance, Haldia, Opel, Ghail."
   // -------------------------------------------------------------------------
   const brands = ['Reliance', 'Haldia', 'Opel', 'Ghail'];
-  for (const name of brands) {
+  for (const [index, name] of brands.entries()) {
     await prisma.brand.upsert({
       where: { companyId_name: { companyId, name } },
       update: {},
-      create: { companyId, name, createdBy: SYSTEM },
+      create: { companyId, name, itemCode: `BD${String(index + 1).padStart(3, '0')}`, createdBy: SYSTEM },
     });
   }
+  // Advance the per-company sequence counter past whatever was just seeded (never below it — the
+  // guard makes this safe to rerun), so the next server-generated code doesn't collide with a seeded one.
+  await prisma.company.updateMany({
+    where: { id: companyId, brandSeq: { lt: brands.length + 1 } },
+    data: { brandSeq: brands.length + 1 },
+  });
 
   // -------------------------------------------------------------------------
   // 2. Chemicals — PRD §4: DN+MB or ACM, exactly one per extruder entry.
   // -------------------------------------------------------------------------
-  for (const name of ['DN+MB', 'ACM']) {
+  const chemicals = ['DN+MB', 'ACM'];
+  for (const [index, name] of chemicals.entries()) {
     await prisma.chemical.upsert({
       where: { companyId_name: { companyId, name } },
       update: {},
-      create: { companyId, name, createdBy: SYSTEM },
+      create: { companyId, name, itemCode: `CL${String(index + 1).padStart(3, '0')}`, createdBy: SYSTEM },
     });
   }
+  await prisma.company.updateMany({
+    where: { id: companyId, chemicalSeq: { lt: chemicals.length + 1 } },
+    data: { chemicalSeq: chemicals.length + 1 },
+  });
 
   // -------------------------------------------------------------------------
   // 3. Sizes — PRD §4.
   // -------------------------------------------------------------------------
-  for (const name of ['150mm', '160mm', '170mm', '180mm', '190mm']) {
+  const sizes = ['150mm', '160mm', '170mm', '180mm', '190mm'];
+  for (const [index, name] of sizes.entries()) {
     await prisma.size.upsert({
       where: { companyId_name: { companyId, name } },
       update: {},
-      create: { companyId, name, createdBy: SYSTEM },
+      create: { companyId, name, itemCode: `SE${String(index + 1).padStart(3, '0')}`, createdBy: SYSTEM },
     });
   }
+  await prisma.company.updateMany({
+    where: { id: companyId, sizeSeq: { lt: sizes.length + 1 } },
+    data: { sizeSeq: sizes.length + 1 },
+  });
 
   // -------------------------------------------------------------------------
   // 4. Colours. Custom colours are added later through the UI; a colour
   //    outside the fixed white/blue/green set simply has no consumption
   //    standard (the extruder form does not pre-fill for it).
   // -------------------------------------------------------------------------
-  for (const name of ['White', 'Blue', 'Green']) {
+  const colors = ['White', 'Blue', 'Green'];
+  for (const [index, name] of colors.entries()) {
     await prisma.color.upsert({
       where: { companyId_name: { companyId, name } },
       update: {},
-      create: { companyId, name, createdBy: SYSTEM },
+      create: { companyId, name, itemCode: `CR${String(index + 1).padStart(3, '0')}`, createdBy: SYSTEM },
     });
   }
+  await prisma.company.updateMany({
+    where: { id: companyId, colorSeq: { lt: colors.length + 1 } },
+    data: { colorSeq: colors.length + 1 },
+  });
 
   // -------------------------------------------------------------------------
   // 4b. Colour consumption standard — one record covers every colour, not

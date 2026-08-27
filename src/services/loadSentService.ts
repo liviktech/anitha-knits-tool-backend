@@ -482,6 +482,7 @@ export type LoadSentSummary = {
     items: ReturnType<typeof mapLoadSentRecord>[];
     totals: { fabricWeightKg: number; fwWeightKg: number; bwWeightKg: number; totalWastageWeightKg: number };
     byVariant: LoadSentVariantSummary[];
+    daily?: { date: string; quantityKg: number }[];
 };
 
 /**
@@ -511,6 +512,7 @@ export async function getLoadSentSummaryByDateRange(
 
     const totals = { fabricWeightKg: 0, fwWeightKg: 0, bwWeightKg: 0, totalWastageWeightKg: 0 };
     const byVariantMap = new Map<string, LoadSentVariantSummary>();
+    const dailyMap = new Map<string, number>();
 
     for (const item of items) {
         if (!item.loadSent) continue;
@@ -529,6 +531,9 @@ export async function getLoadSentSummaryByDateRange(
         entry.fwWeightKg += item.loadSent.fwWeight;
         entry.bwWeightKg += item.loadSent.bwWeight;
         entry.totalWastageWeightKg += item.loadSent.totalWastageWeight;
+
+        const dateStr = item.productionDate.toISOString().slice(0, 10);
+        dailyMap.set(dateStr, (dailyMap.get(dateStr) ?? 0) + item.loadSent.fabricWeight);
     }
 
     return {
@@ -546,6 +551,10 @@ export async function getLoadSentSummaryByDateRange(
             bwWeightKg: roundKg(entry.bwWeightKg),
             totalWastageWeightKg: roundKg(entry.totalWastageWeightKg),
         })),
+        daily: Array.from(dailyMap.entries()).map(([date, quantityKg]) => ({
+            date,
+            quantityKg: roundKg(quantityKg),
+        })).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)),
     };
 }
 

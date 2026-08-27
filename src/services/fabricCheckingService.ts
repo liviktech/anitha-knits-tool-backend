@@ -182,15 +182,24 @@ export type FabricProductionVariantSummary = {
     outputKg: number;
 };
 
+export type FabricProductionColorSummary = {
+    color: { id: string; name: string };
+    production: number;
+    fwWasteKg: number;
+    bwWasteKg: number;
+    total: number;
+};
+
 export type FabricProductionSummary = {
     byVariant: FabricProductionVariantSummary[];
+    byColor: FabricProductionColorSummary[];
     overall: { fabricInputKg: number; outputKg: number };
 };
 
 /**
  * Fabric Checking output for a date range, broken down by colour+size
- * variant plus an overall total — backs the dashboard's monthly "fabric
- * production" panel (variant-wise, with an overall rollup).
+ * variant, by colour alone (with FW/BW wastage), plus an overall total —
+ * backs the dashboard's monthly "fabric production" panel.
  *
  * Time: O(n) — n = Fabric Checking records in the range (one query, one pass).
  */
@@ -205,10 +214,12 @@ export async function getFabricProductionSummaryByDateRange(
             color: { select: { id: true, name: true } },
             size: { select: { id: true, name: true } },
             fabricCheck: { select: { fabricInputKg: true, outputKg: true } },
+            wastages: { select: { quantityKg: true, wastageType: { select: { code: true } } } },
         },
     });
 
     const byVariantMap = new Map<string, FabricProductionVariantSummary>();
+    const byColorMap = new Map<string, FabricProductionColorSummary>();
     const overall = { fabricInputKg: 0, outputKg: 0 };
 
     for (const row of rows) {
@@ -219,14 +230,25 @@ export async function getFabricProductionSummaryByDateRange(
         overall.fabricInputKg += inputKg;
         overall.outputKg += outputKg;
 
-        const key = `${row.color.id}_${row.size.id}`;
-        let entry = byVariantMap.get(key);
-        if (!entry) {
-            entry = { color: row.color, size: row.size, fabricInputKg: 0, outputKg: 0 };
-            byVariantMap.set(key, entry);
+        const variantKey = `${row.color.id}_${row.size.id}`;
+        let variantEntry = byVariantMap.get(variantKey);
+        if (!variantEntry) {
+            variantEntry = { color: row.color, size: row.size, fabricInputKg: 0, outputKg: 0 };
+            byVariantMap.set(variantKey, variantEntry);
         }
-        entry.fabricInputKg += inputKg;
-        entry.outputKg += outputKg;
+        variantEntry.fabricInputKg += inputKg;
+        variantEntry.outputKg += outputKg;
+
+        let colorEntry = byColorMap.get(row.color.id);
+        if (!colorEntry) {
+            colorEntry = { color: row.color, production: 0, fwWasteKg: 0, bwWasteKg: 0, total: 0 };
+            byColorMap.set(row.color.id, colorEntry);
+        }
+        colorEntry.production += outputKg;
+        for (const w of row.wastages) {
+            if (w.wastageType.code === WASTAGE_CODES.FW) colorEntry.fwWasteKg += w.quantityKg.toNumber();
+            else if (w.wastageType.code === WASTAGE_CODES.BW) colorEntry.bwWasteKg += w.quantityKg.toNumber();
+        }
     }
 
     return {
@@ -234,6 +256,13 @@ export async function getFabricProductionSummaryByDateRange(
             ...entry,
             fabricInputKg: roundKg(entry.fabricInputKg),
             outputKg: roundKg(entry.outputKg),
+        })),
+        byColor: Array.from(byColorMap.values()).map((entry) => ({
+            ...entry,
+            production: roundKg(entry.production),
+            fwWasteKg: roundKg(entry.fwWasteKg),
+            bwWasteKg: roundKg(entry.bwWasteKg),
+            total: roundKg(entry.production + entry.fwWasteKg + entry.bwWasteKg),
         })),
         overall: { fabricInputKg: roundKg(overall.fabricInputKg), outputKg: roundKg(overall.outputKg) },
     };

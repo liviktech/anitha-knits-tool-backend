@@ -3,6 +3,7 @@ import {
   createColorConsumption,
   deleteColorConsumption,
   getLatestColorConsumption,
+  listColorConsumption,
   updateColorConsumption,
 } from '../controllers/adminConfig.js';
 import { requireAuth } from '../middlewares/auth.js';
@@ -48,6 +49,38 @@ const router = Router();
  *         $ref: '#/components/responses/ValidationError'
  */
 router.post('/', requireAuth('ADMIN'), createColorConsumption);
+
+/**
+ * @openapi
+ * /api/v1/color-consumption-standard:
+ *   get:
+ *     tags: [Lookups]
+ *     summary: Configuration history — every colour consumption standard ever recorded
+ *     description: >
+ *       Bounded, paginated list, most recent (by date, then createdAt) first. Backs a
+ *       "Configuration History" table; use GET /latest for the single currently-active one.
+ *     parameters:
+ *       - name: page
+ *         in: query
+ *         schema: { type: integer, minimum: 1, default: 1 }
+ *       - name: limit
+ *         in: query
+ *         schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+ *     responses:
+ *       200:
+ *         description: OK.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ColorConsumptionStandardListResponse'
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ */
+router.get(
+  '/',
+  requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
+  listColorConsumption,
+);
 
 /**
  * @openapi

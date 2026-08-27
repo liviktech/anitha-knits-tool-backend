@@ -21,7 +21,14 @@ const router = Router();
  *     description: >
  *       Creates a User in the caller's own company. Only MANAGER/SUPERVISOR
  *       can be created here — no self-service ADMIN creation, and EMPLOYEE
- *       is out of scope for this endpoint.
+ *       is out of scope for this endpoint. Every created user gets an
+ *       employeeDetails.customUserId auto-assigned as companyCode +
+ *       zero-padded sequence (e.g. "AK001002", continuing from "AK001001"
+ *       assigned to the company's admin at company creation) — this is never
+ *       accepted from the request body. Optionally accepts the rest of the
+ *       employeeDetails object (designation/address/gender/salary/joiningDate)
+ *       to record alongside the user — document fields on that profile
+ *       (aadhaar) are read-only until an upload endpoint exists.
  *     requestBody:
  *       required: true
  *       content:
@@ -182,7 +189,10 @@ router.get('/all', listAllUsersHandler); // must be registered before '/:id'
  *     summary: Edit a managed user
  *     description: >
  *       Partial update. Excludes mobile/password (separate concerns). Cannot
- *       be used to modify your own account (CANNOT_MODIFY_SELF).
+ *       be used to modify your own account (CANNOT_MODIFY_SELF). Supplying
+ *       employeeDetails upserts that profile — only the fields provided on it
+ *       change; an employeeDetails record is created on first update if the
+ *       user doesn't have one yet.
  *     parameters:
  *       - name: id
  *         in: path
