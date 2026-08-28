@@ -31,7 +31,7 @@ export const updateEmployeeSchema = z
             .string()
             .trim()
             .regex(/^[0-9]{10,15}$/, 'mobile must be 10-15 digits'),
-        isActive: z.boolean(),
+        isActive: booleanQueryParam,
         designation: z.string().trim().max(100).optional(),
         address: z.string().trim().max(500).optional(),
         gender: z.nativeEnum(Gender).optional(),

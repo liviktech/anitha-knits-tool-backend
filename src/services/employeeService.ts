@@ -1,11 +1,18 @@
 import { Prisma, UserRole } from '@prisma/client';
 import crypto from 'crypto';
 import { prisma } from '../config/prisma.js';
+import { EMPLOYEE_AADHAAR_PREFIX, EMPLOYEE_PHOTO_PREFIX } from '../config/s3.js';
 import { ConflictError, NotFoundError } from '../utils/errors.js';
 import { hashPassword } from '../utils/password.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
+import { uploadEmployeeFile } from './s3UploadService.js';
 import { nextCustomUserId } from './userService.js';
 import type { CreateEmployeeInput, ListEmployeesQuery, UpdateEmployeeInput } from '../validations/employeeValidation.js';
+
+export interface EmployeeUploadFiles {
+    photo?: Express.Multer.File;
+    aadhaarFile?: Express.Multer.File;
+}
 
 export const employeeSelect = {
     id: true,
@@ -25,6 +32,10 @@ export const employeeSelect = {
             salary: true,
             aadhaarNumber: true,
             joiningDate: true,
+            photoUrl: true,
+            aadhaarDocumentUrl: true,
+            documentName: true,
+            aadhaarDocumentUploadedAt: true,
         },
     },
 } satisfies Prisma.UserSelect;
@@ -51,10 +62,38 @@ function mapUniqueConstraintError(err: unknown): never | undefined {
     throw new ConflictError('A user with this mobile number already exists in this company', 'USER_MOBILE_EXISTS');
 }
 
-export async function createEmployee(input: CreateEmployeeInput, companyId: string) {
+/** Uploads whichever of photo/aadhaarFile were provided, in parallel. Lets S3 errors propagate — the caller's request fails rather than saving a partial record. */
+async function uploadProvidedEmployeeFiles(companyId: string, files?: EmployeeUploadFiles) {
+    const [photoUrl, aadhaarDocumentUrl] = await Promise.all([
+        files?.photo
+            ? uploadEmployeeFile({
+                  buffer: files.photo.buffer,
+                  mimetype: files.photo.mimetype,
+                  originalName: files.photo.originalname,
+                  companyId,
+                  prefix: EMPLOYEE_PHOTO_PREFIX,
+              })
+            : Promise.resolve(undefined),
+        files?.aadhaarFile
+            ? uploadEmployeeFile({
+                  buffer: files.aadhaarFile.buffer,
+                  mimetype: files.aadhaarFile.mimetype,
+                  originalName: files.aadhaarFile.originalname,
+                  companyId,
+                  prefix: EMPLOYEE_AADHAAR_PREFIX,
+              })
+            : Promise.resolve(undefined),
+    ]);
+    return { photoUrl, aadhaarDocumentUrl };
+}
+
+export async function createEmployee(input: CreateEmployeeInput, companyId: string, files?: EmployeeUploadFiles) {
     // Generate a secure random password since employees don't log in directly
     const randomPassword = crypto.randomBytes(32).toString('hex');
     const passwordHash = await hashPassword(randomPassword);
+
+    // Upload before the transaction so a slow S3 call never ties up a pooled DB connection.
+    const { photoUrl, aadhaarDocumentUrl } = await uploadProvidedEmployeeFiles(companyId, files);
 
     try {
         const user = await prisma.$transaction(async (tx) => {
@@ -75,6 +114,10 @@ export async function createEmployee(input: CreateEmployeeInput, companyId: stri
                             salary: input.salary,
                             aadhaarNumber: input.aadhaarNumber,
                             joiningDate: input.joiningDate,
+                            ...(photoUrl ? { photoUrl } : {}),
+                            ...(aadhaarDocumentUrl
+                                ? { aadhaarDocumentUrl, documentName: files!.aadhaarFile!.originalname, aadhaarDocumentUploadedAt: new Date() }
+                                : {}),
                         },
                     },
                 },
@@ -113,12 +156,16 @@ export async function getEmployeeById(id: string, companyId: string) {
     return mapEmployee(user);
 }
 
-export async function updateEmployee(id: string, input: UpdateEmployeeInput, companyId: string) {
+export async function updateEmployee(id: string, input: UpdateEmployeeInput, companyId: string, files?: EmployeeUploadFiles) {
     const existing = await prisma.user.findFirst({
         where: { id, companyId, role: UserRole.EMPLOYEE },
         select: { id: true },
     });
     if (!existing) throw new NotFoundError('Employee not found', 'EMPLOYEE_NOT_FOUND', { id });
+
+    // Upload before the write, and only for slots where a new file was actually provided —
+    // an untouched file picker must never overwrite a previously-saved photo/document URL.
+    const { photoUrl, aadhaarDocumentUrl } = await uploadProvidedEmployeeFiles(companyId, files);
 
     try {
         const user = await prisma.user.update({
@@ -135,6 +182,10 @@ export async function updateEmployee(id: string, input: UpdateEmployeeInput, com
                         ...(input.salary !== undefined ? { salary: input.salary } : {}),
                         ...(input.aadhaarNumber !== undefined ? { aadhaarNumber: input.aadhaarNumber } : {}),
                         ...(input.joiningDate !== undefined ? { joiningDate: input.joiningDate } : {}),
+                        ...(photoUrl ? { photoUrl } : {}),
+                        ...(aadhaarDocumentUrl
+                            ? { aadhaarDocumentUrl, documentName: files!.aadhaarFile!.originalname, aadhaarDocumentUploadedAt: new Date() }
+                            : {}),
                     },
                 },
             },
