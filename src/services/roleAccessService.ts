@@ -1,6 +1,6 @@
 import { Prisma, RightAction, UserRole } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
-import { ConflictError, NotFoundError, ValidationError } from '../utils/errors.js';
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import type {
     AssignRoleAccessInput,
@@ -179,6 +179,17 @@ export async function resolveRoleAccessGrants(roleAccessId: string, companyId: s
 export interface UserAccess {
     grants: AccessGrant[];
     moduleCodes: string[];
+    /** Every rightName this user's assigned RoleAccess grants — lets the frontend answer can(rightName) without a DB round trip. Empty (not missing) when no RoleAccess is assigned. */
+    rights: string[];
+}
+
+/** Resolves just the rightName strings a RoleAccess grants — the raw list backing UserAccess.rights. */
+async function resolveRoleAccessRightNames(roleAccessId: string, companyId: string): Promise<string[]> {
+    const rows = await prisma.roleAccessRight.findMany({
+        where: { roleAccessId, right: { companyId } },
+        select: { right: { select: { rightName: true } } },
+    });
+    return rows.map((row) => row.right.rightName);
 }
 
 /**
@@ -186,26 +197,30 @@ export interface UserAccess {
  * response (authService) and the requireModuleAccess route middleware, so the two can never
  * drift out of sync with each other.
  *
- * `null` = unrestricted (every module/tab) — ADMIN only, always.
+ * `null` = unrestricted (every module/tab, every right) — ADMIN only, always.
  * Everyone else defaults to ZERO access with no RoleAccess assigned (not the old "no
  * assignment = full access" fallback) — access must be explicitly granted, except:
  *
  * MANAGER gets a built-in, unconditional view-only grant for `productiondetails` — not
  * dependent on any Right, and not lost even if their assigned RoleAccess grants nothing for
  * that module. (Manager's *edit* ability on Production Details still requires the
- * PRODUCTION_DETAILS_EDIT_UNAPPROVED right, checked separately via userHasRight — this
- * function only ever answers "can they see it", never "can they mutate it".)
+ * PRODUCTION_DETAILS_EDIT_UNAPPROVED right, checked separately via userHasModuleAction — this
+ * function only ever answers "can they see it", never "can they mutate it". The `rights` list
+ * below reflects only explicitly-assigned rights — it does NOT include this view-only carve-out.)
  */
 export async function resolveUserAccess(role: UserRole, roleAccessId: string | null, companyId: string): Promise<UserAccess | null> {
     if (role === UserRole.ADMIN) return null;
 
-    const grants = roleAccessId ? await resolveRoleAccessGrants(roleAccessId, companyId) : [];
+    const [grants, rights] = await Promise.all([
+        roleAccessId ? resolveRoleAccessGrants(roleAccessId, companyId) : Promise.resolve([]),
+        roleAccessId ? resolveRoleAccessRightNames(roleAccessId, companyId) : Promise.resolve([]),
+    ]);
 
     if (role === UserRole.MANAGER && !grants.some((g) => g.moduleCode === 'productiondetails')) {
         grants.push({ moduleCode: 'productiondetails', tabCode: null });
     }
 
-    return { grants, moduleCodes: Array.from(new Set(grants.map((g) => g.moduleCode))) };
+    return { grants, moduleCodes: Array.from(new Set(grants.map((g) => g.moduleCode))), rights };
 }
 
 /**
@@ -215,16 +230,57 @@ export async function resolveUserAccess(role: UserRole, roleAccessId: string | n
  * need to know about a specific action (View/Add/Edit/Delete), not just "can they see it".
  * Always false with no RoleAccess assigned — there is no default-grant carve-out here, unlike
  * resolveUserAccess's Manager view default.
+ *
+ * `tabCode`, when given, only matches a right scoped to that exact tab OR one scoped to the
+ * whole module (tabId null) — a right an admin scoped to a *different* tab of the same module
+ * (e.g. Employees > Payroll) must not satisfy a check for another tab (e.g. Employees > Directory).
+ * Omit it for modules with no tabs (e.g. Production Details, Inventory).
  */
-export async function userHasModuleAction(userId: string, companyId: string, moduleCode: string, action: RightAction): Promise<boolean> {
+export async function userHasModuleAction(
+    userId: string,
+    companyId: string,
+    moduleCode: string,
+    action: RightAction,
+    tabCode?: string,
+): Promise<boolean> {
     const user = await prisma.user.findFirst({ where: { id: userId, companyId }, select: { roleAccessId: true } });
     if (!user?.roleAccessId) return false;
 
     const match = await prisma.roleAccessRight.findFirst({
-        where: { roleAccessId: user.roleAccessId, right: { companyId, action, module: { moduleCode } } },
+        where: {
+            roleAccessId: user.roleAccessId,
+            right: {
+                companyId,
+                action,
+                module: { moduleCode },
+                ...(tabCode ? { OR: [{ tab: { tabCode } }, { tabId: null }] } : {}),
+            },
+        },
         select: { id: true },
     });
     return !!match;
+}
+
+/**
+ * Generic hard-ceiling helper for modules with no special business rules beyond "ADMIN always,
+ * everyone else needs the specific right" (Employees, Inventory). Production Details keeps its
+ * own richer ceilings in productionCeilings.ts (approval lock, admin-only delete, etc.) — this
+ * is deliberately not used there.
+ */
+export async function assertModuleActionAllowed(
+    role: UserRole,
+    callerId: string,
+    companyId: string,
+    moduleCode: string,
+    action: RightAction,
+    tabCode?: string,
+): Promise<void> {
+    if (role === UserRole.ADMIN) return;
+
+    const allowed = await userHasModuleAction(callerId, companyId, moduleCode, action, tabCode);
+    if (!allowed) {
+        throw new ForbiddenError('You do not have permission to perform this action', 'ACTION_NOT_GRANTED');
+    }
 }
 
 export async function assignRoleAccessToEmployees(id: string, input: AssignRoleAccessInput, companyId: string) {

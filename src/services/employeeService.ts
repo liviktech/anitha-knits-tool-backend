@@ -1,4 +1,4 @@
-import { Prisma, UserRole } from '@prisma/client';
+import { Prisma, RightAction, UserRole } from '@prisma/client';
 import crypto from 'crypto';
 import { prisma } from '../config/prisma.js';
 import {
@@ -10,6 +10,7 @@ import { hashPassword } from '../utils/password.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import { uploadEmployeeFile } from './s3UploadService.js';
 import { nextCustomUserId } from './userService.js';
+import { assertModuleActionAllowed } from './roleAccessService.js';
 import type {
   CreateEmployeeInput,
   ListEmployeesQuery,
@@ -31,6 +32,9 @@ const MANAGED_ROLES: UserRole[] = [UserRole.EMPLOYEE, UserRole.MANAGER, UserRole
 // Deactivating an existing holder (isActive: false) frees their slot — only active users count.
 const MAX_MANAGERS_PER_COMPANY = 1;
 const MAX_SUPERVISORS_PER_COMPANY = 1;
+
+const EMPLOYEES_MODULE_CODE = 'employees';
+const DIRECTORY_TAB_CODE = 'directory';
 
 export const employeeSelect = {
   id: true,
@@ -134,8 +138,12 @@ async function assertRoleCapNotExceeded(role: UserRole, companyId: string) {
 export async function createEmployee(
   input: CreateEmployeeInput,
   companyId: string,
+  callerRole: UserRole,
+  callerId: string,
   files?: EmployeeUploadFiles,
 ) {
+  await assertModuleActionAllowed(callerRole, callerId, companyId, EMPLOYEES_MODULE_CODE, RightAction.ADD, DIRECTORY_TAB_CODE);
+
   const role = input.role ?? UserRole.EMPLOYEE;
   await assertRoleCapNotExceeded(role, companyId);
 
@@ -226,8 +234,12 @@ export async function updateEmployee(
   id: string,
   input: UpdateEmployeeInput,
   companyId: string,
+  callerRole: UserRole,
+  callerId: string,
   files?: EmployeeUploadFiles,
 ) {
+  await assertModuleActionAllowed(callerRole, callerId, companyId, EMPLOYEES_MODULE_CODE, RightAction.EDIT, DIRECTORY_TAB_CODE);
+
   const existing = await prisma.user.findFirst({
     where: { id, companyId, role: { in: MANAGED_ROLES } },
     select: { id: true },
@@ -283,7 +295,9 @@ export async function updateEmployee(
   }
 }
 
-export async function deleteEmployee(id: string, companyId: string) {
+export async function deleteEmployee(id: string, companyId: string, callerRole: UserRole, callerId: string) {
+  await assertModuleActionAllowed(callerRole, callerId, companyId, EMPLOYEES_MODULE_CODE, RightAction.DELETE, DIRECTORY_TAB_CODE);
+
   const existing = await prisma.user.findFirst({
     where: { id, companyId, role: { in: MANAGED_ROLES } },
     select: { id: true },

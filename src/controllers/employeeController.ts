@@ -21,9 +21,9 @@ type EmployeeUploadFiles = { photo?: Express.Multer.File[]; aadhaarFile?: Expres
 
 export const createEmployeeHandler = asyncHandler(async (req: Request, res: Response) => {
     const input = parseOrThrow(createEmployeeSchema, req.body);
-    const { companyId } = getAuthContext(req);
+    const { companyId, role, userId } = getAuthContext(req);
     const files = req.files as EmployeeUploadFiles | undefined;
-    const employee = await createEmployee(input, companyId, {
+    const employee = await createEmployee(input, companyId, role, userId, {
         photo: files?.photo?.[0],
         aadhaarFile: files?.aadhaarFile?.[0],
     });
@@ -47,9 +47,9 @@ export const getEmployeeHandler = asyncHandler(async (req: Request, res: Respons
 export const updateEmployeeHandler = asyncHandler(async (req: Request, res: Response) => {
     const { id } = parseOrThrow(employeeIdParamsSchema, req.params);
     const input = parseOrThrow(updateEmployeeSchema, req.body);
-    const { companyId } = getAuthContext(req);
+    const { companyId, role, userId } = getAuthContext(req);
     const files = req.files as EmployeeUploadFiles | undefined;
-    const employee = await updateEmployee(id, input, companyId, {
+    const employee = await updateEmployee(id, input, companyId, role, userId, {
         photo: files?.photo?.[0],
         aadhaarFile: files?.aadhaarFile?.[0],
     });
@@ -58,7 +58,7 @@ export const updateEmployeeHandler = asyncHandler(async (req: Request, res: Resp
 
 export const deleteEmployeeHandler = asyncHandler(async (req: Request, res: Response) => {
     const { id } = parseOrThrow(employeeIdParamsSchema, req.params);
-    const { companyId } = getAuthContext(req);
-    await deleteEmployee(id, companyId);
+    const { companyId, role, userId } = getAuthContext(req);
+    await deleteEmployee(id, companyId, role, userId);
     res.status(204).send();
 });
