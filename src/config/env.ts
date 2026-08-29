@@ -43,6 +43,10 @@ const envSchema = z.object({
         .regex(/^\d+(ms|s|m|h|d)$/, 'PLATFORM_ADMIN_JWT_REFRESH_EXPIRES_IN must look like 15m, 1h, 7d, 30s, 500ms')
         .default('7d'),
     PLATFORM_ADMIN_REFRESH_COOKIE_NAME: z.string().default('platform_admin_refresh_token'),
+    AWS_REGION: z.string().min(1, 'AWS_REGION is required'),
+    AWS_ACCESS_KEY_ID: z.string().min(1, 'AWS_ACCESS_KEY_ID is required'),
+    AWS_SECRET_ACCESS_KEY: z.string().min(1, 'AWS_SECRET_ACCESS_KEY is required'),
+    AWS_S3_BUCKET_NAME: z.string().min(1, 'AWS_S3_BUCKET_NAME is required'),
 });
 
 const parsed = envSchema.safeParse(process.env);

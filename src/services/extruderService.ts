@@ -1,4 +1,4 @@
-import { Prisma, ProductionStage } from '@prisma/client';
+import { Prisma, ProductionStage, UserRole } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { NotFoundError, ValidationError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
@@ -7,6 +7,7 @@ import { assertBrandExists, assertChemicalExists, assertColorExists, assertSizeE
 import { getKgPerBasisForColor } from './adminConfig.js';
 import { applyWastageUpdates, buildWastageCreates, mapWastageRecord, wastageSelect } from './wastageService.js';
 import { WASTAGE_CODES } from '../constants/wastageCodes.js';
+import { assertCanCreateProductionRecord, assertCanDeleteProductionRecord, assertCanUpdateProductionRecord } from './productionCeilings.js';
 import type { CreateExtruderInput, UpdateExtruderInput, ListExtruderQuery } from '../validations/extruderValidation.js';
 
 /**
@@ -44,6 +45,9 @@ const extruderSelect = {
         },
     },
     wastages: { select: wastageSelect },
+    isApproved: true,
+    approvedAt: true,
+    approvedBy: true,
     createdAt: true,
     createdBy: true,
     updatedAt: true,
@@ -142,7 +146,15 @@ async function resolveColorConsumption(
     };
 }
 
-export async function createExtruderProduction(input: CreateExtruderInput, companyId: string, actor: string) {
+export async function createExtruderProduction(
+    input: CreateExtruderInput,
+    companyId: string,
+    actor: string,
+    role: UserRole,
+    callerId: string,
+) {
+    await assertCanCreateProductionRecord(role, callerId, companyId);
+
     await Promise.all([
         assertColorExists(input.colorId, companyId),
         assertSizeExists(input.sizeId, companyId),
@@ -225,12 +237,21 @@ export async function getExtruderProductionById(id: string, companyId: string) {
     return mapExtruderRecord(record);
 }
 
-export async function updateExtruderProduction(id: string, input: UpdateExtruderInput, companyId: string, actor: string) {
+export async function updateExtruderProduction(
+    id: string,
+    input: UpdateExtruderInput,
+    companyId: string,
+    actor: string,
+    role: UserRole,
+    callerId: string,
+) {
     const existing = await prisma.productionRecord.findFirst({
         where: { id, companyId, stage: ProductionStage.EXTRUDER },
-        select: { id: true, colorId: true, productionDate: true, extruder: { select: { rawMaterialKg: true } } },
+        select: { id: true, colorId: true, productionDate: true, isApproved: true, extruder: { select: { rawMaterialKg: true } } },
     });
     if (!existing) throw new NotFoundError('Extruder production not found', 'EXTRUDER_NOT_FOUND', { id });
+
+    await assertCanUpdateProductionRecord(role, callerId, companyId, existing.isApproved);
 
     await Promise.all([
         input.colorId ? assertColorExists(input.colorId, companyId) : undefined,
@@ -299,7 +320,9 @@ export async function updateExtruderProduction(id: string, input: UpdateExtruder
     return mapExtruderRecord(updated);
 }
 
-export async function deleteExtruderProduction(id: string, companyId: string): Promise<void> {
+export async function deleteExtruderProduction(id: string, companyId: string, role: UserRole): Promise<void> {
+    assertCanDeleteProductionRecord(role);
+
     const existing = await prisma.productionRecord.findFirst({
         where: { id, companyId, stage: ProductionStage.EXTRUDER },
         select: { id: true },
@@ -312,6 +335,22 @@ export async function deleteExtruderProduction(id: string, companyId: string): P
         await tx.wastageRecord.deleteMany({ where: { productionRecordId: id } });
         await tx.productionRecord.delete({ where: { id } });
     });
+}
+
+/** ADMIN-only (enforced at the route level) — sets isApproved, never exposed via Right/RoleAccess. */
+export async function approveExtruderProduction(id: string, companyId: string, actor: string) {
+    const existing = await prisma.productionRecord.findFirst({
+        where: { id, companyId, stage: ProductionStage.EXTRUDER },
+        select: { id: true },
+    });
+    if (!existing) throw new NotFoundError('Extruder production not found', 'EXTRUDER_NOT_FOUND', { id });
+
+    const record = await prisma.productionRecord.update({
+        where: { id },
+        data: { isApproved: true, approvedAt: new Date(), approvedBy: actor },
+        select: extruderSelect,
+    });
+    return mapExtruderRecord(record);
 }
 
 export async function getExtruderProductionSummaryByDateRange(companyId: string, dateFrom: Date, dateTo: Date) {

@@ -40,13 +40,13 @@ export const getAttendance = asyncHandler(
 
 export const bulkUpsertAttendance = asyncHandler(
   async (req: Request, res: Response, next: NextFunction) => {
-    const { companyId, sub: userId } = req.user!;
-    
+    const { companyId, sub: userId, role } = req.user!;
+
     const payload = parseOrThrow(bulkAttendanceSchema, req.body);
-    
+
     const date = new Date(payload.date);
-    
-    const results = await upsertDailyAttendance(companyId, userId, date, payload.records);
+
+    const results = await upsertDailyAttendance(companyId, userId, role, date, payload.records);
 
     res.status(200).json({
       success: true,

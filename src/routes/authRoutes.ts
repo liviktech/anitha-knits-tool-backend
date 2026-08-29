@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { login, refresh } from '../controllers/authController.js';
+import { login, me, refresh } from '../controllers/authController.js';
+import { requireAuth } from '../middlewares/auth.js';
 
 const router = Router();
 
@@ -73,5 +74,24 @@ router.post('/login', login);
  *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.post('/refresh', refresh);
+
+/**
+ * @openapi
+ * /api/v1/company/auth/me:
+ *   get:
+ *     tags: [Auth]
+ *     summary: Re-resolve the current session's profile + access
+ *     description: >
+ *       Re-fetches the caller's profile and re-resolves their RoleAccess -> module/tab
+ *       grants from scratch (not from the JWT, which never carries access). Use this to
+ *       pick up a role/rights change made by an admin after the current session started,
+ *       without requiring a fresh login.
+ *     responses:
+ *       200:
+ *         description: OK.
+ *       401:
+ *         description: Missing or invalid session (AUTH_REQUIRED).
+ */
+router.get('/me', requireAuth(), me);
 
 export default router;

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createLooms, deleteLooms, getLooms, listLooms, updateLooms } from '../controllers/loomsController.js';
+import { approveLooms, createLooms, deleteLooms, getLooms, listLooms, updateLooms } from '../controllers/loomsController.js';
 import { requireAuth } from '../middlewares/auth.js';
 
 const router = Router();
@@ -132,5 +132,29 @@ router.get('/', listLooms);
 router.get('/:id', getLooms);
 router.patch('/:id', requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'), updateLooms);
 router.delete('/:id', requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'), deleteLooms);
+
+/**
+ * @openapi
+ * /api/v1/production/looms/{id}/approve:
+ *   patch:
+ *     tags: [Looms]
+ *     summary: Approve a Looms production record
+ *     description: >
+ *       ADMIN-only — not exposed through the Right/RoleAccess system. Sets
+ *       isApproved=true, approvedAt=now, approvedBy=<admin>. One-way; there
+ *       is no un-approve endpoint.
+ *     parameters:
+ *       - $ref: '#/components/parameters/LoomsId'
+ *     responses:
+ *       200:
+ *         description: OK.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/LoomsResponse'
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ */
+router.patch('/:id/approve', requireAuth('ADMIN'), approveLooms);
 
 export default router;

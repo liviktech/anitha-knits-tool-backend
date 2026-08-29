@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createExtruder, deleteExtruder, getExtruder, listExtruder, updateExtruder } from '../controllers/extruderController.js';
+import { approveExtruder, createExtruder, deleteExtruder, getExtruder, listExtruder, updateExtruder } from '../controllers/extruderController.js';
 import { requireAuth } from '../middlewares/auth.js';
 
 const router = Router();
@@ -160,5 +160,29 @@ router.get('/', listExtruder);
 router.get('/:id', getExtruder);
 router.patch('/:id', requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'), updateExtruder);
 router.delete('/:id', requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'), deleteExtruder);
+
+/**
+ * @openapi
+ * /api/v1/production/extruder/{id}/approve:
+ *   patch:
+ *     tags: [Extruder]
+ *     summary: Approve an Extruder production record
+ *     description: >
+ *       ADMIN-only — not exposed through the Right/RoleAccess system. Sets
+ *       isApproved=true, approvedAt=now, approvedBy=<admin>. One-way; there
+ *       is no un-approve endpoint.
+ *     parameters:
+ *       - $ref: '#/components/parameters/ExtruderId'
+ *     responses:
+ *       200:
+ *         description: OK.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/ExtruderResponse'
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ */
+router.patch('/:id/approve', requireAuth('ADMIN'), approveExtruder);
 
 export default router;

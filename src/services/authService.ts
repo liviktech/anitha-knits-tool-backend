@@ -1,10 +1,12 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, UserRole } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { ConflictError, ForbiddenError, NotFoundError, UnauthorizedError } from '../utils/errors.js';
 import { comparePassword, dummyPasswordHash, hashPassword } from '../utils/password.js';
 import { signAccessToken, signRefreshToken } from '../utils/jwt.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import { employeeDetailsSelect, nextCustomUserId, withMappedEmployeeDetails } from './userService.js';
+import { DEFAULT_MODULES } from '../constants/defaultAccessCatalog.js';
+import { resolveUserAccess, type UserAccess } from './roleAccessService.js';
 import type { TokenPayload } from '../types/auth.js';
 import type {
     LoginInput,
@@ -83,6 +85,27 @@ export async function signupCompany(input: SignupInput) {
                 select: companySelect,
             });
 
+            for (const mod of DEFAULT_MODULES) {
+                const createdModule = await tx.module.create({
+                    data: { companyId: company.id, moduleCode: mod.code, moduleName: mod.name },
+                    select: { id: true },
+                });
+                if (mod.tabs.length > 0) {
+                    await tx.tab.createMany({
+                        data: mod.tabs.map((tab) => ({
+                            companyId: company.id,
+                            moduleId: createdModule.id,
+                            tabCode: tab.code,
+                            tabName: tab.name,
+                        })),
+                    });
+                }
+            }
+
+            // No Rights are seeded here — every Right (including the Production Details
+            // Add/Edit ones the hard ceilings in productionCeilings.ts look for) is created
+            // manually by the admin via the Roles tab (Module > Tab > Action), not auto-generated.
+
             // First user of a brand-new company — employeeSeq starts at 1, so this is always "001".
             const customUserId = await nextCustomUserId(tx, company.id);
 
@@ -114,6 +137,7 @@ const loginCandidateSelect = {
     passwordHash: true,
     role: true,
     isActive: true,
+    roleAccessId: true,
     company: { select: { id: true, name: true, companyCode: true, isActive: true } },
 } satisfies Prisma.UserSelect;
 
@@ -167,6 +191,7 @@ export async function loginUser(input: LoginInput) {
 
     const payload: TokenPayload = { sub: user.id, role: user.role, companyId: user.companyId, mobile: user.mobile };
     const tokens = { accessToken: signAccessToken(payload), refreshToken: signRefreshToken(payload) };
+    const access = await resolveUserAccess(user.role, user.roleAccessId, user.companyId);
 
     return {
         tokens,
@@ -179,6 +204,43 @@ export async function loginUser(input: LoginInput) {
             isActive: user.isActive,
         },
         company: { id: user.company.id, name: user.company.name, companyCode: user.company.companyCode },
+        access,
+    };
+}
+
+const meSelect = {
+    id: true,
+    companyId: true,
+    name: true,
+    mobile: true,
+    role: true,
+    isActive: true,
+    roleAccessId: true,
+    company: { select: { id: true, name: true, companyCode: true } },
+} satisfies Prisma.UserSelect;
+
+/**
+ * Re-resolves the current session's profile + access from scratch — used by GET /me so a
+ * client can pick up a RoleAccess change (or reassignment) made after the user last logged in,
+ * without needing a fresh login. Deliberately not baked into the JWT for this reason.
+ */
+export async function getCurrentUser(userId: string, companyId: string) {
+    const user = await prisma.user.findFirst({ where: { id: userId, companyId }, select: meSelect });
+    if (!user) throw new NotFoundError('User not found', 'USER_NOT_FOUND', { id: userId });
+
+    const access = await resolveUserAccess(user.role, user.roleAccessId, user.companyId);
+
+    return {
+        user: {
+            id: user.id,
+            companyId: user.companyId,
+            name: user.name,
+            mobile: user.mobile,
+            role: user.role,
+            isActive: user.isActive,
+        },
+        company: user.company,
+        access,
     };
 }
 

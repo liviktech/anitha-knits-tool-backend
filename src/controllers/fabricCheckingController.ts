@@ -3,7 +3,9 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 import { getAuthContext } from '../utils/actor.js';
 import { parseOrThrow } from '../utils/validate.js';
+import { UnauthorizedError } from '../utils/errors.js';
 import {
+    approveFabricCheckingRecord,
     createFabricCheckingRecord,
     deleteFabricCheckingRecord,
     getFabricCheckingRecordById,
@@ -17,10 +19,16 @@ import {
     updateFabricCheckingSchema,
 } from '../validations/fabricCheckingValidation.js';
 
+/** requireAuth() already guarantees req.user is set — this just narrows the type past that. */
+function requireRole(req: Request) {
+    if (!req.user) throw new UnauthorizedError('Authentication required', 'AUTH_REQUIRED');
+    return req.user.role;
+}
+
 export const createFabricChecking = asyncHandler(async (req: Request, res: Response) => {
     const input = parseOrThrow(createFabricCheckingSchema, req.body);
-    const { companyId, actor } = getAuthContext(req);
-    const record = await createFabricCheckingRecord(input, companyId, actor);
+    const { companyId, actor, userId } = getAuthContext(req);
+    const record = await createFabricCheckingRecord(input, companyId, actor, requireRole(req), userId);
     sendSuccess(res, record, undefined, 201);
 });
 
@@ -41,14 +49,21 @@ export const getFabricChecking = asyncHandler(async (req: Request, res: Response
 export const updateFabricChecking = asyncHandler(async (req: Request, res: Response) => {
     const { id } = parseOrThrow(fabricCheckingIdParamsSchema, req.params);
     const input = parseOrThrow(updateFabricCheckingSchema, req.body);
-    const { companyId, actor } = getAuthContext(req);
-    const record = await updateFabricCheckingRecord(id, input, companyId, actor);
+    const { companyId, actor, userId } = getAuthContext(req);
+    const record = await updateFabricCheckingRecord(id, input, companyId, actor, requireRole(req), userId);
     sendSuccess(res, record);
 });
 
 export const deleteFabricChecking = asyncHandler(async (req: Request, res: Response) => {
     const { id } = parseOrThrow(fabricCheckingIdParamsSchema, req.params);
     const { companyId } = getAuthContext(req);
-    await deleteFabricCheckingRecord(id, companyId);
+    await deleteFabricCheckingRecord(id, companyId, requireRole(req));
     res.status(204).send();
+});
+
+export const approveFabricChecking = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = parseOrThrow(fabricCheckingIdParamsSchema, req.params);
+    const { companyId, actor } = getAuthContext(req);
+    const record = await approveFabricCheckingRecord(id, companyId, actor);
+    sendSuccess(res, record);
 });
