@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, RightAction } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { ConflictError, NotFoundError, ValidationError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
@@ -8,6 +8,7 @@ const rightSelect = {
     id: true,
     moduleId: true,
     tabId: true,
+    action: true,
     rightName: true,
     displayName: true,
     createdAt: true,
@@ -23,31 +24,54 @@ function mapRightRecord(record: RightRow) {
     return { ...rest, moduleName: module.moduleName, tabName: tab?.tabName ?? null };
 }
 
-async function assertModuleInCompany(moduleId: string, companyId: string) {
-    const module = await prisma.module.findFirst({ where: { id: moduleId, companyId }, select: { id: true } });
+const ACTION_LABELS: Record<RightAction, string> = {
+    VIEW: 'View',
+    ADD: 'Add',
+    EDIT: 'Edit',
+    DELETE: 'Delete',
+};
+
+/** Stable, server-derived identifier — never admin-typed. See the schema comment on Right.rightName for why this (not a raw composite key) is what enforces uniqueness. */
+function deriveRightName(moduleCode: string, tabCode: string | null, action: RightAction): string {
+    return `${moduleCode}_${tabCode ?? 'all'}_${action}`.toLowerCase();
+}
+
+function deriveDisplayName(moduleName: string, tabName: string | null, action: RightAction): string {
+    return `${moduleName}${tabName ? ` – ${tabName}` : ''} – ${ACTION_LABELS[action]}`;
+}
+
+/** Validates moduleId belongs to this company and returns the fields needed to derive rightName/displayName. */
+async function loadModuleForDerivation(moduleId: string, companyId: string) {
+    const module = await prisma.module.findFirst({
+        where: { id: moduleId, companyId },
+        select: { moduleCode: true, moduleName: true },
+    });
     if (!module) throw new ValidationError('moduleId does not reference an existing module for this company', 'INVALID_MODULE_ID');
+    return module;
 }
 
 /** A Tab, if provided, must belong to this company AND to the same module the Right is being scoped to. */
-async function assertTabBelongsToModule(tabId: string, moduleId: string, companyId: string) {
-    const tab = await prisma.tab.findFirst({ where: { id: tabId, companyId }, select: { moduleId: true } });
+async function loadTabForDerivation(tabId: string, moduleId: string, companyId: string) {
+    const tab = await prisma.tab.findFirst({
+        where: { id: tabId, companyId },
+        select: { moduleId: true, tabCode: true, tabName: true },
+    });
     if (!tab) throw new ValidationError('tabId does not reference an existing tab for this company', 'INVALID_TAB_ID');
     if (tab.moduleId !== moduleId) {
         throw new ValidationError('tabId does not belong to the given moduleId', 'TAB_MODULE_MISMATCH');
     }
+    return tab;
 }
 
-/** Maps a unique-constraint violation on [companyId, rightName] to a stable conflict error. */
+/** Maps a unique-constraint violation on [companyId, rightName] to a stable conflict error — i.e. this exact Module/Tab/Action combination already has a right. */
 function mapRightNameConflict(err: unknown): never | undefined {
     if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== 'P2002') return undefined;
-    throw new ConflictError('A right with this name already exists', 'RIGHT_NAME_EXISTS');
+    throw new ConflictError('A right for this module/tab/action already exists', 'RIGHT_ALREADY_EXISTS');
 }
 
 export async function createRight(input: CreateRightInput, companyId: string) {
-    await assertModuleInCompany(input.moduleId, companyId);
-    if (input.tabId) {
-        await assertTabBelongsToModule(input.tabId, input.moduleId, companyId);
-    }
+    const module = await loadModuleForDerivation(input.moduleId, companyId);
+    const tab = input.tabId ? await loadTabForDerivation(input.tabId, input.moduleId, companyId) : null;
 
     try {
         const record = await prisma.right.create({
@@ -55,8 +79,9 @@ export async function createRight(input: CreateRightInput, companyId: string) {
                 companyId,
                 moduleId: input.moduleId,
                 tabId: input.tabId ?? null,
-                rightName: input.rightName,
-                displayName: input.displayName,
+                action: input.action,
+                rightName: deriveRightName(module.moduleCode, tab?.tabCode ?? null, input.action),
+                displayName: deriveDisplayName(module.moduleName, tab?.tabName ?? null, input.action),
             },
             select: rightSelect,
         });
@@ -74,6 +99,7 @@ export async function listRights(query: ListRightQuery, companyId: string) {
         companyId,
         ...(query.tabId ? { tabId: query.tabId } : {}),
         ...(query.moduleId ? { moduleId: query.moduleId } : {}),
+        ...(query.action ? { action: query.action } : {}),
         ...(query.name
             ? {
                 OR: [
@@ -101,32 +127,28 @@ export async function getRightById(id: string, companyId: string) {
 export async function updateRight(id: string, input: UpdateRightInput, companyId: string) {
     const existing = await prisma.right.findFirst({
         where: { id, companyId },
-        select: { id: true, moduleId: true, tabId: true },
+        select: { id: true, moduleId: true, tabId: true, action: true },
     });
     if (!existing) throw new NotFoundError('Right not found', 'RIGHT_NOT_FOUND', { id });
 
-    if (input.moduleId !== undefined) {
-        await assertModuleInCompany(input.moduleId, companyId);
-    }
     const finalModuleId = input.moduleId ?? existing.moduleId;
+    const finalTabId = input.tabId !== undefined ? input.tabId : existing.tabId;
+    const finalAction = input.action ?? existing.action;
 
-    if (input.tabId !== undefined) {
-        // Explicitly provided — null clears it, a uuid must belong to the final module.
-        if (input.tabId !== null) await assertTabBelongsToModule(input.tabId, finalModuleId, companyId);
-    } else if (input.moduleId !== undefined && existing.tabId) {
-        // moduleId is changing but tabId wasn't touched — the existing tab must still be valid
-        // under the new module, otherwise the caller must pass tabId explicitly (a new one, or null).
-        await assertTabBelongsToModule(existing.tabId, finalModuleId, companyId);
-    }
+    // rightName/displayName always get re-derived from the final module/tab/action, regardless
+    // of which individual field changed, since any of the three affects both derived strings.
+    const module = await loadModuleForDerivation(finalModuleId, companyId);
+    const tab = finalTabId ? await loadTabForDerivation(finalTabId, finalModuleId, companyId) : null;
 
     try {
         const record = await prisma.right.update({
             where: { id },
             data: {
-                ...(input.moduleId !== undefined ? { moduleId: input.moduleId } : {}),
-                ...(input.tabId !== undefined ? { tabId: input.tabId } : {}),
-                ...(input.rightName !== undefined ? { rightName: input.rightName } : {}),
-                ...(input.displayName !== undefined ? { displayName: input.displayName } : {}),
+                moduleId: finalModuleId,
+                tabId: finalTabId,
+                action: finalAction,
+                rightName: deriveRightName(module.moduleCode, tab?.tabCode ?? null, finalAction),
+                displayName: deriveDisplayName(module.moduleName, tab?.tabName ?? null, finalAction),
             },
             select: rightSelect,
         });

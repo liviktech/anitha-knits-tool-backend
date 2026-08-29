@@ -7,20 +7,14 @@ export const rightIdParamsSchema = z
     })
     .strict();
 
-const rightNameField = z
-    .string()
-    .trim()
-    .min(1)
-    .max(100)
-    .transform((value) => value.replace(/\s+/g, '_').toLowerCase());
+export const rightActionSchema = z.enum(['VIEW', 'ADD', 'EDIT', 'DELETE']);
 
 export const createRightSchema = z
     .object({
         moduleId: z.string().uuid('moduleId must be a valid UUID'),
         // Omit or pass null for a module-wide right (most modules have no Tabs).
         tabId: z.string().uuid('tabId must be a valid UUID').nullable().optional(),
-        rightName: rightNameField,
-        displayName: z.string().trim().min(1).max(150),
+        action: rightActionSchema,
     })
     .strict();
 
@@ -28,8 +22,7 @@ export const updateRightSchema = z
     .object({
         moduleId: z.string().uuid('moduleId must be a valid UUID'),
         tabId: z.string().uuid('tabId must be a valid UUID').nullable(),
-        rightName: rightNameField,
-        displayName: z.string().trim().min(1).max(150),
+        action: rightActionSchema,
     })
     .partial()
     .strict()
@@ -39,6 +32,7 @@ export const listRightQuerySchema = paginationSchema
     .extend({
         tabId: z.string().uuid().optional(),
         moduleId: z.string().uuid().optional(),
+        action: rightActionSchema.optional(),
         name: z.string().trim().min(1).optional(),
     })
     .strict();

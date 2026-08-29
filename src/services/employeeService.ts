@@ -21,6 +21,17 @@ export interface EmployeeUploadFiles {
   aadhaarFile?: Express.Multer.File;
 }
 
+// The Employees Directory manages all three non-admin roles from one screen — Manager/Supervisor
+// creation used to go through a separate /company/user endpoint (removed; it had zero frontend
+// callers) and is now consolidated here.
+const MANAGED_ROLES: UserRole[] = [UserRole.EMPLOYEE, UserRole.MANAGER, UserRole.SUPERVISOR];
+
+// A company may have at most one active MANAGER and one active SUPERVISOR at a time (Employee is
+// uncapped). Kept as named constants, not a DB constraint, so the limit is easy to change later.
+// Deactivating an existing holder (isActive: false) frees their slot — only active users count.
+const MAX_MANAGERS_PER_COMPANY = 1;
+const MAX_SUPERVISORS_PER_COMPANY = 1;
+
 export const employeeSelect = {
   id: true,
   companyId: true,
@@ -106,14 +117,29 @@ async function uploadProvidedEmployeeFiles(
   return { photoUrl, aadhaarDocumentUrl };
 }
 
+/** Throws ConflictError if creating a MANAGER/SUPERVISOR would exceed this company's one-active-holder cap. Employee is uncapped. */
+async function assertRoleCapNotExceeded(role: UserRole, companyId: string) {
+  if (role === UserRole.EMPLOYEE) return;
+
+  const max = role === UserRole.MANAGER ? MAX_MANAGERS_PER_COMPANY : MAX_SUPERVISORS_PER_COMPANY;
+  const activeCount = await prisma.user.count({ where: { companyId, role, isActive: true } });
+  if (activeCount >= max) {
+    throw new ConflictError(
+      `This company already has an active ${role === UserRole.MANAGER ? 'Manager' : 'Supervisor'} — deactivate them first to add a new one`,
+      role === UserRole.MANAGER ? 'MANAGER_LIMIT_REACHED' : 'SUPERVISOR_LIMIT_REACHED',
+    );
+  }
+}
+
 export async function createEmployee(
   input: CreateEmployeeInput,
   companyId: string,
   files?: EmployeeUploadFiles,
 ) {
-  // Generate a secure random password since employees don't log in directly
-  const randomPassword = 'test123';
-  const passwordHash = await hashPassword(randomPassword);
+  const role = input.role ?? UserRole.EMPLOYEE;
+  await assertRoleCapNotExceeded(role, companyId);
+
+  const passwordHash = await hashPassword(input.password);
 
   // Upload before the transaction so a slow S3 call never ties up a pooled DB connection.
   const { photoUrl, aadhaarDocumentUrl } = await uploadProvidedEmployeeFiles(
@@ -130,7 +156,7 @@ export async function createEmployee(
           name: input.name,
           mobile: input.mobile,
           passwordHash,
-          role: UserRole.EMPLOYEE,
+          role,
           employeeDetails: {
             create: {
               customUserId,
@@ -168,7 +194,7 @@ export async function listEmployees(
   const { skip, take } = toSkipTake(query);
   const where: Prisma.UserWhereInput = {
     companyId,
-    role: UserRole.EMPLOYEE,
+    role: query.role ? query.role : { in: MANAGED_ROLES },
     ...(query.isActive !== undefined ? { isActive: query.isActive } : {}),
   };
 
@@ -188,7 +214,7 @@ export async function listEmployees(
 
 export async function getEmployeeById(id: string, companyId: string) {
   const user = await prisma.user.findFirst({
-    where: { id, companyId, role: UserRole.EMPLOYEE },
+    where: { id, companyId, role: { in: MANAGED_ROLES } },
     select: employeeSelect,
   });
   if (!user)
@@ -203,7 +229,7 @@ export async function updateEmployee(
   files?: EmployeeUploadFiles,
 ) {
   const existing = await prisma.user.findFirst({
-    where: { id, companyId, role: UserRole.EMPLOYEE },
+    where: { id, companyId, role: { in: MANAGED_ROLES } },
     select: { id: true },
   });
   if (!existing)
@@ -259,7 +285,7 @@ export async function updateEmployee(
 
 export async function deleteEmployee(id: string, companyId: string) {
   const existing = await prisma.user.findFirst({
-    where: { id, companyId, role: UserRole.EMPLOYEE },
+    where: { id, companyId, role: { in: MANAGED_ROLES } },
     select: { id: true },
   });
   if (!existing)

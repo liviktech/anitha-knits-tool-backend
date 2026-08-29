@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, RightAction, UserRole } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { ConflictError, NotFoundError, ValidationError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
@@ -174,6 +174,57 @@ export async function resolveRoleAccessGrants(roleAccessId: string, companyId: s
         grants.push({ moduleCode, tabCode });
     }
     return grants;
+}
+
+export interface UserAccess {
+    grants: AccessGrant[];
+    moduleCodes: string[];
+}
+
+/**
+ * The single source of truth for "what can this user see" — used by both the login//me
+ * response (authService) and the requireModuleAccess route middleware, so the two can never
+ * drift out of sync with each other.
+ *
+ * `null` = unrestricted (every module/tab) — ADMIN only, always.
+ * Everyone else defaults to ZERO access with no RoleAccess assigned (not the old "no
+ * assignment = full access" fallback) — access must be explicitly granted, except:
+ *
+ * MANAGER gets a built-in, unconditional view-only grant for `productiondetails` — not
+ * dependent on any Right, and not lost even if their assigned RoleAccess grants nothing for
+ * that module. (Manager's *edit* ability on Production Details still requires the
+ * PRODUCTION_DETAILS_EDIT_UNAPPROVED right, checked separately via userHasRight — this
+ * function only ever answers "can they see it", never "can they mutate it".)
+ */
+export async function resolveUserAccess(role: UserRole, roleAccessId: string | null, companyId: string): Promise<UserAccess | null> {
+    if (role === UserRole.ADMIN) return null;
+
+    const grants = roleAccessId ? await resolveRoleAccessGrants(roleAccessId, companyId) : [];
+
+    if (role === UserRole.MANAGER && !grants.some((g) => g.moduleCode === 'productiondetails')) {
+        grants.push({ moduleCode: 'productiondetails', tabCode: null });
+    }
+
+    return { grants, moduleCodes: Array.from(new Set(grants.map((g) => g.moduleCode))) };
+}
+
+/**
+ * Whether the caller's assigned RoleAccess includes a right granting `action` on `moduleCode`
+ * — independent of the module/tab *visibility* grants in resolveUserAccess above. Used for hard
+ * ceiling checks (e.g. "does this Supervisor hold an ADD right for productiondetails"), which
+ * need to know about a specific action (View/Add/Edit/Delete), not just "can they see it".
+ * Always false with no RoleAccess assigned — there is no default-grant carve-out here, unlike
+ * resolveUserAccess's Manager view default.
+ */
+export async function userHasModuleAction(userId: string, companyId: string, moduleCode: string, action: RightAction): Promise<boolean> {
+    const user = await prisma.user.findFirst({ where: { id: userId, companyId }, select: { roleAccessId: true } });
+    if (!user?.roleAccessId) return false;
+
+    const match = await prisma.roleAccessRight.findFirst({
+        where: { roleAccessId: user.roleAccessId, right: { companyId, action, module: { moduleCode } } },
+        select: { id: true },
+    });
+    return !!match;
 }
 
 export async function assignRoleAccessToEmployees(id: string, input: AssignRoleAccessInput, companyId: string) {

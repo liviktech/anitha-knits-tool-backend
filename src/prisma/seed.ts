@@ -42,7 +42,12 @@ async function main() {
     await prisma.brand.upsert({
       where: { companyId_name: { companyId, name } },
       update: {},
-      create: { companyId, name, itemCode: `BD${String(index + 1).padStart(3, '0')}`, createdBy: SYSTEM },
+      create: {
+        companyId,
+        name,
+        itemCode: `BD${String(index + 1).padStart(3, '0')}`,
+        createdBy: SYSTEM,
+      },
     });
   }
   // Advance the per-company sequence counter past whatever was just seeded (never below it — the
@@ -60,7 +65,12 @@ async function main() {
     await prisma.chemical.upsert({
       where: { companyId_name: { companyId, name } },
       update: {},
-      create: { companyId, name, itemCode: `CL${String(index + 1).padStart(3, '0')}`, createdBy: SYSTEM },
+      create: {
+        companyId,
+        name,
+        itemCode: `CL${String(index + 1).padStart(3, '0')}`,
+        createdBy: SYSTEM,
+      },
     });
   }
   await prisma.company.updateMany({
@@ -76,7 +86,12 @@ async function main() {
     await prisma.size.upsert({
       where: { companyId_name: { companyId, name } },
       update: {},
-      create: { companyId, name, itemCode: `SE${String(index + 1).padStart(3, '0')}`, createdBy: SYSTEM },
+      create: {
+        companyId,
+        name,
+        itemCode: `SE${String(index + 1).padStart(3, '0')}`,
+        createdBy: SYSTEM,
+      },
     });
   }
   await prisma.company.updateMany({
@@ -94,7 +109,12 @@ async function main() {
     await prisma.color.upsert({
       where: { companyId_name: { companyId, name } },
       update: {},
-      create: { companyId, name, itemCode: `CR${String(index + 1).padStart(3, '0')}`, createdBy: SYSTEM },
+      create: {
+        companyId,
+        name,
+        itemCode: `CR${String(index + 1).padStart(3, '0')}`,
+        createdBy: SYSTEM,
+      },
     });
   }
   await prisma.company.updateMany({
@@ -191,12 +211,27 @@ async function main() {
 
     for (const tab of mod.tabs) {
       await prisma.tab.upsert({
-        where: { companyId_moduleId_tabCode: { companyId, moduleId: moduleRecord.id, tabCode: tab.code } },
+        where: {
+          companyId_moduleId_tabCode: {
+            companyId,
+            moduleId: moduleRecord.id,
+            tabCode: tab.code,
+          },
+        },
         update: {},
-        create: { companyId, moduleId: moduleRecord.id, tabCode: tab.code, tabName: tab.name },
+        create: {
+          companyId,
+          moduleId: moduleRecord.id,
+          tabCode: tab.code,
+          tabName: tab.name,
+        },
       });
     }
   }
+
+  // No Rights are seeded — every Right (including the Production Details Add/Edit ones the
+  // hard ceilings in productionCeilings.ts look for) is created manually by the admin via the
+  // Roles tab (Module > Tab > Action), not auto-generated for any company, new or existing.
 
   console.log('Seed complete.');
 }

@@ -454,6 +454,12 @@ model ProductionRecord {
 
   remarks String? @db.VarChar(500)
 
+  isApproved Boolean @default(false) @map("is_approved")
+
+  approvedAt DateTime? @map("approved_at") @db.Timestamptz(6)
+
+  approvedBy String? @map("approved_by") @db.VarChar(100)
+
   extruder ExtruderDetail?
 
   loom LoomDetail?
@@ -474,6 +480,7 @@ model ProductionRecord {
   @@index([companyId])
   @@index([companyId, productionDate])
   @@index([companyId, stage, productionDate])
+  @@index([companyId, isApproved])
   @@index([colorId, sizeId])
   @@index([reversesRecordId])
   @@map("production_records")
@@ -545,6 +552,13 @@ model FabricCheckDetail {
 enum KoraEntryType {
   CREDIT
   DEBIT
+}
+
+enum RightAction {
+  VIEW
+  ADD
+  EDIT
+  DELETE
 }
 
 model KoraBalance {
@@ -834,9 +848,18 @@ model Right {
 
   tab Tab? @relation(fields: [tabId], references: [id], onDelete: Cascade)
 
-  rightName String @map("right_name") @db.VarChar(100)
+  // What the right grants on this Module (+ optional Tab) — the admin picks Module > Tab >
+  // Action; rightName/displayName below are derived from these, never typed by the admin.
+  action RightAction
 
-  displayName String @map("display_name") @db.VarChar(150)
+  // Server-derived stable identifier, e.g. "productiondetails_all_edit" — this (not a raw
+  // moduleId+tabId+action tuple) is what @@unique enforces, since Postgres doesn't treat two
+  // NULL tabId rows as equal, so a composite unique including tabId can't reliably prevent
+  // duplicate "same module/tab/action" rights on its own.
+  rightName String @map("right_name") @db.VarChar(150)
+
+  // Server-derived human label, e.g. "Production Details – Edit".
+  displayName String @map("display_name") @db.VarChar(200)
 
   roleLinks RoleAccessRight[]
 

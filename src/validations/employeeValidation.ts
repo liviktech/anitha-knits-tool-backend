@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Gender } from '@prisma/client';
+import { Gender, UserRole } from '@prisma/client';
 import { booleanQueryParam, paginationSchema } from '../utils/pagination.js';
 
 export const employeeIdParamsSchema = z
@@ -8,6 +8,9 @@ export const employeeIdParamsSchema = z
     })
     .strict();
 
+// Managed roles this endpoint can create — no self-service ADMIN creation here.
+export const managedRoleSchema = z.enum(['EMPLOYEE', 'MANAGER', 'SUPERVISOR']);
+
 export const createEmployeeSchema = z
     .object({
         name: z.string().trim().max(150).optional(),
@@ -15,6 +18,8 @@ export const createEmployeeSchema = z
             .string()
             .trim()
             .regex(/^[0-9]{10,15}$/, 'mobile must be 10-15 digits'),
+        password: z.string().min(8).max(128),
+        role: managedRoleSchema.default(UserRole.EMPLOYEE),
         designation: z.string().trim().max(100).optional(),
         address: z.string().trim().max(500).optional(),
         gender: z.nativeEnum(Gender).optional(),
@@ -46,6 +51,7 @@ export const updateEmployeeSchema = z
 export const listEmployeesQuerySchema = paginationSchema
     .extend({
         isActive: booleanQueryParam.optional(),
+        role: managedRoleSchema.optional(),
     })
     .strict();
 
