@@ -13,26 +13,35 @@ import inventoryRoutes from './inventoryRoutes.js';
 import loadSentRoutes from './loadSentRoutes.js';
 import expenseRoutes from './expenseRoutes.js';
 import adminConfigRoutes from './adminConfig.js';
+import moduleRoutes from './moduleRoutes.js';
+import tabRoutes from './tabRoutes.js';
+import rightRoutes from './rightRoutes.js';
+import roleAccessRoutes from './roleAccessRoutes.js';
 import { requireAuth } from '../middlewares/auth.js';
+import { requireModuleAccess } from '../middlewares/requireModuleAccess.js';
 
 const router = Router();
+
+// Every EMPLOYEE-role user is now let past the coarse role check on these module-mapped
+// routes; requireModuleAccess() is what actually gates them, using their resolved RoleAccess
+// grants instead. ADMIN/MANAGER/SUPERVISOR keep unrestricted access as before.
+const COMPANY_ROLES = ['ADMIN', 'MANAGER', 'SUPERVISOR', 'EMPLOYEE'] as const;
 
 router.use('/health', healthRoutes);
 
 //Done
 router.use('/company/auth', authRoutes);
-router.use('/inventory', inventoryRoutes);
-router.use('/expenses', expenseRoutes);
-router.use(
-  '/dashboard',
-  requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
-  dashboardRoutes,
-);
+router.use('/inventory', requireAuth(...COMPANY_ROLES), requireModuleAccess('inventory'), inventoryRoutes);
+router.use('/expenses', requireAuth(...COMPANY_ROLES), requireModuleAccess('expenses'), expenseRoutes);
+// dashboardRoutes.ts applies requireModuleAccess per-endpoint (not here) — GET /production is
+// also used by the Production module's Day Wise Report, so it can't be gated to 'dashboard' alone.
+router.use('/dashboard', requireAuth(...COMPANY_ROLES), dashboardRoutes);
 
 //Pending
 router.use(
   '/load-sent',
-  requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
+  requireAuth(...COMPANY_ROLES),
+  requireModuleAccess('productiondetails'),
   loadSentRoutes,
 );
 router.use('/color-consumption-standard', adminConfigRoutes);
@@ -40,18 +49,21 @@ router.use('/platform/admin', platformAdminRoutes);
 router.use('/company/user', requireAuth('ADMIN'), userRoutes);
 router.use(
   '/production/extruder',
-  requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
+  requireAuth(...COMPANY_ROLES),
+  requireModuleAccess('productiondetails'),
   extruderRoutes,
 );
 router.use(
   '/production/looms',
-  requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
+  requireAuth(...COMPANY_ROLES),
+  requireModuleAccess('productiondetails'),
   loomsRoutes,
 );
 // PRD §16.7: base path is /api/v1/fabric-checking, not nested under /production.
 router.use(
   '/fabric-checking',
-  requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
+  requireAuth(...COMPANY_ROLES),
+  requireModuleAccess('productiondetails'),
   fabricCheckingRoutes,
 );
 router.use(
@@ -62,15 +74,31 @@ router.use(
 
 router.use(
   '/kora-balance',
-  requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
+  requireAuth(...COMPANY_ROLES),
+  requireModuleAccess('productiondetails'),
   koraBalanceRoutes,
 );
+
+router.use('/modules', requireAuth('ADMIN'), moduleRoutes);
+router.use('/tabs', requireAuth('ADMIN'), tabRoutes);
+router.use('/rights', requireAuth('ADMIN'), rightRoutes);
+router.use('/role-access', requireAuth('ADMIN'), roleAccessRoutes);
 
 import employeeRoutes from './employeeRoutes.js';
 import attendanceRoutes from './attendanceRoutes.js';
 
 // Mount additional feature routers here, e.g.:
-router.use('/company/employee', requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'), employeeRoutes);
-router.use('/company/attendance', requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'), attendanceRoutes);
+router.use(
+  '/company/employee',
+  requireAuth(...COMPANY_ROLES),
+  requireModuleAccess('employees', 'directory'),
+  employeeRoutes,
+);
+router.use(
+  '/company/attendance',
+  requireAuth(...COMPANY_ROLES),
+  requireModuleAccess('employees', 'attendance'),
+  attendanceRoutes,
+);
 
 export default router;

@@ -144,6 +144,11 @@ model Company {
   expenses    Expense[]
   attendances Attendance[]
 
+  modules      Module[]
+  tabs         Tab[]
+  rights       Right[]
+  roleAccesses RoleAccess[]
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -176,6 +181,10 @@ model User {
 
   attendances Attendance[]
 
+  roleAccessId String? @map("role_access_id") @db.Uuid
+
+  roleAccess RoleAccess? @relation(fields: [roleAccessId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   createdBy String? @map("created_by") @db.VarChar(100)
@@ -188,6 +197,7 @@ model User {
   @@index([companyId])
   @@index([companyId, role])
   @@index([companyId, isActive])
+  @@index([roleAccessId])
   @@map("users")
 }
 
@@ -754,4 +764,131 @@ model Expense {
   @@index([companyId, date])
   @@index([companyId, expenseName])
   @@map("expenses")
+}
+
+model Module {
+  id String @id @default(uuid()) @db.Uuid
+
+  companyId String @map("company_id") @db.Uuid
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  moduleCode String @map("module_code") @db.VarChar(50)
+
+  moduleName String @map("module_name") @db.VarChar(100)
+
+  tabs Tab[]
+
+  rights Right[]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([companyId, moduleCode])
+  @@index([companyId])
+  @@map("modules")
+}
+
+model Tab {
+  id String @id @default(uuid()) @db.Uuid
+
+  companyId String @map("company_id") @db.Uuid
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  moduleId String @map("module_id") @db.Uuid
+
+  module Module @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  tabCode String @map("tab_code") @db.VarChar(50)
+
+  tabName String @map("tab_name") @db.VarChar(100)
+
+  rights Right[]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([companyId, moduleId, tabCode])
+  @@index([companyId])
+  @@index([moduleId])
+  @@map("tabs")
+}
+
+model Right {
+  id String @id @default(uuid()) @db.Uuid
+
+  companyId String @map("company_id") @db.Uuid
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  moduleId String @map("module_id") @db.Uuid
+
+  module Module @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  // Optional: a right can be scoped to one specific Tab within its Module, or left null to
+  // grant the whole module (most modules today have no Tabs at all — e.g. Production Details).
+  tabId String? @map("tab_id") @db.Uuid
+
+  tab Tab? @relation(fields: [tabId], references: [id], onDelete: Cascade)
+
+  rightName String @map("right_name") @db.VarChar(100)
+
+  displayName String @map("display_name") @db.VarChar(150)
+
+  roleLinks RoleAccessRight[]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([companyId, rightName])
+  @@index([companyId])
+  @@index([moduleId])
+  @@index([tabId])
+  @@map("rights")
+}
+
+model RoleAccess {
+  id String @id @default(uuid()) @db.Uuid
+
+  companyId String @map("company_id") @db.Uuid
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  roleName String @map("role_name") @db.VarChar(100)
+
+  description String? @db.VarChar(500)
+
+  rights RoleAccessRight[]
+
+  users User[]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([companyId, roleName])
+  @@index([companyId])
+  @@map("role_access")
+}
+
+model RoleAccessRight {
+  id String @id @default(uuid()) @db.Uuid
+
+  roleAccessId String @map("role_access_id") @db.Uuid
+
+  roleAccess RoleAccess @relation(fields: [roleAccessId], references: [id], onDelete: Cascade)
+
+  rightId String @map("right_id") @db.Uuid
+
+  right Right @relation(fields: [rightId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([roleAccessId, rightId])
+  @@index([rightId])
+  @@map("role_access_rights")
 }

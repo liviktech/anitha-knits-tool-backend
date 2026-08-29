@@ -15,6 +15,7 @@
 
 import { ProductionStage } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
+import { DEFAULT_MODULES } from '../constants/defaultAccessCatalog.js';
 
 const SYSTEM = 'system:seed';
 
@@ -174,6 +175,27 @@ async function main() {
       update: { name: wt.name, isColorTracked: wt.isColorTracked },
       create: { ...wt, companyId, createdBy: SYSTEM },
     });
+  }
+
+  // -------------------------------------------------------------------------
+  // 6. Access control catalog — Modules & Tabs (Admin Panel > Roles). New
+  //    companies get this automatically at signup (authService.signupCompany);
+  //    this backfills it for a company that existed before that was added.
+  // -------------------------------------------------------------------------
+  for (const mod of DEFAULT_MODULES) {
+    const moduleRecord = await prisma.module.upsert({
+      where: { companyId_moduleCode: { companyId, moduleCode: mod.code } },
+      update: {},
+      create: { companyId, moduleCode: mod.code, moduleName: mod.name },
+    });
+
+    for (const tab of mod.tabs) {
+      await prisma.tab.upsert({
+        where: { companyId_moduleId_tabCode: { companyId, moduleId: moduleRecord.id, tabCode: tab.code } },
+        update: {},
+        create: { companyId, moduleId: moduleRecord.id, tabCode: tab.code, tabName: tab.name },
+      });
+    }
   }
 
   console.log('Seed complete.');

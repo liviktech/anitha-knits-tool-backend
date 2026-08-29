@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { getMonthlyDashboardData, getProductionDashboardData } from '../controllers/dashboardController.js';
+import { requireModuleAccess } from '../middlewares/requireModuleAccess.js';
 
 const router = Router();
 
@@ -39,7 +40,7 @@ const router = Router();
  *       400:
  *         $ref: '#/components/responses/ValidationError'
  */
-router.get('/', getMonthlyDashboardData);
+router.get('/', requireModuleAccess('dashboard'), getMonthlyDashboardData);
 
 /**
  * @openapi
@@ -78,6 +79,8 @@ router.get('/', getMonthlyDashboardData);
  *       400:
  *         $ref: '#/components/responses/ValidationError'
  */
-router.get('/production', getProductionDashboardData);
+// Backs both the Dashboard page's summary cards AND the Production module's Day Wise
+// Report (day-wise-queries.ts) — accessible with either module's grant, not just 'dashboard'.
+router.get('/production', requireModuleAccess(['dashboard', 'productiondetails']), getProductionDashboardData);
 
 export default router;
