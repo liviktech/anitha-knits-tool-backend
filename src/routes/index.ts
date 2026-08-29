@@ -86,6 +86,7 @@ router.use('/role-access', requireAuth('ADMIN'), roleAccessRoutes);
 
 import employeeRoutes from './employeeRoutes.js';
 import attendanceRoutes from './attendanceRoutes.js';
+import payrollRoutes from './payrollRoutes.js';
 
 // Mount additional feature routers here, e.g.:
 router.use(
@@ -99,6 +100,12 @@ router.use(
   requireAuth(...COMPANY_ROLES),
   requireModuleAccess('employees', 'attendance'),
   attendanceRoutes,
+);
+router.use(
+  '/company/payroll',
+  requireAuth(...COMPANY_ROLES),
+  requireModuleAccess('employees', 'payroll'),
+  payrollRoutes,
 );
 
 export default router;

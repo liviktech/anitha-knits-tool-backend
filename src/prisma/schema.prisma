@@ -141,8 +141,10 @@ model Company {
 
   loadSents LoadSent[]
 
-  expenses    Expense[]
-  attendances Attendance[]
+  expenses                 Expense[]
+  attendances              Attendance[]
+  marketValueDistributions MarketValueDistribution[]
+  salaryAdvances           SalaryAdvance[]
 
   modules      Module[]
   tabs         Tab[]
@@ -151,7 +153,8 @@ model Company {
 
   createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  payrollRecords PayrollRecord[]
 
   @@index([name])
   @@index([isActive])
@@ -179,7 +182,9 @@ model User {
 
   employeeDetails EmployeeDetails?
 
-  attendances Attendance[]
+  attendances            Attendance[]
+  marketValueAllocations MarketValueAllocation[]
+  salaryAdvances         SalaryAdvance[]
 
   roleAccessId String? @map("role_access_id") @db.Uuid
 
@@ -191,7 +196,8 @@ model User {
 
   updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  updatedBy String? @map("updated_by") @db.VarChar(100)
+  updatedBy      String?         @map("updated_by") @db.VarChar(100)
+  payrollRecords PayrollRecord[]
 
   @@unique([companyId, mobile])
   @@index([companyId])
@@ -891,4 +897,109 @@ model RoleAccessRight {
   @@unique([roleAccessId, rightId])
   @@index([rightId])
   @@map("role_access_rights")
+}
+
+model MarketValueDistribution {
+  id String @id @default(uuid()) @db.Uuid
+
+  companyId String  @map("company_id") @db.Uuid
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  effectiveDate DateTime @map("effective_date") @db.Date
+  totalPool     Decimal  @map("total_pool") @db.Decimal(12, 2)
+
+  allocations MarketValueAllocation[]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy String   @map("created_by") @db.VarChar(100)
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy String?  @map("updated_by") @db.VarChar(100)
+
+  @@index([companyId, effectiveDate])
+  @@map("market_value_distributions")
+}
+
+model MarketValueAllocation {
+  id String @id @default(uuid()) @db.Uuid
+
+  distributionId String                  @map("distribution_id") @db.Uuid
+  distribution   MarketValueDistribution @relation(fields: [distributionId], references: [id], onDelete: Cascade)
+
+  employeeId String @map("employee_id") @db.Uuid
+  employee   User   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  amount Decimal @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([distributionId])
+  @@index([employeeId])
+  @@map("market_value_allocations")
+}
+
+model SalaryAdvance {
+  id String @id @default(uuid()) @db.Uuid
+
+  companyId String  @map("company_id") @db.Uuid
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  employeeId String @map("employee_id") @db.Uuid
+  employee   User   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  amount        Decimal  @db.Decimal(12, 2)
+  effectiveDate DateTime @map("effective_date") @db.Date
+
+  repaymentMethod String @map("repayment_method") @db.VarChar(50)
+
+  // EMI-only: null for a single (one-shot) advance. totalMonths is how many
+  // consecutive payroll months the amount is spread across; emiAmount is the
+  // per-month deduction (amount / totalMonths, rounded at creation time so
+  // every month deducts a fixed, predictable figure instead of re-deriving it).
+  totalMonths Int?     @map("total_months")
+  emiAmount   Decimal? @map("emi_amount") @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdBy String   @map("created_by") @db.VarChar(100)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedBy String?  @map("updated_by") @db.VarChar(100)
+
+  @@index([companyId, effectiveDate])
+  @@index([employeeId])
+  @@map("salary_advances")
+}
+
+model PayrollRecord {
+  id String @id @default(uuid()) @db.Uuid
+
+  companyId String  @map("company_id") @db.Uuid
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  employeeId String @map("employee_id") @db.Uuid
+  employee   User   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  month Int @db.SmallInt
+  year  Int @db.SmallInt
+
+  baseSalary       Decimal @map("base_salary") @db.Decimal(12, 2)
+  totalDaysInMonth Int     @map("total_days_in_month") @db.SmallInt
+  daysWorked       Decimal @map("days_worked") @db.Decimal(5, 2)
+
+  lopDeduction     Decimal @map("lop_deduction") @db.Decimal(12, 2)
+  advanceDeduction Decimal @map("advance_deduction") @db.Decimal(12, 2)
+  sundayBonuses    Decimal @map("sunday_bonuses") @db.Decimal(12, 2)
+  marketValueBonus Decimal @map("market_value_bonus") @db.Decimal(12, 2)
+
+  grossSalary Decimal @map("gross_salary") @db.Decimal(12, 2)
+  netSalary   Decimal @map("net_salary") @db.Decimal(12, 2)
+
+  status String @default("PENDING") @db.VarChar(50) // PENDING, PAID, etc.
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([employeeId, month, year])
+  @@index([companyId, month, year])
+  @@map("payroll_records")
 }
