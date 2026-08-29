@@ -6,7 +6,7 @@ import { signAccessToken, signRefreshToken } from '../utils/jwt.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import { employeeDetailsSelect, nextCustomUserId, withMappedEmployeeDetails } from './userService.js';
 import { DEFAULT_MODULES } from '../constants/defaultAccessCatalog.js';
-import { resolveRoleAccessGrants, type AccessGrant } from './roleAccessService.js';
+import { resolveUserAccess, type UserAccess } from './roleAccessService.js';
 import type { TokenPayload } from '../types/auth.js';
 import type {
     LoginInput,
@@ -102,6 +102,10 @@ export async function signupCompany(input: SignupInput) {
                 }
             }
 
+            // No Rights are seeded here — every Right (including the Production Details
+            // Add/Edit ones the hard ceilings in productionCeilings.ts look for) is created
+            // manually by the admin via the Roles tab (Module > Tab > Action), not auto-generated.
+
             // First user of a brand-new company — employeeSeq starts at 1, so this is always "001".
             const customUserId = await nextCustomUserId(tx, company.id);
 
@@ -138,22 +142,6 @@ const loginCandidateSelect = {
 } satisfies Prisma.UserSelect;
 
 type LoginCandidate = Prisma.UserGetPayload<{ select: typeof loginCandidateSelect }>;
-
-export interface UserAccess {
-    grants: AccessGrant[];
-    moduleCodes: string[];
-}
-
-/**
- * Resolves what a user can see: `null` means unrestricted (sees every module/tab) — always
- * true for ADMIN, and also true for any other role that hasn't been assigned a RoleAccess yet
- * (so existing employees aren't locked out until an admin actively assigns them one).
- */
-async function resolveAccess(role: UserRole, roleAccessId: string | null, companyId: string): Promise<UserAccess | null> {
-    if (role === 'ADMIN' || !roleAccessId) return null;
-    const grants = await resolveRoleAccessGrants(roleAccessId, companyId);
-    return { grants, moduleCodes: Array.from(new Set(grants.map((g) => g.moduleCode))) };
-}
 
 /**
  * Authenticates by mobile + password. mobile is only unique per company
@@ -203,7 +191,7 @@ export async function loginUser(input: LoginInput) {
 
     const payload: TokenPayload = { sub: user.id, role: user.role, companyId: user.companyId, mobile: user.mobile };
     const tokens = { accessToken: signAccessToken(payload), refreshToken: signRefreshToken(payload) };
-    const access = await resolveAccess(user.role, user.roleAccessId, user.companyId);
+    const access = await resolveUserAccess(user.role, user.roleAccessId, user.companyId);
 
     return {
         tokens,
@@ -240,7 +228,7 @@ export async function getCurrentUser(userId: string, companyId: string) {
     const user = await prisma.user.findFirst({ where: { id: userId, companyId }, select: meSelect });
     if (!user) throw new NotFoundError('User not found', 'USER_NOT_FOUND', { id: userId });
 
-    const access = await resolveAccess(user.role, user.roleAccessId, user.companyId);
+    const access = await resolveUserAccess(user.role, user.roleAccessId, user.companyId);
 
     return {
         user: {

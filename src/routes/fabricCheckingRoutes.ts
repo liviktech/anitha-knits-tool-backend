@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import {
+  approveFabricChecking,
   createFabricChecking,
   deleteFabricChecking,
   getFabricChecking,
@@ -152,5 +153,29 @@ router.delete(
   requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
   deleteFabricChecking,
 );
+
+/**
+ * @openapi
+ * /api/v1/fabric-checking/{id}/approve:
+ *   patch:
+ *     tags: [Fabric Checking]
+ *     summary: Approve a Fabric Checking record
+ *     description: >
+ *       ADMIN-only — not exposed through the Right/RoleAccess system. Sets
+ *       isApproved=true, approvedAt=now, approvedBy=<admin>. One-way; there
+ *       is no un-approve endpoint.
+ *     parameters:
+ *       - $ref: '#/components/parameters/FabricCheckingId'
+ *     responses:
+ *       200:
+ *         description: OK.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/FabricCheckingResponse'
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ */
+router.patch('/:id/approve', requireAuth('ADMIN'), approveFabricChecking);
 
 export default router;

@@ -1,9 +1,12 @@
-import { InventoryType, Prisma } from '@prisma/client';
+import { InventoryType, Prisma, RightAction, UserRole } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { NotFoundError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import { roundKg } from '../utils/decimal.js';
 import { adjustInventoryBalance } from './inventoryBalanceService.js';
+import { assertModuleActionAllowed } from './roleAccessService.js';
+
+const INVENTORY_MODULE_CODE = 'inventory';
 import type {
   CreateInventoryInput,
   UpdateInventoryInput,
@@ -77,7 +80,11 @@ export async function createInventory(
   input: CreateInventoryInput,
   companyId: string,
   actor: string,
+  callerRole: UserRole,
+  callerId: string,
 ) {
+  await assertModuleActionAllowed(callerRole, callerId, companyId, INVENTORY_MODULE_CODE, RightAction.ADD);
+
   const { name, ref } = await resolveItem(input, companyId);
 
   const { id } = await prisma.$transaction((tx) =>
@@ -153,7 +160,11 @@ export async function updateInventory(
   input: UpdateInventoryInput,
   companyId: string,
   actor: string,
+  callerRole: UserRole,
+  callerId: string,
 ) {
+  await assertModuleActionAllowed(callerRole, callerId, companyId, INVENTORY_MODULE_CODE, RightAction.EDIT);
+
   const existing = await prisma.inventory.findFirst({
     where: { id, companyId },
     select: { id: true },
@@ -224,7 +235,9 @@ export async function getInventorySummaryByDateRange(
   };
 }
 
-export async function deleteInventory(id: string, companyId: string) {
+export async function deleteInventory(id: string, companyId: string, callerRole: UserRole, callerId: string) {
+  await assertModuleActionAllowed(callerRole, callerId, companyId, INVENTORY_MODULE_CODE, RightAction.DELETE);
+
   const existing = await prisma.inventory.findFirst({
     where: { id, companyId },
     select: { id: true },

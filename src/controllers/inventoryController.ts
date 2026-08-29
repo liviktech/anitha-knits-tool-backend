@@ -19,8 +19,8 @@ import {
 
 export const createInventoryHandler = asyncHandler(async (req: Request, res: Response) => {
     const input = parseOrThrow(createInventorySchema, req.body);
-    const { companyId, actor } = getAuthContext(req);
-    const record = await createInventory(input, companyId, actor);
+    const { companyId, actor, role, userId } = getAuthContext(req);
+    const record = await createInventory(input, companyId, actor, role, userId);
     sendSuccess(res, record, undefined, 201);
 });
 
@@ -41,14 +41,14 @@ export const getInventoryHandler = asyncHandler(async (req: Request, res: Respon
 export const updateInventoryHandler = asyncHandler(async (req: Request, res: Response) => {
     const { id } = parseOrThrow(inventoryIdParamsSchema, req.params);
     const input = parseOrThrow(updateInventorySchema, req.body);
-    const { companyId, actor } = getAuthContext(req);
-    const record = await updateInventory(id, input, companyId, actor);
+    const { companyId, actor, role, userId } = getAuthContext(req);
+    const record = await updateInventory(id, input, companyId, actor, role, userId);
     sendSuccess(res, record);
 });
 
 export const deleteInventoryHandler = asyncHandler(async (req: Request, res: Response) => {
     const { id } = parseOrThrow(inventoryIdParamsSchema, req.params);
-    const { companyId } = getAuthContext(req);
-    await deleteInventory(id, companyId);
+    const { companyId, role, userId } = getAuthContext(req);
+    await deleteInventory(id, companyId, role, userId);
     res.status(204).send();
 });

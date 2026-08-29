@@ -2,7 +2,6 @@ import { Router } from 'express';
 import healthRoutes from './routes.js';
 import authRoutes from './authRoutes.js';
 import platformAdminRoutes from './platformAdminRoutes.js';
-import userRoutes from './userRoutes.js';
 import extruderRoutes from './extruderRoutes.js';
 import loomsRoutes from './loomsRoutes.js';
 import fabricCheckingRoutes from './fabricCheckingRoutes.js';
@@ -46,7 +45,6 @@ router.use(
 );
 router.use('/color-consumption-standard', adminConfigRoutes);
 router.use('/platform/admin', platformAdminRoutes);
-router.use('/company/user', requireAuth('ADMIN'), userRoutes);
 router.use(
   '/production/extruder',
   requireAuth(...COMPANY_ROLES),

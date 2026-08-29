@@ -1,4 +1,4 @@
-import { Prisma, ProductionStage } from '@prisma/client';
+import { Prisma, ProductionStage, UserRole } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { NotFoundError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
@@ -7,6 +7,7 @@ import { assertColorExists, assertSizeExists } from './masterDataService.js';
 import { buildWastageCreates, mapWastageRecord, wastageSelect } from './wastageService.js';
 import { WASTAGE_CODES } from '../constants/wastageCodes.js';
 import { creditKoraBalance } from './koraBalanceService.js';
+import { assertCanCreateProductionRecord, assertCanDeleteProductionRecord, assertCanUpdateProductionRecord } from './productionCeilings.js';
 import type { CreateLoomsInput, UpdateLoomsInput, ListLoomsQuery } from '../validations/loomsValidation.js';
 
 /**
@@ -30,6 +31,9 @@ const loomsSelect = {
         },
     },
     wastages: { select: wastageSelect },
+    isApproved: true,
+    approvedAt: true,
+    approvedBy: true,
     createdAt: true,
     createdBy: true,
     updatedAt: true,
@@ -52,7 +56,15 @@ function mapLoomsRecord(record: LoomsRecordRow) {
     };
 }
 
-export async function createLoomsProduction(input: CreateLoomsInput, companyId: string, actor: string) {
+export async function createLoomsProduction(
+    input: CreateLoomsInput,
+    companyId: string,
+    actor: string,
+    role: UserRole,
+    callerId: string,
+) {
+    await assertCanCreateProductionRecord(role, callerId, companyId);
+
     await Promise.all([assertColorExists(input.colorId, companyId), assertSizeExists(input.sizeId, companyId)]);
 
     // BW (\"Bit Wastage\") is colour-tracked (PRD \"B White\"/\"B Blue\"), so it's
@@ -126,12 +138,21 @@ export async function getLoomsProductionById(id: string, companyId: string) {
     return mapLoomsRecord(record);
 }
 
-export async function updateLoomsProduction(id: string, input: UpdateLoomsInput, companyId: string, actor: string) {
+export async function updateLoomsProduction(
+    id: string,
+    input: UpdateLoomsInput,
+    companyId: string,
+    actor: string,
+    role: UserRole,
+    callerId: string,
+) {
     const existing = await prisma.productionRecord.findFirst({
         where: { id, companyId, stage: ProductionStage.LOOMS },
-        select: { id: true },
+        select: { id: true, isApproved: true },
     });
     if (!existing) throw new NotFoundError('Looms production not found', 'LOOMS_NOT_FOUND', { id });
+
+    await assertCanUpdateProductionRecord(role, callerId, companyId, existing.isApproved);
 
     await Promise.all([
         input.colorId ? assertColorExists(input.colorId, companyId) : undefined,
@@ -164,7 +185,9 @@ export async function updateLoomsProduction(id: string, input: UpdateLoomsInput,
     return mapLoomsRecord(updated);
 }
 
-export async function deleteLoomsProduction(id: string, companyId: string): Promise<void> {
+export async function deleteLoomsProduction(id: string, companyId: string, role: UserRole): Promise<void> {
+    assertCanDeleteProductionRecord(role);
+
     const existing = await prisma.productionRecord.findFirst({
         where: { id, companyId, stage: ProductionStage.LOOMS },
         select: { id: true },
@@ -177,6 +200,22 @@ export async function deleteLoomsProduction(id: string, companyId: string): Prom
         await tx.wastageRecord.deleteMany({ where: { productionRecordId: id } });
         await tx.productionRecord.delete({ where: { id } });
     });
+}
+
+/** ADMIN-only (enforced at the route level) — sets isApproved, never exposed via Right/RoleAccess. */
+export async function approveLoomsProduction(id: string, companyId: string, actor: string) {
+    const existing = await prisma.productionRecord.findFirst({
+        where: { id, companyId, stage: ProductionStage.LOOMS },
+        select: { id: true },
+    });
+    if (!existing) throw new NotFoundError('Looms production not found', 'LOOMS_NOT_FOUND', { id });
+
+    const record = await prisma.productionRecord.update({
+        where: { id },
+        data: { isApproved: true, approvedAt: new Date(), approvedBy: actor },
+        select: loomsSelect,
+    });
+    return mapLoomsRecord(record);
 }
 
 export async function getLoomsProductionSummaryByDateRange(companyId: string, dateFrom: Date, dateTo: Date) {

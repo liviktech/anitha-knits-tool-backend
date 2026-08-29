@@ -1,4 +1,4 @@
-import { Prisma, ProductionStage } from '@prisma/client';
+import { Prisma, ProductionStage, UserRole } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { NotFoundError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
@@ -8,6 +8,7 @@ import { assertColorExists, assertSizeExists } from './masterDataService.js';
 import { buildWastageCreates, mapWastageRecord, wastageSelect } from './wastageService.js';
 import { WASTAGE_CODES } from '../constants/wastageCodes.js';
 import { debitKoraBalance } from './koraBalanceService.js';
+import { assertCanCreateProductionRecord, assertCanDeleteProductionRecord, assertCanUpdateProductionRecord } from './productionCeilings.js';
 import type { CreateFabricCheckingInput, UpdateFabricCheckingInput, ListFabricCheckingQuery } from '../validations/fabricCheckingValidation.js';
 
 /**
@@ -41,6 +42,9 @@ const fabricCheckingSelect = {
         },
     },
     wastages: { select: wastageSelect },
+    isApproved: true,
+    approvedAt: true,
+    approvedBy: true,
     createdAt: true,
     createdBy: true,
     updatedAt: true,
@@ -63,7 +67,15 @@ function mapFabricCheckingRecord(record: FabricCheckingRecordRow) {
     };
 }
 
-export async function createFabricCheckingRecord(input: CreateFabricCheckingInput, companyId: string, actor: string) {
+export async function createFabricCheckingRecord(
+    input: CreateFabricCheckingInput,
+    companyId: string,
+    actor: string,
+    role: UserRole,
+    callerId: string,
+) {
+    await assertCanCreateProductionRecord(role, callerId, companyId);
+
     await Promise.all([assertColorExists(input.colorId, companyId), assertSizeExists(input.sizeId, companyId)]);
 
     // BW ("Bit Wastage") is colour-tracked (PRD "B White"/"B Blue"), so it's
@@ -138,12 +150,21 @@ export async function getFabricCheckingRecordById(id: string, companyId: string)
     return mapFabricCheckingRecord(record);
 }
 
-export async function updateFabricCheckingRecord(id: string, input: UpdateFabricCheckingInput, companyId: string, actor: string) {
+export async function updateFabricCheckingRecord(
+    id: string,
+    input: UpdateFabricCheckingInput,
+    companyId: string,
+    actor: string,
+    role: UserRole,
+    callerId: string,
+) {
     const existing = await prisma.productionRecord.findFirst({
         where: { id, companyId, stage: ProductionStage.FABRIC_CHECKING },
-        select: { id: true },
+        select: { id: true, isApproved: true },
     });
     if (!existing) throw new NotFoundError('Fabric checking record not found', 'FABRIC_CHECKING_NOT_FOUND', { id });
+
+    await assertCanUpdateProductionRecord(role, callerId, companyId, existing.isApproved);
 
     await Promise.all([
         input.colorId ? assertColorExists(input.colorId, companyId) : undefined,
@@ -268,7 +289,9 @@ export async function getFabricProductionSummaryByDateRange(
     };
 }
 
-export async function deleteFabricCheckingRecord(id: string, companyId: string): Promise<void> {
+export async function deleteFabricCheckingRecord(id: string, companyId: string, role: UserRole): Promise<void> {
+    assertCanDeleteProductionRecord(role);
+
     const existing = await prisma.productionRecord.findFirst({
         where: { id, companyId, stage: ProductionStage.FABRIC_CHECKING },
         select: { id: true },
@@ -281,4 +304,20 @@ export async function deleteFabricCheckingRecord(id: string, companyId: string):
         await tx.wastageRecord.deleteMany({ where: { productionRecordId: id } });
         await tx.productionRecord.delete({ where: { id } });
     });
+}
+
+/** ADMIN-only (enforced at the route level) — sets isApproved, never exposed via Right/RoleAccess. */
+export async function approveFabricCheckingRecord(id: string, companyId: string, actor: string) {
+    const existing = await prisma.productionRecord.findFirst({
+        where: { id, companyId, stage: ProductionStage.FABRIC_CHECKING },
+        select: { id: true },
+    });
+    if (!existing) throw new NotFoundError('Fabric checking record not found', 'FABRIC_CHECKING_NOT_FOUND', { id });
+
+    const record = await prisma.productionRecord.update({
+        where: { id },
+        data: { isApproved: true, approvedAt: new Date(), approvedBy: actor },
+        select: fabricCheckingSelect,
+    });
+    return mapFabricCheckingRecord(record);
 }
