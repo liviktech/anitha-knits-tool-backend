@@ -12,6 +12,7 @@ export const createRoleAccessSchema = z
         roleName: z.string().trim().min(1).max(100),
         description: z.string().trim().max(500).optional(),
         rightIds: z.array(z.string().uuid()).default([]),
+        effectiveDate: z.string().date().optional(),
     })
     .strict();
 
@@ -20,6 +21,7 @@ export const updateRoleAccessSchema = z
         roleName: z.string().trim().min(1).max(100),
         description: z.string().trim().max(500).nullable(),
         rightIds: z.array(z.string().uuid()),
+        effectiveDate: z.string().date().optional(),
     })
     .partial()
     .strict()
