@@ -25,7 +25,11 @@ export interface EmployeeUploadFiles {
 // The Employees Directory manages all three non-admin roles from one screen — Manager/Supervisor
 // creation used to go through a separate /company/user endpoint (removed; it had zero frontend
 // callers) and is now consolidated here.
-const MANAGED_ROLES: UserRole[] = [UserRole.EMPLOYEE, UserRole.MANAGER, UserRole.SUPERVISOR];
+const MANAGED_ROLES: UserRole[] = [
+  UserRole.EMPLOYEE,
+  UserRole.MANAGER,
+  UserRole.SUPERVISOR,
+];
 
 // A company may have at most one active MANAGER and one active SUPERVISOR at a time (Employee is
 // uncapped). Kept as named constants, not a DB constraint, so the limit is easy to change later.
@@ -98,21 +102,23 @@ async function uploadProvidedEmployeeFiles(
   companyId: string,
   files?: EmployeeUploadFiles,
 ) {
+  const photoFile = files?.photo;
+  const aadhaarFile = files?.aadhaarFile;
   const [photoUrl, aadhaarDocumentUrl] = await Promise.all([
-    files?.photo
+    photoFile
       ? uploadEmployeeFile({
-          buffer: files.photo.buffer,
-          mimetype: files.photo.mimetype,
-          originalName: files.photo.originalname,
+          buffer: photoFile.buffer!, // assert present (memoryStorage provides this)
+          mimetype: photoFile.mimetype,
+          originalName: photoFile.originalname,
           companyId,
           prefix: EMPLOYEE_PHOTO_PREFIX,
         })
       : Promise.resolve(undefined),
-    files?.aadhaarFile
+    aadhaarFile
       ? uploadEmployeeFile({
-          buffer: files.aadhaarFile.buffer,
-          mimetype: files.aadhaarFile.mimetype,
-          originalName: files.aadhaarFile.originalname,
+          buffer: aadhaarFile.buffer!,
+          mimetype: aadhaarFile.mimetype,
+          originalName: aadhaarFile.originalname,
           companyId,
           prefix: EMPLOYEE_AADHAAR_PREFIX,
         })
@@ -125,12 +131,19 @@ async function uploadProvidedEmployeeFiles(
 async function assertRoleCapNotExceeded(role: UserRole, companyId: string) {
   if (role === UserRole.EMPLOYEE) return;
 
-  const max = role === UserRole.MANAGER ? MAX_MANAGERS_PER_COMPANY : MAX_SUPERVISORS_PER_COMPANY;
-  const activeCount = await prisma.user.count({ where: { companyId, role, isActive: true } });
+  const max =
+    role === UserRole.MANAGER
+      ? MAX_MANAGERS_PER_COMPANY
+      : MAX_SUPERVISORS_PER_COMPANY;
+  const activeCount = await prisma.user.count({
+    where: { companyId, role, isActive: true },
+  });
   if (activeCount >= max) {
     throw new ConflictError(
       `This company already has an active ${role === UserRole.MANAGER ? 'Manager' : 'Supervisor'} — deactivate them first to add a new one`,
-      role === UserRole.MANAGER ? 'MANAGER_LIMIT_REACHED' : 'SUPERVISOR_LIMIT_REACHED',
+      role === UserRole.MANAGER
+        ? 'MANAGER_LIMIT_REACHED'
+        : 'SUPERVISOR_LIMIT_REACHED',
     );
   }
 }
@@ -142,7 +155,14 @@ export async function createEmployee(
   callerId: string,
   files?: EmployeeUploadFiles,
 ) {
-  await assertModuleActionAllowed(callerRole, callerId, companyId, EMPLOYEES_MODULE_CODE, RightAction.ADD, DIRECTORY_TAB_CODE);
+  await assertModuleActionAllowed(
+    callerRole,
+    callerId,
+    companyId,
+    EMPLOYEES_MODULE_CODE,
+    RightAction.ADD,
+    DIRECTORY_TAB_CODE,
+  );
 
   const role = input.role ?? UserRole.EMPLOYEE;
   await assertRoleCapNotExceeded(role, companyId);
@@ -238,7 +258,14 @@ export async function updateEmployee(
   callerId: string,
   files?: EmployeeUploadFiles,
 ) {
-  await assertModuleActionAllowed(callerRole, callerId, companyId, EMPLOYEES_MODULE_CODE, RightAction.EDIT, DIRECTORY_TAB_CODE);
+  await assertModuleActionAllowed(
+    callerRole,
+    callerId,
+    companyId,
+    EMPLOYEES_MODULE_CODE,
+    RightAction.EDIT,
+    DIRECTORY_TAB_CODE,
+  );
 
   const existing = await prisma.user.findFirst({
     where: { id, companyId, role: { in: MANAGED_ROLES } },
@@ -295,8 +322,20 @@ export async function updateEmployee(
   }
 }
 
-export async function deleteEmployee(id: string, companyId: string, callerRole: UserRole, callerId: string) {
-  await assertModuleActionAllowed(callerRole, callerId, companyId, EMPLOYEES_MODULE_CODE, RightAction.DELETE, DIRECTORY_TAB_CODE);
+export async function deleteEmployee(
+  id: string,
+  companyId: string,
+  callerRole: UserRole,
+  callerId: string,
+) {
+  await assertModuleActionAllowed(
+    callerRole,
+    callerId,
+    companyId,
+    EMPLOYEES_MODULE_CODE,
+    RightAction.DELETE,
+    DIRECTORY_TAB_CODE,
+  );
 
   const existing = await prisma.user.findFirst({
     where: { id, companyId, role: { in: MANAGED_ROLES } },
