@@ -30,6 +30,7 @@ export const createInventorySchema = z
         chemicalId: z.string().uuid().optional(),
         colorId: z.string().uuid().optional(),
         quantityKg: z.coerce.number().positive('must be a positive number'),
+        bagCount: z.coerce.number().int().positive().optional(),
     })
     .strict()
     .superRefine(requireMatchingItemId);
@@ -44,6 +45,7 @@ export const updateInventorySchema = z
     .object({
         date: z.coerce.date(),
         weightKg: z.coerce.number().nonnegative('must not be negative'),
+        bagCount: z.coerce.number().int().nonnegative('must not be negative').optional(),
         DC: z.string().trim().max(8),
     })
     .partial()

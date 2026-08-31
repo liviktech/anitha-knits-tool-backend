@@ -18,6 +18,7 @@ export type AdjustInventoryBalanceInput = ItemRef & {
     companyId: string;
     /** Positive to add stock (intake, e.g. manual receipt), negative to consume it. */
     deltaKg: number;
+    deltaBags?: number;
     actor: string;
     /** Used only if this item has no existing row yet. */
     name: string;
@@ -74,17 +75,18 @@ function itemId(input: ItemRef): string {
  * Time: O(1) — one lock, one lookup, one write.
  */
 export async function adjustInventoryBalance(tx: Prisma.TransactionClient, input: AdjustInventoryBalanceInput): Promise<{ id: string }> {
-    const { companyId, deltaKg, actor, name, date, DC } = input;
+    const { companyId, deltaKg, deltaBags, actor, name, date, DC } = input;
     const lockKey = `${companyId}:${input.type}:${itemId(input)}`;
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
 
     const existing = await tx.inventory.findFirst({
         where: itemWhere(input, companyId),
-        select: { id: true, weightKg: true },
+        select: { id: true, weightKg: true, bagCount: true },
     });
 
     const currentKg = existing ? existing.weightKg.toNumber() : 0;
     const newBalance = roundKg(currentKg + deltaKg);
+    const newBagCount = typeof deltaBags === 'number' ? ((existing?.bagCount || 0) + deltaBags) : undefined;
 
     if (newBalance < 0) {
         throw new ConflictError('Insufficient stock', 'INSUFFICIENT_STOCK', {
@@ -98,7 +100,12 @@ export async function adjustInventoryBalance(tx: Prisma.TransactionClient, input
     if (existing) {
         await tx.inventory.update({
             where: { id: existing.id },
-            data: { weightKg: newBalance, updatedBy: actor, ...(date ? { date } : {}) },
+            data: { 
+                weightKg: newBalance, 
+                ...(newBagCount !== undefined ? { bagCount: Math.max(0, newBagCount) } : {}),
+                updatedBy: actor, 
+                ...(date ? { date } : {}) 
+            },
         });
         return { id: existing.id };
     }
@@ -109,6 +116,7 @@ export async function adjustInventoryBalance(tx: Prisma.TransactionClient, input
             type: input.type,
             name,
             weightKg: newBalance,
+            ...(newBagCount !== undefined ? { bagCount: Math.max(0, newBagCount) } : {}),
             DC_NUMBER: DC,
             createdBy: actor,
             ...(date ? { date } : {}),

@@ -27,7 +27,7 @@ import type { DashboardMonthlyQuery, DashboardProductionQuery } from '../validat
  */
 const MAX_RANGE_DAYS = 186;
 
-type StageTotals = { inputKg: number; outputKg: number; wastageKg: number };
+type StageTotals = { inputKg: number; outputKg: number; wastageKg: number; yarnWasteKg: number; lumpsKg: number };
 type StageDaily = StageTotals & { wastePct: number };
 type StageSummary = StageTotals & { wastePct: number; efficiencyPct: number };
 
@@ -39,7 +39,7 @@ function dateKey(date: Date): string {
 }
 
 function emptyTotals(): StageTotals {
-    return { inputKg: 0, outputKg: 0, wastageKg: 0 };
+    return { inputKg: 0, outputKg: 0, wastageKg: 0, yarnWasteKg: 0, lumpsKg: 0 };
 }
 
 function round2(value: number): number {
@@ -107,7 +107,7 @@ async function computeStageTotals(
                     stage: { in: [ProductionStage.EXTRUDER, ProductionStage.LOOMS, ProductionStage.FABRIC_CHECKING] },
                 },
             },
-            select: { quantityKg: true, productionRecord: { select: { productionDate: true, stage: true } } },
+            select: { quantityKg: true, wastageType: { select: { code: true } }, productionRecord: { select: { productionDate: true, stage: true } } },
         }),
     ]);
 
@@ -151,7 +151,16 @@ async function computeStageTotals(
     for (const row of wastageRows) {
         const key = stageKeyByStage[row.productionRecord.stage];
         if (!key) continue;
-        bucket(row.productionRecord.productionDate)[key].wastageKg += row.quantityKg.toNumber();
+        const qty = row.quantityKg.toNumber();
+        const stageTotals = bucket(row.productionRecord.productionDate)[key];
+        stageTotals.wastageKg += qty;
+        if (key === 'extruder') {
+            if (row.wastageType.code === 'YARN_WASTE') {
+                stageTotals.yarnWasteKg += qty;
+            } else if (row.wastageType.code === 'LUMPS') {
+                stageTotals.lumpsKg += qty;
+            }
+        }
     }
 
     const grandTotals: Record<StageKey, StageTotals> = { extruder: emptyTotals(), looms: emptyTotals(), fabricChecking: emptyTotals() };
@@ -160,6 +169,8 @@ async function computeStageTotals(
             grandTotals[key].inputKg += stages[key].inputKg;
             grandTotals[key].outputKg += stages[key].outputKg;
             grandTotals[key].wastageKg += stages[key].wastageKg;
+            grandTotals[key].yarnWasteKg += stages[key].yarnWasteKg;
+            grandTotals[key].lumpsKg += stages[key].lumpsKg;
         }
     }
 

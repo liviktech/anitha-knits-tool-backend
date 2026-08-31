@@ -695,6 +695,8 @@ model Inventory {
 
   weightKg Decimal @map("weight_kg") @db.Decimal(12, 3)
 
+  bagCount Int? @map("bag_count")
+
   brandId String? @map("brand_id") @db.Uuid
 
   brand Brand? @relation(fields: [brandId], references: [id])

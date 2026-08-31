@@ -19,6 +19,7 @@ const inventorySelect = {
   type: true,
   name: true,
   weightKg: true,
+  bagCount: true,
   DC_NUMBER: true,
   brand: { select: { id: true, name: true } },
   chemical: { select: { id: true, name: true } },
@@ -92,6 +93,7 @@ export async function createInventory(
       ...ref,
       companyId,
       deltaKg: input.quantityKg,
+      deltaBags: input.bagCount,
       actor,
       name,
       DC: input.DC,
@@ -181,6 +183,7 @@ export async function updateInventory(
     data: {
       ...(input.date !== undefined ? { date: input.date } : {}),
       ...(input.weightKg !== undefined ? { weightKg: input.weightKg } : {}),
+      ...(input.bagCount !== undefined ? { bagCount: input.bagCount } : {}),
       ...(input.DC !== undefined ? { DC_NUMBER: input.DC } : {}),
       updatedBy: actor,
     },
