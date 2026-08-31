@@ -36,7 +36,7 @@ export async function nextCustomUserId(tx: Prisma.TransactionClient, companyId: 
         select: { companyCode: true, employeeSeq: true },
     });
     const seq = company.employeeSeq - 1;
-    return `EMP-${String(seq).padStart(3, '0')}`;
+    return `${company.companyCode}${String(seq).padStart(3, '0')}`;
 }
 
 export type EmployeeDetailsRow = Prisma.EmployeeDetailsGetPayload<{ select: typeof employeeDetailsSelect }>;
