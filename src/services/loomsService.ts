@@ -6,7 +6,6 @@ import { buildProductionWhere } from '../utils/productionFilters.js';
 import { assertColorExists, assertSizeExists } from './masterDataService.js';
 import { buildWastageCreates, mapWastageRecord, wastageSelect } from './wastageService.js';
 import { WASTAGE_CODES } from '../constants/wastageCodes.js';
-import { creditKoraBalance } from './koraBalanceService.js';
 import { assertCanCreateProductionRecord, assertCanDeleteProductionRecord, assertCanUpdateProductionRecord } from './productionCeilings.js';
 import type { CreateLoomsInput, UpdateLoomsInput, ListLoomsQuery } from '../validations/loomsValidation.js';
 
@@ -94,17 +93,9 @@ export async function createLoomsProduction(
             select: loomsSelect,
         });
 
-        // Credit kora balance with the fabric output
-        await creditKoraBalance(
-            input.colorId,
-            input.sizeId,
-            input.fabricOutputKg,
-            input.productionDate,
-            created.id,
-            actor,
-            tx,
-        );
-
+        // Kora balance is no longer credited here — it's credited lazily from the
+        // matching Loom record's fabricOutputKg when Fabric Checking is created
+        // against this color+size (see fabricCheckingService.createFabricCheckingRecord).
         return created;
     });
 

@@ -19,6 +19,7 @@ import {
   withMappedEmployeeDetails,
 } from './userService.js';
 import { DEFAULT_MODULES } from '../constants/defaultAccessCatalog.js';
+import { seedCompanyMasterData } from './masterDataSeedService.js';
 import { resolveUserAccess, type UserAccess } from './roleAccessService.js';
 import type { TokenPayload } from '../types/auth.js';
 import type {
@@ -144,6 +145,10 @@ export async function signupCompany(input: SignupInput) {
         },
         select: companySelect,
       });
+
+      // Layer 0 master data (brand/chemical/size/color + colour consumption
+      // standard) — PRD §12/§4/§5 defaults every new company starts with.
+      await seedCompanyMasterData(tx, company.id);
 
       for (const mod of DEFAULT_MODULES) {
         const createdModule = await tx.module.create({

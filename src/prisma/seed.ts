@@ -16,6 +16,7 @@
 import { ProductionStage } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { DEFAULT_MODULES } from '../constants/defaultAccessCatalog.js';
+import { seedCompanyMasterData } from '../services/masterDataSeedService.js';
 
 const SYSTEM = 'system:seed';
 
@@ -32,122 +33,12 @@ const companyId: string =
 
 async function main() {
   // -------------------------------------------------------------------------
-  // 1. Brands — the HDPE suppliers the factory buys from.
-  //    The Production Module PRD (§4) only confirms the raw material is HDPE
-  //    and doesn't list brands. The baseline PRD (§12 Raw Material Management)
-  //    does: "Known brands include: Reliance, Haldia, Opel, Ghail."
+  // 1-4b. Brands / Chemicals / Sizes / Colours / Colour consumption standard —
+  // shared with authService.signupCompany, which now seeds this same Layer 0
+  // master data automatically for every brand-new company. This call remains
+  // as a manual backfill path for a company that existed before that was added.
   // -------------------------------------------------------------------------
-  const brands = ['Reliance', 'Haldia', 'Opel', 'Ghail'];
-  for (const [index, name] of brands.entries()) {
-    await prisma.brand.upsert({
-      where: { companyId_name: { companyId, name } },
-      update: {},
-      create: {
-        companyId,
-        name,
-        itemCode: `BD${String(index + 1).padStart(3, '0')}`,
-        createdBy: SYSTEM,
-      },
-    });
-  }
-  // Advance the per-company sequence counter past whatever was just seeded (never below it — the
-  // guard makes this safe to rerun), so the next server-generated code doesn't collide with a seeded one.
-  await prisma.company.updateMany({
-    where: { id: companyId, brandSeq: { lt: brands.length + 1 } },
-    data: { brandSeq: brands.length + 1 },
-  });
-
-  // -------------------------------------------------------------------------
-  // 2. Chemicals — PRD §4: DN+MB or ACM, exactly one per extruder entry.
-  // -------------------------------------------------------------------------
-  const chemicals = ['DN+MB', 'ACM'];
-  for (const [index, name] of chemicals.entries()) {
-    await prisma.chemical.upsert({
-      where: { companyId_name: { companyId, name } },
-      update: {},
-      create: {
-        companyId,
-        name,
-        itemCode: `CL${String(index + 1).padStart(3, '0')}`,
-        createdBy: SYSTEM,
-      },
-    });
-  }
-  await prisma.company.updateMany({
-    where: { id: companyId, chemicalSeq: { lt: chemicals.length + 1 } },
-    data: { chemicalSeq: chemicals.length + 1 },
-  });
-
-  // -------------------------------------------------------------------------
-  // 3. Sizes — PRD §4.
-  // -------------------------------------------------------------------------
-  const sizes = ['150cm', '160cm', '170cm', '180cm', '190cm'];
-  for (const [index, name] of sizes.entries()) {
-    await prisma.size.upsert({
-      where: { companyId_name: { companyId, name } },
-      update: {},
-      create: {
-        companyId,
-        name,
-        itemCode: `SE${String(index + 1).padStart(3, '0')}`,
-        createdBy: SYSTEM,
-      },
-    });
-  }
-  await prisma.company.updateMany({
-    where: { id: companyId, sizeSeq: { lt: sizes.length + 1 } },
-    data: { sizeSeq: sizes.length + 1 },
-  });
-
-  // -------------------------------------------------------------------------
-  // 4. Colours. Custom colours are added later through the UI; a colour
-  //    outside the fixed white/blue/green set simply has no consumption
-  //    standard (the extruder form does not pre-fill for it).
-  // -------------------------------------------------------------------------
-  const colors = ['White', 'Blue', 'Green'];
-  for (const [index, name] of colors.entries()) {
-    await prisma.color.upsert({
-      where: { companyId_name: { companyId, name } },
-      update: {},
-      create: {
-        companyId,
-        name,
-        itemCode: `CR${String(index + 1).padStart(3, '0')}`,
-        createdBy: SYSTEM,
-      },
-    });
-  }
-  await prisma.company.updateMany({
-    where: { id: companyId, colorSeq: { lt: colors.length + 1 } },
-    data: { colorSeq: colors.length + 1 },
-  });
-
-  // -------------------------------------------------------------------------
-  // 4b. Colour consumption standard — one record covers every colour, not
-  //     one row per colour. PRD §5, confirmed: White 150 g, Blue 100 g,
-  //     Green 200 g per 25 KG — stored in kg (0.150/0.100/0.200), not grams;
-  //     chemical weight (1.2 kg) is common to all.
-  // -------------------------------------------------------------------------
-  const existingStandard = await prisma.colorConsumptionStandard.findFirst({
-    where: { companyId },
-  });
-  if (!existingStandard) {
-    await prisma.colorConsumptionStandard.create({
-      data: {
-        companyId,
-        basisWeightKg: 25,
-        hdpematerialbag: 1,
-        whiteKgBasis: 0.15,
-        blueKgBasis: 0.1,
-        greenKgBasis: 0.2,
-        chemicalWeight: 1.2,
-        // "latest as of" lookups filter on date <= asOf, so a null date
-        // would never match — stamp it effective immediately.
-        date: new Date(),
-        createdBy: SYSTEM,
-      },
-    });
-  }
+  await seedCompanyMasterData(prisma, companyId, SYSTEM);
 
   // -------------------------------------------------------------------------
   // 5. Wastage types — PRD §9. Codes are stable identifiers the app can
