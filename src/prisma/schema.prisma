@@ -137,6 +137,8 @@ model Company {
 
   wastageRecords WastageRecord[]
 
+  koraBalances KoraBalance[]
+
   inventories Inventory[]
 
   loadSents LoadSent[]
@@ -569,6 +571,8 @@ enum RightAction {
 
 model KoraBalance {
   id        String   @id @default(uuid()) @db.Uuid
+  companyId String?   @map("company_id") @db.Uuid
+  company   Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   colorId   String   @map("color_id") @db.Uuid
   color     Color    @relation(fields: [colorId], references: [id])
   sizeId    String   @map("size_id") @db.Uuid
@@ -579,6 +583,7 @@ model KoraBalance {
   entries KoraLedgerEntry[]
 
   @@unique([colorId, sizeId])
+  @@index([companyId])
   @@map("kora_balances")
 }
 

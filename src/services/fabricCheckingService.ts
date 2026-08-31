@@ -7,7 +7,7 @@ import { buildProductionWhere } from '../utils/productionFilters.js';
 import { assertColorExists, assertSizeExists } from './masterDataService.js';
 import { buildWastageCreates, mapWastageRecord, wastageSelect } from './wastageService.js';
 import { WASTAGE_CODES } from '../constants/wastageCodes.js';
-import { debitKoraBalance } from './koraBalanceService.js';
+import { updateKoraBalance, reverseKoraBalance } from './koraBalanceService.js';
 import { assertCanCreateProductionRecord, assertCanDeleteProductionRecord, assertCanUpdateProductionRecord } from './productionCeilings.js';
 import type { CreateFabricCheckingInput, UpdateFabricCheckingInput, ListFabricCheckingQuery } from '../validations/fabricCheckingValidation.js';
 
@@ -106,10 +106,20 @@ export async function createFabricCheckingRecord(
             select: fabricCheckingSelect,
         });
 
-        // Debit kora balance with the fabric input consumed
-        await debitKoraBalance(
+        // Kora balance is no longer credited at Loom creation time (see
+        // loomsService.createLoomsProduction) — it's updated here instead, net of the
+        // latest Loom batch's fabric output against this check's fabric input.
+        const latestLoom = await tx.productionRecord.findFirst({
+            where: { companyId, stage: ProductionStage.LOOMS, colorId: input.colorId, sizeId: input.sizeId },
+            orderBy: [{ productionDate: 'desc' }, { createdAt: 'desc' }],
+            select: { loom: { select: { fabricOutputKg: true } } },
+        });
+
+        await updateKoraBalance(
+            companyId,
             input.colorId,
             input.sizeId,
+            latestLoom?.loom?.fabricOutputKg ?? 0,
             input.fabricInputKg,
             input.productionDate,
             created.id,
@@ -299,9 +309,12 @@ export async function deleteFabricCheckingRecord(id: string, companyId: string, 
     if (!existing) throw new NotFoundError('Fabric checking record not found', 'FABRIC_CHECKING_NOT_FOUND', { id });
 
     await prisma.$transaction(async (tx) => {
-        // WastageRecord has no onDelete: Cascade to ProductionRecord, so it
-        // must be cleared explicitly before the record itself can be deleted.
+        // WastageRecord and the kora ledger entry both have no onDelete: Cascade to
+        // ProductionRecord, so both must be cleared explicitly before the record itself
+        // can be deleted. reverseKoraBalance also undoes this record's effect on the
+        // running kora balance.
         await tx.wastageRecord.deleteMany({ where: { productionRecordId: id } });
+        await reverseKoraBalance(id, tx);
         await tx.productionRecord.delete({ where: { id } });
     });
 }
