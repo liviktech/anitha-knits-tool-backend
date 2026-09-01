@@ -168,7 +168,7 @@ export async function getKgPerBasisForColor(companyId: string, colorName: string
   const field = COLOR_KG_FIELD[colorName.trim().toLowerCase() as keyof typeof COLOR_KG_FIELD];
   if (!field) return null;
 
-  const standard = await findLatestStandardRow(companyId, asOf?.toISOString());
+  const standard = await findLatestStandardRow(companyId, asOf);
   if (!standard || !standard.isActive) return null;
 
   return { kgPerBasis: standard[field], basisWeightKg: standard.basisWeightKg };
