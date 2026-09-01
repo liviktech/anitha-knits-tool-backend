@@ -1,26 +1,47 @@
 import type { Prisma } from '@prisma/client';
+import { ProductionStage } from '@prisma/client';
 
 const SYSTEM_SEED_ACTOR = 'system:seed';
 
-// PRD §12 Raw Material Management: "Known brands include: Reliance, Haldia, Opel, Ghail."
+const WASTAGE_TYPES = [
+  {
+    stage: ProductionStage.EXTRUDER,
+    code: 'YARN_WASTE',
+    name: 'Yarn Waste',
+    isColorTracked: false,
+  },
+  {
+    stage: ProductionStage.EXTRUDER,
+    code: 'LUMPS',
+    name: 'LUMS / LUMPS',
+    isColorTracked: false,
+  },
+  {
+    stage: ProductionStage.LOOMS,
+    code: 'LOOMS_WASTE',
+    name: 'Looms Waste',
+    isColorTracked: false,
+  },
+  {
+    stage: ProductionStage.FABRIC_CHECKING,
+    code: 'FW',
+    name: 'Fabric Wastage',
+    isColorTracked: false,
+  },
+  {
+    stage: ProductionStage.FABRIC_CHECKING,
+    code: 'BW',
+    name: 'Bit Wastage',
+    isColorTracked: true,
+  },
+];
+
 const BRANDS = ['Reliance', 'Haldia', 'Opel', 'Ghail'];
-// PRD §4: DN+MB or ACM, exactly one per extruder entry.
 const CHEMICALS = ['DN+MB', 'ACM'];
-// PRD §4.
 const SIZES = ['150cm', '160cm', '170cm', '180cm', '190cm'];
-// Custom colours are added later through the UI; a colour outside this fixed
-// set simply has no consumption standard (the extruder form won't pre-fill for it).
 const COLORS = ['White', 'Blue', 'Green'];
 
-/**
- * Seeds Layer 0 master data (brands, chemicals, sizes, colors, colour
- * consumption standard) for one company — shared by prisma/seed.ts (manual
- * backfill for a pre-existing company) and authService.signupCompany
- * (automatic, inline for every brand-new company). Every write is an
- * upsert keyed on the natural per-company unique ([companyId, name] /
- * companyId), so it's safe to call more than once for the same company.
- * Time: O(1) — fixed, small master-data lists; Space: O(1).
- */
+
 export async function seedCompanyMasterData(
   tx: Prisma.TransactionClient,
   companyId: string,
@@ -110,11 +131,32 @@ export async function seedCompanyMasterData(
         blueKgBasis: 0.1,
         greenKgBasis: 0.2,
         chemicalWeight: 1.2,
-        // "latest as of" lookups filter on date <= asOf, so a null date
-        // would never match — stamp it effective immediately.
         date: new Date(),
         createdBy: actor,
       },
     });
   }
+  for (const wastageType of WASTAGE_TYPES) {
+  await tx.wastageType.upsert({
+    where: {
+      companyId_stage_code: {
+        companyId,
+        stage: wastageType.stage,
+        code: wastageType.code,
+      },
+    },
+    update: {
+      name: wastageType.name,
+      isColorTracked: wastageType.isColorTracked,
+    },
+    create: {
+      companyId,
+      stage: wastageType.stage,
+      code: wastageType.code,
+      name: wastageType.name,
+      isColorTracked: wastageType.isColorTracked,
+      createdBy: actor,
+    },
+  });
+}
 }
