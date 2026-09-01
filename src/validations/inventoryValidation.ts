@@ -21,9 +21,8 @@ function requireMatchingItemId(data: { type: InventoryType; brandId?: string; ch
     }
 }
 
-export const createInventorySchema = z
+export const inventoryItemBaseSchema = z
     .object({
-        date: z.coerce.date().optional(),
         type: z.nativeEnum(InventoryType),
         DC: z.string().trim().max(8),
         brandId: z.string().uuid().optional(),
@@ -32,7 +31,12 @@ export const createInventorySchema = z
         quantityKg: z.coerce.number().positive('must be a positive number'),
         bagCount: z.coerce.number().int().positive().optional(),
     })
-    .strict()
+    .strict();
+
+export const createInventorySchema = inventoryItemBaseSchema
+    .extend({
+        date: z.coerce.date().optional(),
+    })
     .superRefine(requireMatchingItemId);
 
 /**
@@ -61,6 +65,28 @@ export const listInventoryQuerySchema = paginationSchema
     })
     .strict();
 
+export const batchCreateInventorySchema = z
+    .object({
+        date: z.coerce.date().optional(),
+        items: z.array(inventoryItemBaseSchema.superRefine(requireMatchingItemId)),
+    })
+    .strict();
+
+export const batchUpdateInventorySchema = z
+    .object({
+        date: z.coerce.date().optional(),
+        items: z.array(inventoryItemBaseSchema.superRefine(requireMatchingItemId)),
+    })
+    .strict();
+
+export const inventoryGroupIdParamsSchema = z
+    .object({
+        groupId: z.string().uuid('groupId must be a valid UUID'),
+    })
+    .strict();
+
 export type CreateInventoryInput = z.infer<typeof createInventorySchema>;
 export type UpdateInventoryInput = z.infer<typeof updateInventorySchema>;
 export type ListInventoryQuery = z.infer<typeof listInventoryQuerySchema>;
+export type BatchCreateInventoryInput = z.infer<typeof batchCreateInventorySchema>;
+export type BatchUpdateInventoryInput = z.infer<typeof batchUpdateInventorySchema>;

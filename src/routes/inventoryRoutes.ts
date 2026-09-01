@@ -5,6 +5,9 @@ import {
   getInventoryHandler,
   listInventoryHandler,
   updateInventoryHandler,
+  batchCreateInventoryHandler,
+  batchUpdateInventoryHandler,
+  deleteInventoryGroupHandler,
 } from '../controllers/inventoryController.js';
 import { requireAuth } from '../middlewares/auth.js';
 import stockRoutes from './stockRoutes.js';
@@ -88,6 +91,11 @@ router.post(
   requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
   createInventoryHandler,
 );
+router.post(
+  '/batch',
+  requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
+  batchCreateInventoryHandler,
+);
 router.get(
   '/',
   requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
@@ -160,10 +168,20 @@ router.patch(
   requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
   updateInventoryHandler,
 );
+router.put(
+  '/batch/:groupId',
+  requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
+  batchUpdateInventoryHandler,
+);
 router.delete(
   '/:id',
   requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
   deleteInventoryHandler,
+);
+router.delete(
+  '/batch/:groupId',
+  requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
+  deleteInventoryGroupHandler,
 );
 
 export default router;

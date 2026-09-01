@@ -572,8 +572,8 @@ enum RightAction {
 
 model KoraBalance {
   id        String   @id @default(uuid()) @db.Uuid
-  companyId String?   @map("company_id") @db.Uuid
-  company   Company?  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  companyId String?  @map("company_id") @db.Uuid
+  company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
   colorId   String   @map("color_id") @db.Uuid
   color     Color    @relation(fields: [colorId], references: [id])
   sizeId    String   @map("size_id") @db.Uuid
@@ -686,6 +686,8 @@ model Inventory {
 
   company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
+  groupId String? @map("group_id") @db.Uuid
+
   date DateTime @default(now())
 
   type InventoryType
@@ -718,10 +720,8 @@ model Inventory {
 
   updatedBy String? @map("updated_by") @db.VarChar(100)
 
-  @@unique([companyId, type, brandId])
-  @@unique([companyId, type, chemicalId])
-  @@unique([companyId, type, colorId])
   @@index([companyId])
+  @@index([groupId])
   @@index([date])
   @@index([type])
   @@index([name])
