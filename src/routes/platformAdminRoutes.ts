@@ -8,6 +8,7 @@ import {
     refresh,
     signup,
     updateCompanyHandler,
+    logout,
 } from '../controllers/platformAdminController.js';
 import { requirePlatformAdmin } from '../middlewares/platformAdminAuth.js';
 
@@ -110,6 +111,19 @@ router.post('/login', login);
  *               $ref: '#/components/schemas/ErrorResponse'
  */
 router.post('/refresh', refresh);
+
+/**
+ * @openapi
+ * /api/v1/platform/admin/logout:
+ *   post:
+ *     tags: [Platform Admin]
+ *     summary: Log out of the platform-admin session
+ *     description: Clears the platform-admin access and refresh token cookies.
+ *     responses:
+ *       200:
+ *         description: OK. Cookies cleared.
+ */
+router.post('/logout', logout);
 
 /**
  * @openapi

@@ -64,7 +64,8 @@ enum Gender {
 }
 
 enum AttendanceStatus {
-  PRESENT
+  DAY_SHIFT
+  NIGHT_SHIFT
   ABSENT
   HALF_DAY
   COMPANY_HOLIDAY

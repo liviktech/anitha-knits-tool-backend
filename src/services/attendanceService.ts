@@ -7,7 +7,7 @@ const ATTENDANCE_TAB_CODE = 'attendance';
 
 export interface BulkAttendancePayload {
   employeeId: string;
-  status: 'PRESENT' | 'ABSENT' | 'HALF_DAY' | 'COMPANY_HOLIDAY';
+  status: 'DAY_SHIFT' | 'NIGHT_SHIFT' | 'ABSENT' | 'HALF_DAY' | 'COMPANY_HOLIDAY';
   remarks?: string;
 }
 

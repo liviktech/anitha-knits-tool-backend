@@ -9,7 +9,7 @@ const bulkAttendanceSchema = z.object({
   records: z.array(
     z.object({
       employeeId: z.string().uuid(),
-      status: z.enum(['PRESENT', 'ABSENT', 'HALF_DAY', 'COMPANY_HOLIDAY']),
+      status: z.enum(['DAY_SHIFT', 'NIGHT_SHIFT', 'ABSENT', 'HALF_DAY', 'COMPANY_HOLIDAY']),
       remarks: z.string().max(500).optional(),
     })
   ),
