@@ -1,4 +1,4 @@
-import { ProductionStage } from '@prisma/client';
+﻿import { ProductionStage } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { ValidationError } from '../utils/errors.js';
 import { getInventorySummaryByDateRange } from './inventoryService.js';
@@ -7,29 +7,21 @@ import { getFabricProductionSummaryByDateRange } from './fabricCheckingService.j
 import { getWastageSummaryByDateRange } from './wastageService.js';
 import type { DashboardMonthlyQuery, DashboardProductionQuery } from '../validations/dashboardValidation.js';
 
-/**
- * Backs the "Daily Production & Wastage" dashboard (PRD §16.10, GET
- * /api/v1/dashboard/production): per-stage totals for the summary cards, plus
- * a day-wise breakdown across all three production stages for the table.
- *
- * Wastage is summed from WastageRecord entries linked to each stage's
- * production records — it is intentionally NOT derived from input minus
- * output. For Extruder specifically that subtraction would be wrong: chemical
- * and colour mass is ADDED during extrusion, so yarnOutputKg can legitimately
- * exceed rawMaterialKg, and treating the gap as "wastage" would misrepresent
- * the process and invent a business rule the PRD never defines. The Wastage
- * API isn't built yet, so wastage/wastePct currently read 0 for every stage —
- * that's the correct reflection of what's actually been recorded, not a bug,
- * and it will start reflecting real data automatically once that API lands.
- *
- * Time: O(n + d) where n = matching production/wastage rows in the date
- * range, d = distinct days with activity. Space: O(d).
- */
+
 const MAX_RANGE_DAYS = 186;
 
-type StageTotals = { inputKg: number; outputKg: number; wastageKg: number; yarnWasteKg: number; lumpsKg: number };
-type StageDaily = StageTotals & { wastePct: number };
-type StageSummary = StageTotals & { wastePct: number; efficiencyPct: number };
+type StageAggregate = {
+    inputKg: number;
+    outputKg: number;
+    wastageKg: number;
+    yarnWasteKg: number;
+    lumpsKg: number;
+    recordCount: number;
+    approvedCount: number;
+};
+type StageTotals = Omit<StageAggregate, 'recordCount' | 'approvedCount'>;
+type StageDaily = StageTotals & { wastePct: number; isApproved: boolean };
+type StageSummary = StageTotals & { wastePct: number; efficiencyPct: number; isApproved: boolean };
 
 const STAGE_KEYS = ['extruder', 'looms', 'fabricChecking'] as const;
 type StageKey = (typeof STAGE_KEYS)[number];
@@ -38,23 +30,39 @@ function dateKey(date: Date): string {
     return date.toISOString().slice(0, 10);
 }
 
-function emptyTotals(): StageTotals {
-    return { inputKg: 0, outputKg: 0, wastageKg: 0, yarnWasteKg: 0, lumpsKg: 0 };
+function emptyAggregate(): StageAggregate {
+    return { inputKg: 0, outputKg: 0, wastageKg: 0, yarnWasteKg: 0, lumpsKg: 0, recordCount: 0, approvedCount: 0 };
+}
+
+function toPublicTotals(aggregate: StageAggregate): StageTotals {
+    const { recordCount: _recordCount, approvedCount: _approvedCount, ...totals } = aggregate;
+    return totals;
+}
+
+function isAllApproved(aggregate: StageAggregate): boolean {
+    return aggregate.recordCount > 0 && aggregate.approvedCount === aggregate.recordCount;
 }
 
 function round2(value: number): number {
     return Math.round(value * 100) / 100;
 }
 
-function withWastePct(totals: StageTotals): StageDaily {
-    return { ...totals, wastePct: totals.inputKg > 0 ? round2((totals.wastageKg / totals.inputKg) * 100) : 0 };
+function withWastePct(totals: StageAggregate): StageDaily {
+    const publicTotals = toPublicTotals(totals);
+    return {
+        ...publicTotals,
+        wastePct: publicTotals.inputKg > 0 ? round2((publicTotals.wastageKg / publicTotals.inputKg) * 100) : 0,
+        isApproved: isAllApproved(totals),
+    };
 }
 
-function withSummaryMetrics(totals: StageTotals): StageSummary {
+function withSummaryMetrics(totals: StageAggregate): StageSummary {
+    const publicTotals = toPublicTotals(totals);
     return {
-        ...totals,
-        wastePct: totals.inputKg > 0 ? round2((totals.wastageKg / totals.inputKg) * 100) : 0,
-        efficiencyPct: totals.inputKg > 0 ? round2((totals.outputKg / totals.inputKg) * 100) : 0,
+        ...publicTotals,
+        wastePct: publicTotals.inputKg > 0 ? round2((publicTotals.wastageKg / publicTotals.inputKg) * 100) : 0,
+        efficiencyPct: publicTotals.inputKg > 0 ? round2((publicTotals.outputKg / publicTotals.inputKg) * 100) : 0,
+        isApproved: isAllApproved(totals),
     };
 }
 
@@ -68,7 +76,7 @@ function resolveRange(query: DashboardProductionQuery): { dateFrom: Date; dateTo
         }
         return { dateFrom: query.date_from, dateTo: query.date_to };
     }
-    // Default to the current UTC calendar month — always well under MAX_RANGE_DAYS.
+    // Default to the current UTC calendar month â€” always well under MAX_RANGE_DAYS.
     const now = new Date();
     const dateFrom = query.date_from ?? new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
     const dateTo = query.date_to ?? new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0));
@@ -80,22 +88,23 @@ async function computeStageTotals(
     companyId: string,
     dateFrom: Date,
     dateTo: Date,
-): Promise<{ byDate: Map<string, Record<StageKey, StageTotals>>; grandTotals: Record<StageKey, StageTotals> }> {
+): Promise<{ byDate: Map<string, Record<StageKey, StageAggregate>>; grandTotals: Record<StageKey, StageAggregate> }> {
     const productionDate = { gte: dateFrom, lte: dateTo };
 
     const [extruderRows, loomsRows, fabricRows, wastageRows] = await Promise.all([
         prisma.productionRecord.findMany({
             where: { companyId, stage: ProductionStage.EXTRUDER, productionDate },
-            select: { productionDate: true, extruder: { select: { rawMaterialKg: true, yarnOutputKg: true } } },
+            select: { productionDate: true, isApproved: true, extruder: { select: { rawMaterialKg: true, yarnOutputKg: true } } },
         }),
         prisma.productionRecord.findMany({
             where: { companyId, stage: ProductionStage.LOOMS, productionDate },
-            select: { productionDate: true, loom: { select: { yarnInputKg: true, fabricOutputKg: true } } },
+            select: { productionDate: true, isApproved: true, loom: { select: { yarnInputKg: true, fabricOutputKg: true } } },
         }),
         prisma.productionRecord.findMany({
             where: { companyId, stage: ProductionStage.FABRIC_CHECKING, productionDate },
             select: {
                 productionDate: true,
+                isApproved: true,
                 fabricCheck: { select: { fabricInputKg: true, outputKg: true } },
             },
         }),
@@ -111,13 +120,17 @@ async function computeStageTotals(
         }),
     ]);
 
-    const byDate = new Map<string, Record<StageKey, StageTotals>>();
+    const byDate = new Map<string, Record<StageKey, StageAggregate>>();
 
-    function bucket(date: Date): Record<StageKey, StageTotals> {
+    function bucket(date: Date): Record<StageKey, StageAggregate> {
         const key = dateKey(date);
         let entry = byDate.get(key);
         if (!entry) {
-            entry = { extruder: emptyTotals(), looms: emptyTotals(), fabricChecking: emptyTotals() };
+            entry = {
+                extruder: emptyAggregate(),
+                looms: emptyAggregate(),
+                fabricChecking: emptyAggregate(),
+            };
             byDate.set(key, entry);
         }
         return entry;
@@ -128,12 +141,16 @@ async function computeStageTotals(
         const totals = bucket(row.productionDate).extruder;
         totals.inputKg += row.extruder.rawMaterialKg.toNumber();
         totals.outputKg += row.extruder.yarnOutputKg.toNumber();
+        totals.recordCount += 1;
+        totals.approvedCount += row.isApproved ? 1 : 0;
     }
     for (const row of loomsRows) {
         if (!row.loom) continue;
         const totals = bucket(row.productionDate).looms;
         totals.inputKg += row.loom.yarnInputKg.toNumber();
         totals.outputKg += row.loom.fabricOutputKg.toNumber();
+        totals.recordCount += 1;
+        totals.approvedCount += row.isApproved ? 1 : 0;
     }
     for (const row of fabricRows) {
         if (!row.fabricCheck) continue;
@@ -141,6 +158,8 @@ async function computeStageTotals(
         totals.inputKg += row.fabricCheck.fabricInputKg.toNumber();
         // outputKg is the entry screen's single Final Stock/Output figure.
         totals.outputKg += row.fabricCheck.outputKg?.toNumber() ?? 0;
+        totals.recordCount += 1;
+        totals.approvedCount += row.isApproved ? 1 : 0;
     }
     const stageKeyByStage: Record<ProductionStage, StageKey | undefined> = {
         [ProductionStage.EXTRUDER]: 'extruder',
@@ -163,7 +182,7 @@ async function computeStageTotals(
         }
     }
 
-    const grandTotals: Record<StageKey, StageTotals> = { extruder: emptyTotals(), looms: emptyTotals(), fabricChecking: emptyTotals() };
+    const grandTotals: Record<StageKey, StageAggregate> = { extruder: emptyAggregate(), looms: emptyAggregate(), fabricChecking: emptyAggregate() };
     for (const stages of byDate.values()) {
         for (const key of STAGE_KEYS) {
             grandTotals[key].inputKg += stages[key].inputKg;
@@ -171,6 +190,8 @@ async function computeStageTotals(
             grandTotals[key].wastageKg += stages[key].wastageKg;
             grandTotals[key].yarnWasteKg += stages[key].yarnWasteKg;
             grandTotals[key].lumpsKg += stages[key].lumpsKg;
+            grandTotals[key].recordCount += stages[key].recordCount;
+            grandTotals[key].approvedCount += stages[key].approvedCount;
         }
     }
 
@@ -201,7 +222,7 @@ export async function getProductionDashboard(query: DashboardProductionQuery, co
     };
 }
 
-/** Overall per-stage production totals (Extruder/Looms/Fabric Checking) for a date range — the monthly dashboard's "overall month production" section. */
+/** Overall per-stage production totals (Extruder/Looms/Fabric Checking) for a date range â€” the monthly dashboard's "overall month production" section. */
 export async function getStageProductionSummaryByDateRange(companyId: string, dateFrom: Date, dateTo: Date) {
     const { grandTotals } = await computeStageTotals(companyId, dateFrom, dateTo);
     return {
@@ -226,11 +247,11 @@ function resolveMonthRange(query: DashboardMonthlyQuery): { month: number; year:
  * on hand (HDPE/chemical/colour), stock delivered (Load Sent), fabric
  * production (variant-wise colour+size, plus overall), overall production
  * totals across all three stages (Extruder/Looms/Fabric Checking), and
- * wastage across all 5 client-terminology categories — all scoped to one
+ * wastage across all 5 client-terminology categories â€” all scoped to one
  * calendar month. Each section is computed by a reusable per-domain function
  * shared with that domain's own list/summary endpoints.
  *
- * Time: O(n) — n = rows across the 5 underlying queries, run concurrently.
+ * Time: O(n) â€” n = rows across the 5 underlying queries, run concurrently.
  */
 export async function getMonthlyDashboard(query: DashboardMonthlyQuery, companyId: string) {
     const { month, year, dateFrom, dateTo } = resolveMonthRange(query);
@@ -258,3 +279,4 @@ export async function getMonthlyDashboard(query: DashboardMonthlyQuery, companyI
         stockBalance,
     };
 }
+
