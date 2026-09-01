@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { login, me, refresh } from '../controllers/authController.js';
+import { login, me, refresh, logout } from '../controllers/authController.js';
 import { requireAuth } from '../middlewares/auth.js';
 
 const router = Router();
@@ -93,5 +93,18 @@ router.post('/refresh', refresh);
  *         description: Missing or invalid session (AUTH_REQUIRED).
  */
 router.get('/me', requireAuth(), me);
+
+/**
+ * @openapi
+ * /api/v1/company/auth/logout:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Log out of the current session
+ *     description: Clears the access and refresh token cookies.
+ *     responses:
+ *       200:
+ *         description: OK. Cookies cleared.
+ */
+router.post('/logout', logout);
 
 export default router;

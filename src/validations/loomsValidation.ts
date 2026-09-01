@@ -32,6 +32,7 @@ export const updateLoomsSchema = z
         sizeId: z.string().uuid(),
         yarnInputKg: kg,
         fabricOutputKg: kg,
+        loomsWasteKg: wastageKg,
         remarks: z.string().trim().max(500).optional(),
     })
     .partial()

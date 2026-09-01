@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 import { parseOrThrow } from '../utils/validate.js';
-import { setPlatformAdminAuthCookies } from '../utils/platformAdminCookie.js';
+import { clearPlatformAdminAuthCookies, setPlatformAdminAuthCookies } from '../utils/platformAdminCookie.js';
 import { loginPlatformAdmin, signupPlatformAdmin } from '../services/platformAdminService.js';
 import { platformAdminLoginSchema, platformAdminSignupSchema } from '../validations/platformAdminValidation.js';
 import { getCompanyById, listCompanies, listCompanyUsers, signupCompany, updateCompany } from '../services/authService.js';
@@ -73,4 +73,9 @@ export const listCompanyUsersHandler = asyncHandler(async (req: Request, res: Re
     const query = parseOrThrow(listCompanyUsersQuerySchema, req.query);
     const { items, meta } = await listCompanyUsers(id, query);
     sendSuccess(res, items, meta);
+});
+
+export const logout = asyncHandler(async (req: Request, res: Response) => {
+    clearPlatformAdminAuthCookies(res);
+    sendSuccess(res, { loggedOut: true });
 });

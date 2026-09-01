@@ -8,14 +8,26 @@ import type {
 } from '../validations/adminConfigValidation.js';
 
 /** Internal row shape — includes isActive/audit fields needed for lookups but not exposed to callers. */
-async function findLatestStandardRow(companyId: string, dateStr?: string) {
-  const asOf = dateStr ? new Date(dateStr) : new Date();
-  if (isNaN(asOf.getTime())) {
+async function findLatestStandardRow(
+  companyId: string,
+  date?: string | Date,
+) {
+  const dateOnly =
+    date instanceof Date
+      ? new Date(
+          Date.UTC(
+            date.getUTCFullYear(),
+            date.getUTCMonth(),
+            date.getUTCDate(),
+          ),
+        )
+      : date
+        ? new Date(`${date}T00:00:00.000Z`)
+        : new Date();
+
+  if (Number.isNaN(dateOnly.getTime())) {
     throw new Error('Invalid date');
   }
-  const dateOnly = new Date(
-    Date.UTC(asOf.getFullYear(), asOf.getMonth(), asOf.getDate()),
-  );
 
   return prisma.colorConsumptionStandard.findFirst({
     where: {
@@ -24,7 +36,10 @@ async function findLatestStandardRow(companyId: string, dateStr?: string) {
         lte: dateOnly,
       },
     },
-    orderBy: { date: 'desc' },
+    orderBy: [
+      { date: 'desc' },
+      { createdAt: 'desc' },
+    ],
   });
 }
 
@@ -153,7 +168,7 @@ export async function getKgPerBasisForColor(companyId: string, colorName: string
   const field = COLOR_KG_FIELD[colorName.trim().toLowerCase() as keyof typeof COLOR_KG_FIELD];
   if (!field) return null;
 
-  const standard = await findLatestStandardRow(companyId, asOf?.toISOString());
+  const standard = await findLatestStandardRow(companyId, asOf);
   if (!standard || !standard.isActive) return null;
 
   return { kgPerBasis: standard[field], basisWeightKg: standard.basisWeightKg };

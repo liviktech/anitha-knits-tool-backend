@@ -223,14 +223,14 @@ export const getPayrollSummary = async (companyId: string, month: number, year: 
             const status = attendanceMap.get(dateStr);
             const isSunday = currentDate.getDay() === 0;
 
-            if (isSunday && status === 'PRESENT') {
+            if (isSunday && (status === 'DAY_SHIFT' || status === 'NIGHT_SHIFT')) {
                 sundayBonuses += (3 * oneDaySalary);
             } else if (!isSunday && status === 'ABSENT') {
                 absentDeductions += oneDaySalary;
                 absentDays++;
             }
 
-            if (status === 'PRESENT' || status === 'HALF_DAY') {
+            if (status === 'DAY_SHIFT' || status === 'NIGHT_SHIFT' || status === 'HALF_DAY') {
                 presentDays += (status === 'HALF_DAY' ? 0.5 : 1);
             }
         }
