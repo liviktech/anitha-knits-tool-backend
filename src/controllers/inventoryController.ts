@@ -15,6 +15,9 @@ import {
     inventoryIdParamsSchema,
     listInventoryQuerySchema,
     updateInventorySchema,
+    batchCreateInventorySchema,
+    batchUpdateInventorySchema,
+    inventoryGroupIdParamsSchema,
 } from '../validations/inventoryValidation.js';
 
 export const createInventoryHandler = asyncHandler(async (req: Request, res: Response) => {
@@ -50,5 +53,27 @@ export const deleteInventoryHandler = asyncHandler(async (req: Request, res: Res
     const { id } = parseOrThrow(inventoryIdParamsSchema, req.params);
     const { companyId, role, userId } = getAuthContext(req);
     await deleteInventory(id, companyId, role, userId);
+    res.status(204).send();
+});
+
+export const batchCreateInventoryHandler = asyncHandler(async (req: Request, res: Response) => {
+    const input = parseOrThrow(batchCreateInventorySchema, req.body);
+    const { companyId, actor, role, userId } = getAuthContext(req);
+    const records = await createInventory(input, companyId, actor, role, userId);
+    sendSuccess(res, records, undefined, 201);
+});
+
+export const batchUpdateInventoryHandler = asyncHandler(async (req: Request, res: Response) => {
+    const { groupId } = parseOrThrow(inventoryGroupIdParamsSchema, req.params);
+    const input = parseOrThrow(batchUpdateInventorySchema, req.body);
+    const { companyId, actor, role, userId } = getAuthContext(req);
+    const records = await updateInventory(groupId, input, companyId, actor, role, userId);
+    sendSuccess(res, records);
+});
+
+export const deleteInventoryGroupHandler = asyncHandler(async (req: Request, res: Response) => {
+    const { groupId } = parseOrThrow(inventoryGroupIdParamsSchema, req.params);
+    const { companyId, role, userId } = getAuthContext(req);
+    await deleteInventory(groupId, companyId, role, userId);
     res.status(204).send();
 });

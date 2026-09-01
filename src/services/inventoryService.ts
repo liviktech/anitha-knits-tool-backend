@@ -3,18 +3,21 @@ import { prisma } from '../config/prisma.js';
 import { NotFoundError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import { roundKg } from '../utils/decimal.js';
-import { adjustInventoryBalance } from './inventoryBalanceService.js';
 import { assertModuleActionAllowed } from './roleAccessService.js';
+import crypto from 'crypto';
 
 const INVENTORY_MODULE_CODE = 'inventory';
 import type {
   CreateInventoryInput,
   UpdateInventoryInput,
   ListInventoryQuery,
+  BatchCreateInventoryInput,
+  BatchUpdateInventoryInput,
 } from '../validations/inventoryValidation.js';
 
 const inventorySelect = {
   id: true,
+  groupId: true,
   date: true,
   type: true,
   name: true,
@@ -39,7 +42,7 @@ function mapInventoryRecord(record: InventoryRow) {
 }
 
 /** Resolves the linked brand/chemical/colour for an intake and returns its name (used only on first-ever intake of that item) alongside the matching item reference. */
-async function resolveItem(input: CreateInventoryInput, companyId: string) {
+async function resolveItem(input: Omit<CreateInventoryInput, 'date'>, companyId: string) {
   switch (input.type) {
     case InventoryType.HDPE: {
       const brand = await prisma.brand.findFirst({
@@ -78,7 +81,7 @@ async function resolveItem(input: CreateInventoryInput, companyId: string) {
 }
 
 export async function createInventory(
-  input: CreateInventoryInput,
+  input: CreateInventoryInput | BatchCreateInventoryInput,
   companyId: string,
   actor: string,
   callerRole: UserRole,
@@ -86,22 +89,40 @@ export async function createInventory(
 ) {
   await assertModuleActionAllowed(callerRole, callerId, companyId, INVENTORY_MODULE_CODE, RightAction.ADD);
 
-  const { name, ref } = await resolveItem(input, companyId);
+  const isBatch = 'items' in input;
+  const items = isBatch ? (input as BatchCreateInventoryInput).items : [input as CreateInventoryInput];
+  const date = (input as any).date || new Date();
+  const groupId = crypto.randomUUID();
 
-  const { id } = await prisma.$transaction((tx) =>
-    adjustInventoryBalance(tx, {
-      ...ref,
-      companyId,
-      deltaKg: input.quantityKg,
-      deltaBags: input.bagCount,
-      actor,
-      name,
-      DC: input.DC,
-      date: input.date,
-    }),
+  const resolvedItems = await Promise.all(
+    items.map(async (item) => {
+      const { name, ref } = await resolveItem(item, companyId);
+      return { ...item, name, ref };
+    })
   );
 
-  return getInventoryById(id, companyId);
+  const createdRecords = await prisma.$transaction(async (tx) => {
+    return Promise.all(
+      resolvedItems.map(async (item) => {
+        return tx.inventory.create({
+          data: {
+            companyId,
+            groupId,
+            name: item.name,
+            weightKg: item.quantityKg,
+            bagCount: item.bagCount,
+            DC_NUMBER: item.DC,
+            createdBy: actor,
+            date,
+            ...item.ref,
+          },
+          select: inventorySelect,
+        });
+      })
+    );
+  });
+
+  return createdRecords.map(mapInventoryRecord);
 }
 
 export async function listInventory(
@@ -158,8 +179,8 @@ export async function getInventoryById(id: string, companyId: string) {
 }
 
 export async function updateInventory(
-  id: string,
-  input: UpdateInventoryInput,
+  idOrGroupId: string,
+  input: UpdateInventoryInput | BatchUpdateInventoryInput,
   companyId: string,
   actor: string,
   callerRole: UserRole,
@@ -167,30 +188,85 @@ export async function updateInventory(
 ) {
   await assertModuleActionAllowed(callerRole, callerId, companyId, INVENTORY_MODULE_CODE, RightAction.EDIT);
 
-  const existing = await prisma.inventory.findFirst({
-    where: { id, companyId },
-    select: { id: true },
-  });
-  if (!existing)
-    throw new NotFoundError(
-      'Inventory record not found',
-      'INVENTORY_NOT_FOUND',
-      { id },
+  const isBatch = 'items' in input;
+
+  if (isBatch) {
+    const batchInput = input as BatchUpdateInventoryInput;
+    const date = batchInput.date || new Date();
+    
+    // First, verify the group exists
+    const existingGroup = await prisma.inventory.findFirst({
+      where: { groupId: idOrGroupId, companyId },
+    });
+    if (!existingGroup) {
+      throw new NotFoundError('Inventory group not found', 'INVENTORY_NOT_FOUND', { groupId: idOrGroupId });
+    }
+
+    const resolvedItems = await Promise.all(
+      batchInput.items.map(async (item) => {
+        const { name, ref } = await resolveItem(item, companyId);
+        return { ...item, name, ref };
+      })
     );
 
-  const record = await prisma.inventory.update({
-    where: { id },
-    data: {
-      ...(input.date !== undefined ? { date: input.date } : {}),
-      ...(input.weightKg !== undefined ? { weightKg: input.weightKg } : {}),
-      ...(input.bagCount !== undefined ? { bagCount: input.bagCount } : {}),
-      ...(input.DC !== undefined ? { DC_NUMBER: input.DC } : {}),
-      updatedBy: actor,
-    },
-    select: inventorySelect,
-  });
+    const updatedRecords = await prisma.$transaction(async (tx) => {
+      // Delete old records in this group
+      await tx.inventory.deleteMany({
+        where: { groupId: idOrGroupId, companyId },
+      });
 
-  return mapInventoryRecord(record);
+      // Insert new ones
+      return Promise.all(
+        resolvedItems.map(async (item) => {
+          return tx.inventory.create({
+            data: {
+              companyId,
+              groupId: idOrGroupId,
+              name: item.name,
+              weightKg: item.quantityKg,
+              bagCount: item.bagCount,
+              DC_NUMBER: item.DC,
+              createdBy: existingGroup.createdBy,
+              createdAt: existingGroup.createdAt,
+              updatedBy: actor,
+              date,
+              ...item.ref,
+            },
+            select: inventorySelect,
+          });
+        })
+      );
+    });
+
+    return updatedRecords.map(mapInventoryRecord);
+  } else {
+    // Single item update
+    const singleInput = input as UpdateInventoryInput;
+    const existing = await prisma.inventory.findFirst({
+      where: { id: idOrGroupId, companyId },
+      select: { id: true },
+    });
+    if (!existing)
+      throw new NotFoundError(
+        'Inventory record not found',
+        'INVENTORY_NOT_FOUND',
+        { id: idOrGroupId },
+      );
+
+    const record = await prisma.inventory.update({
+      where: { id: idOrGroupId },
+      data: {
+        ...(singleInput.date !== undefined ? { date: singleInput.date } : {}),
+        ...(singleInput.weightKg !== undefined ? { weightKg: singleInput.weightKg } : {}),
+        ...(singleInput.bagCount !== undefined ? { bagCount: singleInput.bagCount } : {}),
+        ...(singleInput.DC !== undefined ? { DC_NUMBER: singleInput.DC } : {}),
+        updatedBy: actor,
+      },
+      select: inventorySelect,
+    });
+
+    return mapInventoryRecord(record);
+  }
 }
 
 export type InventoryTypeSummary = {
@@ -202,11 +278,6 @@ export type InventoryTypeSummary = {
 /**
  * Inventory balances for a date range, grouped by type (HDPE/CHEMICAL/COLOR)
  * with a per-type total — backs the dashboard's monthly inventory panel.
- * Reuses the same `date` filter semantics as listInventory (the balance's
- * last-touched date), just unpaginated since the dashboard needs the whole
- * month's picture at once.
- *
- * Time: O(n) — n = inventory rows touched in the range (one query, one pass).
  */
 export async function getInventorySummaryByDateRange(
   companyId: string,
@@ -216,18 +287,36 @@ export async function getInventorySummaryByDateRange(
   const rows = await prisma.inventory.findMany({
     where: { companyId, date: { gte: dateFrom, lte: dateTo } },
     select: inventorySelect,
-    orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
   });
 
-  const byType: Record<InventoryType, InventoryRow[]> = {
+  // Since we now have multiple rows per item (transaction log), we must aggregate them
+  // by item ID to provide a summary of the current balance.
+  const aggregated = new Map<string, Omit<InventoryRow, 'weightKg'> & { weightKg: number }>();
+  
+  for (const row of rows) {
+    const key = `${row.type}-${row.name}`;
+    const existing = aggregated.get(key);
+    if (existing) {
+      existing.weightKg += row.weightKg.toNumber();
+      // Keep the most recent date
+      if (row.date > existing.date) existing.date = row.date;
+    } else {
+      aggregated.set(key, { ...row, weightKg: row.weightKg.toNumber() } as any);
+    }
+  }
+
+  const byType: Record<InventoryType, any[]> = {
     [InventoryType.HDPE]: [],
     [InventoryType.CHEMICAL]: [],
     [InventoryType.COLOR]: [],
   };
-  for (const row of rows) byType[row.type].push(row);
+  
+  for (const row of aggregated.values()) {
+    byType[row.type].push(row);
+  }
 
   function summarize(type: InventoryType): InventoryTypeSummary {
-    const items = byType[type].map(mapInventoryRecord);
+    const items = byType[type];
     return { type, items, totalWeightKg: roundKg(items.reduce((sum, item) => sum + item.weightKg, 0)) };
   }
 
@@ -238,19 +327,30 @@ export async function getInventorySummaryByDateRange(
   };
 }
 
-export async function deleteInventory(id: string, companyId: string, callerRole: UserRole, callerId: string) {
+export async function deleteInventory(idOrGroupId: string, companyId: string, callerRole: UserRole, callerId: string) {
   await assertModuleActionAllowed(callerRole, callerId, companyId, INVENTORY_MODULE_CODE, RightAction.DELETE);
 
+  // Check if it's a groupId first
+  const groupRows = await prisma.inventory.findMany({
+    where: { groupId: idOrGroupId, companyId },
+    select: { id: true },
+  });
+
+  if (groupRows.length > 0) {
+    await prisma.inventory.deleteMany({ where: { groupId: idOrGroupId, companyId } });
+    return;
+  }
+
   const existing = await prisma.inventory.findFirst({
-    where: { id, companyId },
+    where: { id: idOrGroupId, companyId },
     select: { id: true },
   });
   if (!existing)
     throw new NotFoundError(
       'Inventory record not found',
       'INVENTORY_NOT_FOUND',
-      { id },
+      { id: idOrGroupId },
     );
 
-  await prisma.inventory.delete({ where: { id } });
+  await prisma.inventory.delete({ where: { id: idOrGroupId } });
 }
