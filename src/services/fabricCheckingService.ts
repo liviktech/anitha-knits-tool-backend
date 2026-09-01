@@ -8,6 +8,7 @@ import { assertColorExists, assertSizeExists } from './masterDataService.js';
 import { buildWastageCreates, mapWastageRecord, wastageSelect } from './wastageService.js';
 import { WASTAGE_CODES } from '../constants/wastageCodes.js';
 import { updateKoraBalance, reverseKoraBalance } from './koraBalanceService.js';
+import { applyWastageUpdates } from './wastageService.js';
 import { assertCanCreateProductionRecord, assertCanDeleteProductionRecord, assertCanUpdateProductionRecord } from './productionCeilings.js';
 import type { CreateFabricCheckingInput, UpdateFabricCheckingInput, ListFabricCheckingQuery } from '../validations/fabricCheckingValidation.js';
 
@@ -170,7 +171,7 @@ export async function updateFabricCheckingRecord(
 ) {
     const existing = await prisma.productionRecord.findFirst({
         where: { id, companyId, stage: ProductionStage.FABRIC_CHECKING },
-        select: { id: true, isApproved: true },
+        select: { id: true, isApproved: true, colorId: true },
     });
     if (!existing) throw new NotFoundError('Fabric checking record not found', 'FABRIC_CHECKING_NOT_FOUND', { id });
 
@@ -197,8 +198,17 @@ export async function updateFabricCheckingRecord(
             where: { productionRecordId: id },
             data: {
                 ...(input.fabricInputKg !== undefined ? { fabricInputKg: input.fabricInputKg } : {}),
+                ...(input.outputKg !== undefined ? { outputKg: input.outputKg } : {}),
             },
         });
+
+        const wastageUpdates = [
+            ...(input.fwKg !== undefined ? [{ code: WASTAGE_CODES.FW, quantityKg: input.fwKg }] : []),
+            ...(input.bwKg !== undefined ? [{ code: WASTAGE_CODES.BW, quantityKg: input.bwKg, colorId: input.colorId ?? existing.colorId }] : []),
+        ];
+        if (wastageUpdates.length > 0) {
+            await applyWastageUpdates(tx, id, ProductionStage.FABRIC_CHECKING, companyId, actor, wastageUpdates);
+        }
 
         return tx.productionRecord.findUniqueOrThrow({ where: { id }, select: fabricCheckingSelect });
     });
