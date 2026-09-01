@@ -33,13 +33,15 @@ export const createFabricCheckingSchema = z
 
 export const updateFabricCheckingSchema = z
     .object({
-        productionDate: z.coerce.date(),
-        colorId: z.string().uuid(),
-        sizeId: z.string().uuid(),
-        fabricInputKg: z.coerce.number().positive('must be a positive number'),
+        productionDate: z.coerce.date().optional(),
+        colorId: z.string().uuid().optional(),
+        sizeId: z.string().uuid().optional(),
+        fabricInputKg: z.coerce.number().positive('must be a positive number').optional(),
+        outputKg: z.coerce.number().nonnegative().optional(),
         remarks: z.string().trim().max(500).optional(),
+        fwKg: wastageKg,
+        bwKg: wastageKg,
     })
-    .partial()
     .strict()
     .refine((data) => Object.keys(data).length > 0, { message: 'At least one field must be provided' });
 
