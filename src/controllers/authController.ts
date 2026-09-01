@@ -2,7 +2,7 @@ import type { Request, Response } from 'express';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 import { parseOrThrow } from '../utils/validate.js';
-import { setAuthCookies } from '../utils/authCookie.js';
+import { clearAuthCookies, setAuthCookies } from '../utils/authCookie.js';
 import { getCurrentUser, loginUser } from '../services/authService.js';
 import { loginSchema } from '../validations/authValidation.js';
 import { env } from '../config/env.js';
@@ -33,4 +33,9 @@ export const me = asyncHandler(async (req: Request, res: Response) => {
     const { userId, companyId } = getAuthContext(req);
     const result = await getCurrentUser(userId, companyId);
     sendSuccess(res, result);
+});
+
+export const logout = asyncHandler(async (req: Request, res: Response) => {
+    clearAuthCookies(res);
+    sendSuccess(res, { loggedOut: true });
 });
