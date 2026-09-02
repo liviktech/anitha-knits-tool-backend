@@ -3,7 +3,7 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 import { parseOrThrow } from '../utils/validate.js';
 import { clearPlatformAdminAuthCookies, setPlatformAdminAuthCookies } from '../utils/platformAdminCookie.js';
-import { loginPlatformAdmin, signupPlatformAdmin } from '../services/platformAdminService.js';
+import { getCurrentPlatformAdmin, loginPlatformAdmin, signupPlatformAdmin } from '../services/platformAdminService.js';
 import { platformAdminLoginSchema, platformAdminSignupSchema } from '../validations/platformAdminValidation.js';
 import { getCompanyById, listCompanies, listCompanyUsers, signupCompany, updateCompany } from '../services/authService.js';
 import {
@@ -25,9 +25,16 @@ export const signup = asyncHandler(async (req: Request, res: Response) => {
 
 export const login = asyncHandler(async (req: Request, res: Response) => {
     const input = parseOrThrow(platformAdminLoginSchema, req.body);
-    const { tokens, admin } = await loginPlatformAdmin(input);
+    const { tokens, admin, access } = await loginPlatformAdmin(input);
     setPlatformAdminAuthCookies(res, tokens);
-    sendSuccess(res, { admin });
+    sendSuccess(res, { admin, access });
+});
+
+/** Re-resolves the caller's own LK Space profile + access (PlatformRoleAccess -> module grants) from scratch. */
+export const me = asyncHandler(async (req: Request, res: Response) => {
+    if (!req.platformAdmin) throw new UnauthorizedError('Authentication required', 'AUTH_REQUIRED');
+    const result = await getCurrentPlatformAdmin(req.platformAdmin.role, req.platformAdmin.sub);
+    sendSuccess(res, result);
 });
 
 // Company signup is not public — only an authenticated platform admin can create a company

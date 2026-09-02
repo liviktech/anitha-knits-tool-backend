@@ -14,6 +14,7 @@
     "prisma:migrate": "npx prisma migrate dev",
     "prisma:seed": "npx prisma db seed",
     "seed:demo": "tsx --env-file=.env src/prisma/seed.ts",
+    "seed:platform-catalog": "tsx --env-file=.env src/prisma/seedPlatformCatalog.ts",
     "build": "prisma generate && tsc",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",

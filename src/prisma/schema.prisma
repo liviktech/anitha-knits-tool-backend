@@ -91,6 +91,145 @@ model PlatformAdmin {
   @@map("platform_admins")
 }
 
+// The five models below mirror Module/Tab/Right/RoleAccess/RoleAccessRight above, scoped to
+// LK Space (the platform-admin panel) instead of a tenant Company — so there is no companyId
+// anywhere in this group. PlatformEmployeeAccess is the one addition: Livik employees live in a
+// separate database (see config/livikDb.ts) with no possible FK here, so a "role assignment" is
+// a local row keyed by their stable empId string. Its mere existence (isActive: true) is also the
+// allow-list gate for whether that employee may log into LK Space at all.
+
+model PlatformModule {
+  id String @id @default(uuid()) @db.Uuid
+
+  moduleCode String @unique @map("module_code") @db.VarChar(50)
+
+  moduleName String @map("module_name") @db.VarChar(100)
+
+  tabs PlatformTab[]
+
+  rights PlatformRight[]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("platform_modules")
+}
+
+model PlatformTab {
+  id String @id @default(uuid()) @db.Uuid
+
+  moduleId String @map("module_id") @db.Uuid
+
+  module PlatformModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  tabCode String @map("tab_code") @db.VarChar(50)
+
+  tabName String @map("tab_name") @db.VarChar(100)
+
+  rights PlatformRight[]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([moduleId, tabCode])
+  @@index([moduleId])
+  @@map("platform_tabs")
+}
+
+model PlatformRight {
+  id String @id @default(uuid()) @db.Uuid
+
+  moduleId String @map("module_id") @db.Uuid
+
+  module PlatformModule @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  // Optional: a right can be scoped to one specific Tab within its Module, or left null to
+  // grant the whole module (LK Space's modules today have no Tabs at all).
+  tabId String? @map("tab_id") @db.Uuid
+
+  tab PlatformTab? @relation(fields: [tabId], references: [id], onDelete: Cascade)
+
+  action RightAction
+
+  // Server-derived stable identifier, e.g. "companies_all_edit" — see the company-scoped
+  // Right.rightName comment for why this (not a raw moduleId+tabId+action tuple) is what
+  // enforces uniqueness.
+  rightName String @unique @map("right_name") @db.VarChar(150)
+
+  displayName String @map("display_name") @db.VarChar(200)
+
+  roleLinks PlatformRoleAccessRight[]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([moduleId])
+  @@index([tabId])
+  @@map("platform_rights")
+}
+
+model PlatformRoleAccess {
+  id String @id @default(uuid()) @db.Uuid
+
+  roleName String @unique @map("role_name") @db.VarChar(100)
+
+  description String? @db.VarChar(500)
+
+  rights PlatformRoleAccessRight[]
+
+  employeeAccess PlatformEmployeeAccess[]
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("platform_role_access")
+}
+
+model PlatformRoleAccessRight {
+  id String @id @default(uuid()) @db.Uuid
+
+  roleAccessId String @map("role_access_id") @db.Uuid
+
+  roleAccess PlatformRoleAccess @relation(fields: [roleAccessId], references: [id], onDelete: Cascade)
+
+  rightId String @map("right_id") @db.Uuid
+
+  right PlatformRight @relation(fields: [rightId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([roleAccessId, rightId])
+  @@index([rightId])
+  @@map("platform_role_access_rights")
+}
+
+// The allow-list + role assignment for a Livik employee logging into LK Space. livikEmpId is
+// the Employee.empId string from the separate Livik database (see config/livikDb.ts) — never a
+// Prisma relation, since it's a different Postgres instance. No row here (or isActive: false)
+// means that employee cannot log into LK Space at all, regardless of their Livik credentials.
+model PlatformEmployeeAccess {
+  id String @id @default(uuid()) @db.Uuid
+
+  livikEmpId String @unique @map("livik_emp_id") @db.VarChar(60)
+
+  roleAccessId String? @map("role_access_id") @db.Uuid
+
+  roleAccess PlatformRoleAccess? @relation(fields: [roleAccessId], references: [id], onDelete: SetNull)
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([roleAccessId])
+  @@map("platform_employee_access")
+}
+
 model Company {
   id String @id @default(uuid()) @db.Uuid
 

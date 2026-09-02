@@ -36,7 +36,7 @@ const WASTAGE_TYPES = [
   },
 ];
 
-const BRANDS = ['Reliance', 'Haldia', 'Opel', 'Ghail'];
+const BRANDS = ['Ghail','Opel','Haldia', 'Reliance' ];
 const CHEMICALS = ['DN+MB', 'ACM'];
 const SIZES = ['150cm', '160cm', '170cm', '180cm', '190cm'];
 const COLORS = ['White', 'Blue', 'Green'];

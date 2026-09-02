@@ -5,12 +5,19 @@ import {
     listCompaniesHandler,
     listCompanyUsersHandler,
     login,
+    me,
     refresh,
     signup,
     updateCompanyHandler,
     logout,
 } from '../controllers/platformAdminController.js';
-import { requirePlatformAdmin } from '../middlewares/platformAdminAuth.js';
+import { listLivikEmployeesHandler } from '../controllers/livikEmployeeController.js';
+import { requirePlatformAdmin, requireSuperAdmin } from '../middlewares/platformAdminAuth.js';
+import { requirePlatformModuleAccess } from '../middlewares/requirePlatformModuleAccess.js';
+import platformModuleRoutes from './platformModuleRoutes.js';
+import platformTabRoutes from './platformTabRoutes.js';
+import platformRightRoutes from './platformRightRoutes.js';
+import platformRoleAccessRoutes from './platformRoleAccessRoutes.js';
 
 const router = Router();
 
@@ -127,6 +134,24 @@ router.post('/logout', logout);
 
 /**
  * @openapi
+ * /api/v1/platform/admin/me:
+ *   get:
+ *     tags: [Platform Admin]
+ *     summary: Re-resolve the current LK Space session
+ *     description: >
+ *       Re-resolves the caller's own profile + access (PlatformRoleAccess -> module grants) from
+ *       scratch — lets an already-logged-in Livik employee pick up a role change without
+ *       re-authenticating, mirroring GET /company/auth/me.
+ *     responses:
+ *       200:
+ *         description: OK.
+ *       401:
+ *         description: Missing, invalid, or expired platform-admin session (AUTH_REQUIRED / AUTH_TOKEN_EXPIRED / AUTH_TOKEN_INVALID).
+ */
+router.get('/me', requirePlatformAdmin, me);
+
+/**
+ * @openapi
  * /api/v1/platform/admin/companies:
  *   post:
  *     tags: [Platform Admin]
@@ -167,7 +192,7 @@ router.post('/logout', logout);
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.post('/companies', requirePlatformAdmin, createCompany);
+router.post('/companies', requirePlatformAdmin, requirePlatformModuleAccess('companies'), createCompany);
 
 /**
  * @openapi
@@ -204,7 +229,7 @@ router.post('/companies', requirePlatformAdmin, createCompany);
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.get('/companies', requirePlatformAdmin, listCompaniesHandler);
+router.get('/companies', requirePlatformAdmin, requirePlatformModuleAccess('companies'), listCompaniesHandler);
 
 /**
  * @openapi
@@ -273,8 +298,8 @@ router.get('/companies', requirePlatformAdmin, listCompaniesHandler);
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.get('/companies/:id', requirePlatformAdmin, getCompanyHandler);
-router.patch('/companies/:id', requirePlatformAdmin, updateCompanyHandler);
+router.get('/companies/:id', requirePlatformAdmin, requirePlatformModuleAccess('companies'), getCompanyHandler);
+router.patch('/companies/:id', requirePlatformAdmin, requirePlatformModuleAccess('companies'), updateCompanyHandler);
 
 /**
  * @openapi
@@ -322,6 +347,42 @@ router.patch('/companies/:id', requirePlatformAdmin, updateCompanyHandler);
  *       404:
  *         $ref: '#/components/responses/NotFound'
  */
-router.get('/companies/:id/users', requirePlatformAdmin, listCompanyUsersHandler);
+router.get('/companies/:id/users', requirePlatformAdmin, requirePlatformModuleAccess('companies'), listCompanyUsersHandler);
+
+/**
+ * @openapi
+ * /api/v1/platform/admin/livik-employees:
+ *   get:
+ *     tags: [Platform Admin]
+ *     summary: List Livik's own employees
+ *     description: >
+ *       Read-only listing sourced from the Livik internal tool's own database (a separate
+ *       Postgres instance from this app's — see config/livikDb.ts), for the platform admin's
+ *       "Users" page. Never writes to that database.
+ *     parameters:
+ *       - name: search
+ *         in: query
+ *         schema: { type: string }
+ *         description: Case-insensitive substring match against name, emp ID, email, department, or designation.
+ *       - name: page
+ *         in: query
+ *         schema: { type: integer, minimum: 1, default: 1 }
+ *       - name: limit
+ *         in: query
+ *         schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+ *     responses:
+ *       200:
+ *         description: OK.
+ *       401:
+ *         description: Missing, invalid, or expired platform-admin session (AUTH_REQUIRED / AUTH_TOKEN_EXPIRED / AUTH_TOKEN_INVALID).
+ */
+router.get('/livik-employees', requirePlatformAdmin, requirePlatformModuleAccess('users'), listLivikEmployeesHandler);
+
+// RBAC catalog management (Modules/Tabs/Rights/RoleAccess for LK Space itself) — SUPER_ADMIN
+// only, same convention as the company side's requireAuth('ADMIN') on its own catalog routes.
+router.use('/modules', requirePlatformAdmin, requireSuperAdmin, platformModuleRoutes);
+router.use('/tabs', requirePlatformAdmin, requireSuperAdmin, platformTabRoutes);
+router.use('/rights', requirePlatformAdmin, requireSuperAdmin, platformRightRoutes);
+router.use('/role-access', requirePlatformAdmin, requireSuperAdmin, platformRoleAccessRoutes);
 
 export default router;
