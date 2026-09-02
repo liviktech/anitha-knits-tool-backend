@@ -18,7 +18,9 @@ export const createEmployeeSchema = z
             .string()
             .trim()
             .regex(/^[0-9]{10,15}$/, 'mobile must be 10-15 digits'),
-        password: z.string().min(8).max(128),
+        // Empty string accepted — the Employees Directory no longer collects a password up
+        // front; a non-empty value must still meet the normal length bounds.
+        password: z.union([z.literal(''), z.string().min(8).max(128)]),
         role: managedRoleSchema.default(UserRole.EMPLOYEE),
         designation: z.string().trim().max(100).optional(),
         address: z.string().trim().max(500).optional(),

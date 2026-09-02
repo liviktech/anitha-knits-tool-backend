@@ -167,7 +167,12 @@ export async function createEmployee(
   const role = input.role ?? UserRole.EMPLOYEE;
   await assertRoleCapNotExceeded(role, companyId);
 
-  const passwordHash = await hashPassword(input.password);
+  // The Employees Directory no longer collects a password up front, so the field arrives as ''.
+  // Hashing '' directly would let anyone log in with a blank password once they know the mobile
+  // number — store a random value instead; a real credential can be set later via a login-setup flow.
+  const passwordHash = await hashPassword(
+    input.password || crypto.randomBytes(24).toString('hex'),
+  );
 
   // Upload before the transaction so a slow S3 call never ties up a pooled DB connection.
   const { photoUrl, aadhaarDocumentUrl } = await uploadProvidedEmployeeFiles(
