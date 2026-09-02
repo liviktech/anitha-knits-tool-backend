@@ -9,7 +9,7 @@ export const loadSentIdParamsSchema = z
 
 export const createLoadSentSchema = z
     .object({
-        productionDate: z.coerce.date(),
+        date: z.coerce.date().optional(),
         colorId: z.string().uuid(),
         sizeId: z.string().uuid(),
         fabricWeight: z.coerce.number().min(0).default(0),
@@ -22,7 +22,7 @@ export const createLoadSentSchema = z
 
 export const updateLoadSentSchema = z
     .object({
-        productionDate: z.coerce.date(),
+        date: z.coerce.date(),
         colorId: z.string().uuid(),
         sizeId: z.string().uuid(),
         fabricWeight: z.coerce.number().min(0),
@@ -33,12 +33,7 @@ export const updateLoadSentSchema = z
     })
     .partial()
     .strict()
-    .refine(
-        (data) => Object.keys(data).length > 0,
-        {
-            message: 'At least one field must be provided',
-        },
-    );
+    .refine((data) => Object.keys(data).length > 0, { message: 'At least one field must be provided' });
 
 export const listLoadSentQuerySchema = paginationSchema
     .extend({
