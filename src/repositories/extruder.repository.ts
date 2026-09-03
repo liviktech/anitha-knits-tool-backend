@@ -5,11 +5,12 @@ import { findWastagesByProductionRecordId, findWastagesByProductionRecordIds, ty
 import type { ProductionListFilters } from '../utils/productionFilters.js';
 import { buildProductionWhere } from '../utils/productionFilters.js';
 import { ProductionStage } from '../types/enums.js';
+import { formatDateOnly } from '../utils/dateOnly.js';
 
 export interface ExtruderRecordRow {
     id: string;
     stage: string;
-    productionDate: Date;
+    productionDate: string;
     remarks: string | null;
     color: { id: string; name: string };
     size: { id: string; name: string };
@@ -92,7 +93,7 @@ function toExtruderRow(row: ExtruderQueryRow, wastages: WastageRow[]): ExtruderR
     return {
         id: row.id,
         stage: row.stage,
-        productionDate: row.productionDate,
+        productionDate: formatDateOnly(row.productionDate),
         remarks: row.remarks,
         color: { id: row.colorId, name: row.colorName },
         size: { id: row.sizeId, name: row.sizeName },

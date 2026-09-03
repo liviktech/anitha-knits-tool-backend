@@ -6,6 +6,7 @@ import { getFabricProductionSummaryByDateRange } from './fabricCheckingService.j
 import { getWastageSummaryByDateRange } from './wastageService.js';
 import { findExtruderRowsForDashboard, findFabricRowsForDashboard, findLoomsRowsForDashboard, findWastageRowsForDashboard } from '../repositories/dashboard.repository.js';
 import type { DashboardMonthlyQuery, DashboardProductionQuery } from '../validations/dashboardValidation.js';
+import { formatDateOnly } from '../utils/dateOnly.js';
 
 const MAX_RANGE_DAYS = 186;
 
@@ -26,7 +27,7 @@ const STAGE_KEYS = ['extruder', 'looms', 'fabricChecking'] as const;
 type StageKey = (typeof STAGE_KEYS)[number];
 
 function dateKey(date: Date): string {
-    return date.toISOString().slice(0, 10);
+    return formatDateOnly(date);
 }
 
 function emptyAggregate(): StageAggregate {

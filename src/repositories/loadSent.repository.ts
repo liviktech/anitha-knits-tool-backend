@@ -2,11 +2,12 @@ import { query, queryOne } from '../db/query.js';
 import { withReadClient } from '../db/transaction.js';
 import { buildProductionWhere, type ProductionListFilters } from '../utils/productionFilters.js';
 import { ProductionStage } from '../types/enums.js';
+import { formatDateOnly } from '../utils/dateOnly.js';
 
 export interface LoadSentRecordRow {
     id: string;
     stage: string;
-    productionDate: Date;
+    productionDate: string;
     remarks: string | null;
     color: { id: string; name: string };
     size: { id: string; name: string };
@@ -61,7 +62,7 @@ function toLoadSentRow(row: LoadSentQueryRow): LoadSentRecordRow {
     return {
         id: row.id,
         stage: row.stage,
-        productionDate: row.productionDate,
+        productionDate: formatDateOnly(row.productionDate),
         remarks: row.remarks,
         color: { id: row.colorId, name: row.colorName },
         size: { id: row.sizeId, name: row.sizeName },

@@ -1,6 +1,7 @@
 import { NotFoundError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import { roundKg } from '../utils/decimal.js';
+import { formatDateOnly } from '../utils/dateOnly.js';
 import { assertColorExists, assertSizeExists } from './masterDataService.js';
 import type { CreateLoadSentInput, UpdateLoadSentInput, ListLoadSentQuery } from '../validations/loadSentValidation.js';
 import {
@@ -126,7 +127,7 @@ export async function getLoadSentSummaryByDateRange(companyId: string, dateFrom:
         id: row.id,
         color: { id: row.colorId, name: row.colorName },
         size: { id: row.sizeId, name: row.sizeName },
-        productionDate: row.productionDate,
+        productionDate: formatDateOnly(row.productionDate),
         loadSent: {
             fabricWeight: row.fabricWeight,
             fwWeight: row.fwWeight,
@@ -156,7 +157,7 @@ export async function getLoadSentSummaryByDateRange(companyId: string, dateFrom:
         entry.bwWeightKg += item.loadSent.bwWeight;
         entry.totalWastageWeightKg += item.loadSent.totalWastageWeight;
 
-        const dateStr = item.productionDate.toISOString().slice(0, 10);
+        const dateStr = item.productionDate;
         dailyMap.set(dateStr, (dailyMap.get(dateStr) ?? 0) + item.loadSent.fabricWeight);
     }
 
