@@ -4,6 +4,7 @@ import { sendSuccess } from '../utils/apiResponse.js';
 import { parseOrThrow } from '../utils/validate.js';
 import { clearPlatformAdminAuthCookies, setPlatformAdminAuthCookies } from '../utils/platformAdminCookie.js';
 import {
+    getCurrentPlatformAdmin,
     loginPlatformAdmin,
     loginPlatformAdminWithOtp,
     resetPlatformAdminPassword,

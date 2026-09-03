@@ -4,12 +4,14 @@ import {
     countPlatformAdmins,
     createPlatformAdmin,
     findPlatformAdminByMobile,
+    findPlatformAdminById,
     updatePasswordHash,
 } from '../repositories/platformAdmin.repository.js';
 import { ConflictError, ForbiddenError, UnauthorizedError } from '../utils/errors.js';
 import { comparePassword, dummyPasswordHash, hashPassword } from '../utils/password.js';
 import { signPlatformAdminAccessToken, signPlatformAdminRefreshToken } from '../utils/platformAdminJwt.js';
 import { env } from '../config/env.js';
+import type { PlatformAdminRole } from '../types/auth.js';
 import type { PlatformAdminLoginInput, PlatformAdminSignupInput } from '../validations/platformAdminValidation.js';
 
 /** Claims signed by otpService.issueResetToken and expected here. */
@@ -44,38 +46,17 @@ export async function signupPlatformAdmin(input: PlatformAdminSignupInput) {
 
 /**
  * Authenticates against the LK Space session — the seeded PlatformAdmin (SUPER_ADMIN, always
- * unrestricted) first, falling back to a Livik employee's own credentials (checked against the
- * separate Livik database, see config/livikDb.ts) for anyone the super admin has explicitly
- * granted LK Space access to. Time: O(1); Space: O(1).
+ * unrestricted). Time: O(1); Space: O(1).
  *
- * TODO(platform-rbac-pg-migration): the platform_employee_access table doesn't exist yet (see
- * platformRoleAccessService.ts), so no Livik employee can currently be granted access — every
- * employee login correctly falls through to PLATFORM_ACCESS_NOT_GRANTED below until that lands.
+ * TODO(platform-rbac-pg-migration): a Livik-employee login fallback (checked against the
+ * separate Livik database, granted LK Space access via a platform_employee_access row) used to
+ * live here — dropped because platform_employee_access doesn't exist yet (see
+ * platformRoleAccessService.ts). Reintroduce it once that table + repository layer exist.
  */
 export async function loginPlatformAdmin(input: PlatformAdminLoginInput) {
     const admin = await findPlatformAdminByMobile(input.mobile);
 
-    if (admin) {
-        if (!(await comparePassword(input.password, admin.passwordHash))) {
-            throw new UnauthorizedError('Invalid mobile number or password', 'INVALID_CREDENTIALS');
-        }
-        if (!admin.isActive) {
-            throw new ForbiddenError('This account is inactive', 'ACCOUNT_INACTIVE');
-        }
-
-        const payload = { sub: admin.id, role: admin.role, mobile: admin.mobile };
-        return {
-            tokens: {
-                accessToken: signPlatformAdminAccessToken(payload),
-                refreshToken: signPlatformAdminRefreshToken(payload),
-            },
-            admin: { id: admin.id, name: admin.name, mobile: admin.mobile, role: admin.role as PlatformAdminRole, isActive: admin.isActive },
-            access: null, // SUPER_ADMIN is always unrestricted — resolvePlatformAccess's own convention
-        };
-    }
-
-    const employee = await findLivikEmployeeByPhone(input.mobile);
-    if (!employee || !employee.password) {
+    if (!admin) {
         // No real hash to check against — compare against a dummy one so this path
         // takes about as long as the real-candidate path (timing side-channel mitigation).
         await comparePassword(input.password, dummyPasswordHash);
@@ -90,14 +71,28 @@ export async function loginPlatformAdmin(input: PlatformAdminLoginInput) {
     }
 
     const payload = { sub: admin.id, role: admin.role, mobile: admin.mobile };
-    const tokens = {
-        accessToken: signPlatformAdminAccessToken(payload),
-        refreshToken: signPlatformAdminRefreshToken(payload),
-    };
-
     return {
-        tokens,
-        admin: { id: admin.id, name: admin.name, mobile: admin.mobile, role: admin.role, isActive: admin.isActive },
+        tokens: {
+            accessToken: signPlatformAdminAccessToken(payload),
+            refreshToken: signPlatformAdminRefreshToken(payload),
+        },
+        admin: { id: admin.id, name: admin.name, mobile: admin.mobile, role: admin.role as PlatformAdminRole, isActive: admin.isActive },
+        access: null, // SUPER_ADMIN is always unrestricted — resolvePlatformAccess's own convention
+    };
+}
+
+/**
+ * Re-resolves the current LK Space session's profile from scratch — used by GET
+ * /platform/admin/me so an already-logged-in session reflects any change (e.g. deactivation)
+ * without forcing logout, mirroring the company-side getCurrentUser. SUPER_ADMIN only for now —
+ * see the TODO on loginPlatformAdmin above.
+ */
+export async function getCurrentPlatformAdmin(_role: PlatformAdminRole, sub: string) {
+    const admin = await findPlatformAdminById(sub);
+    if (!admin) throw new UnauthorizedError('Authentication required', 'AUTH_REQUIRED');
+    return {
+        admin: { id: admin.id, name: admin.name, mobile: admin.mobile, role: admin.role as PlatformAdminRole, isActive: admin.isActive },
+        access: null,
     };
 }
 

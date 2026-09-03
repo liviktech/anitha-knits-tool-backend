@@ -43,6 +43,15 @@ export async function findPlatformAdminByMobile(mobile: string): Promise<Platfor
     );
 }
 
+export async function findPlatformAdminById(id: string): Promise<PlatformAdminRow | null> {
+    return queryOne<PlatformAdminRow>(
+        `SELECT id, name, mobile, role, is_active AS "isActive", created_at AS "createdAt"
+         FROM platform_admins
+         WHERE id = $1`,
+        [id],
+    );
+}
+
 /** Sets a freshly-hashed password (forgot-password flow) — never accepts a plaintext value. */
 export async function updatePasswordHash(id: string, passwordHash: string): Promise<void> {
     await query('UPDATE platform_admins SET password_hash = $1, updated_at = now() WHERE id = $2', [passwordHash, id]);
