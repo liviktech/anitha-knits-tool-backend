@@ -1,3 +1,4 @@
+import jwt from 'jsonwebtoken';
 import { getConstraintName, isUniqueViolation } from '../db/errors.js';
 import { withTransaction } from '../db/transaction.js';
 import {
@@ -16,6 +17,7 @@ import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import { nextCustomUserId, withMappedEmployeeDetails } from './userService.js';
 import { seedCompanyMasterData } from './masterDataSeedService.js';
 import { resolveUserAccess } from './roleAccessService.js';
+import { env } from '../config/env.js';
 import {
   createCompany,
   existsCompanyById,
@@ -30,6 +32,7 @@ import {
   insertUser,
   listCompanyUsers as listCompanyUsersRepo,
   updateLastLogin,
+  updatePasswordHash,
 } from '../repositories/user.repository.js';
 import type { TokenPayload } from '../types/auth.js';
 import type {
@@ -39,6 +42,13 @@ import type {
   SignupInput,
   UpdateCompanyInput,
 } from '../validations/authValidation.js';
+
+/** Claims signed by otpService.issueResetToken and expected here. */
+interface ResetTokenPayload {
+  mobile: string;
+  actorType: 'COMPANY_USER' | 'PLATFORM_ADMIN';
+  purpose: 'password_reset';
+}
 
 /** Maps a unique-constraint violation on Company to the field that caused it. */
 function mapUniqueConstraintError(err: unknown): never | undefined {
@@ -177,6 +187,95 @@ export async function loginUser(input: LoginInput) {
     },
     access,
   };
+}
+
+/**
+ * Issues a session for a mobile number whose OTP the caller has already verified
+ * (otpService.verifyOtp with purpose: 'LOGIN', actorType: 'COMPANY_USER') — this function's only
+ * job is resolving the single active account for that mobile and signing tokens, mirroring the
+ * tail end of loginUser (no password to check here; the OTP already served as the credential).
+ * Time: O(1); Space: O(1).
+ */
+export async function loginUserWithOtp(mobile: string) {
+  const candidates = await findLoginCandidatesByMobile(mobile);
+
+  if (candidates.length === 0) {
+    throw new UnauthorizedError('Invalid mobile number or password', 'INVALID_CREDENTIALS');
+  }
+  if (candidates.length > 1) {
+    // Two different companies' users share this mobile — same ambiguity loginUser guards against.
+    throw new ConflictError('Multiple accounts match this mobile number; contact support to sign in', 'AMBIGUOUS_LOGIN');
+  }
+
+  const user = candidates[0]!;
+  if (!user.isActive || !user.companyIsActive) {
+    throw new ForbiddenError('This account is inactive', 'ACCOUNT_INACTIVE');
+  }
+
+  await updateLastLogin(user.id);
+
+  const payload: TokenPayload = {
+    sub: user.id,
+    role: user.role,
+    companyId: user.companyId,
+    mobile: user.mobile,
+  };
+  const tokens = {
+    accessToken: signAccessToken(payload),
+    refreshToken: signRefreshToken(payload),
+  };
+  const access = await resolveUserAccess(user.role, user.roleAccessId, user.companyId);
+
+  return {
+    tokens,
+    user: {
+      id: user.id,
+      companyId: user.companyId,
+      name: user.name,
+      mobile: user.mobile,
+      role: user.role,
+      isActive: user.isActive,
+    },
+    company: {
+      id: user.companyId,
+      name: user.companyName,
+      companyCode: user.companyCode,
+    },
+    access,
+  };
+}
+
+/**
+ * Completes the forgot-password flow: verifies the short-lived resetToken issued right after a
+ * successful RESET_PASSWORD OTP verify (otpService.issueResetToken), re-resolves the single
+ * matching active account for `mobile`, and overwrites its password hash. Time: O(1); Space: O(1).
+ */
+export async function resetUserPassword(mobile: string, resetToken: string, newPassword: string): Promise<void> {
+  let payload: ResetTokenPayload;
+  try {
+    payload = jwt.verify(resetToken, env.RESET_TOKEN_SECRET) as ResetTokenPayload;
+  } catch {
+    throw new UnauthorizedError('Invalid or expired reset token', 'RESET_TOKEN_INVALID');
+  }
+  if (payload.mobile !== mobile || payload.purpose !== 'password_reset' || payload.actorType !== 'COMPANY_USER') {
+    throw new UnauthorizedError('Invalid or expired reset token', 'RESET_TOKEN_INVALID');
+  }
+
+  const candidates = await findLoginCandidatesByMobile(mobile);
+  if (candidates.length === 0) {
+    throw new UnauthorizedError('Invalid or expired reset token', 'RESET_TOKEN_INVALID');
+  }
+  if (candidates.length > 1) {
+    throw new ConflictError('Multiple accounts match this mobile number; contact support to sign in', 'AMBIGUOUS_LOGIN');
+  }
+
+  const user = candidates[0]!;
+  if (!user.isActive || !user.companyIsActive) {
+    throw new ForbiddenError('This account is inactive', 'ACCOUNT_INACTIVE');
+  }
+
+  const passwordHash = await hashPassword(newPassword);
+  await updatePasswordHash(user.id, passwordHash);
 }
 
 /**

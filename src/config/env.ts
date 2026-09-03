@@ -53,6 +53,19 @@ const envSchema = z.object({
     AWS_ACCESS_KEY_ID: z.string().min(1, 'AWS_ACCESS_KEY_ID is required'),
     AWS_SECRET_ACCESS_KEY: z.string().min(1, 'AWS_SECRET_ACCESS_KEY is required'),
     AWS_S3_BUCKET_NAME: z.string().min(1, 'AWS_S3_BUCKET_NAME is required'),
+    // AWS Pinpoint (SMS OTP) - reuses AWS_REGION/AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY above.
+    PINPOINT_APPLICATION_ID: z.string().min(1, 'PINPOINT_APPLICATION_ID is required'),
+    PINPOINT_SMS_TEMPLATE_LOGIN: z.string().min(1, 'PINPOINT_SMS_TEMPLATE_LOGIN is required'),
+    PINPOINT_SMS_TEMPLATE_RESET: z.string().min(1, 'PINPOINT_SMS_TEMPLATE_RESET is required'),
+    // Optional: SMSMessage.OriginationNumber is optional in the Pinpoint SDK — if unset, Pinpoint
+    // assigns a random long code per message.
+    PINPOINT_ORIGINATION_NUMBER: z.string().optional(),
+    OTP_LENGTH: z.coerce.number().int().positive().default(6),
+    OTP_TTL_MINUTES: z.coerce.number().int().positive().default(2),
+    OTP_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
+    // Signs the short-lived token handed back after a successful RESET_PASSWORD OTP verify,
+    // exchanged for the actual password reset — separate secret from JWT_SECRET.
+    RESET_TOKEN_SECRET: z.string().min(32, 'RESET_TOKEN_SECRET must be at least 32 characters'),
 });
 
 const parsed = envSchema.safeParse(process.env);

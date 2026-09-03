@@ -1,4 +1,4 @@
-import { queryOne } from '../db/query.js';
+import { query, queryOne } from '../db/query.js';
 import type { PlatformAdminRole } from '../types/enums.js';
 
 export interface PlatformAdminRow {
@@ -41,4 +41,9 @@ export async function findPlatformAdminByMobile(mobile: string): Promise<Platfor
          WHERE mobile = $1`,
         [mobile],
     );
+}
+
+/** Sets a freshly-hashed password (forgot-password flow) — never accepts a plaintext value. */
+export async function updatePasswordHash(id: string, passwordHash: string): Promise<void> {
+    await query('UPDATE platform_admins SET password_hash = $1, updated_at = now() WHERE id = $2', [passwordHash, id]);
 }
