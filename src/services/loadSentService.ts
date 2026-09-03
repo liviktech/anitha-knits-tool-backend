@@ -1,472 +1,99 @@
-import { Prisma, ProductionStage } from '@prisma/client';
-import { prisma } from '../config/prisma.js';
 import { NotFoundError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import { roundKg } from '../utils/decimal.js';
 import { assertColorExists, assertSizeExists } from './masterDataService.js';
 import type { CreateLoadSentInput, UpdateLoadSentInput, ListLoadSentQuery } from '../validations/loadSentValidation.js';
+import {
+    createLoadSent as createLoadSentRepo,
+    deleteLoadSent as deleteLoadSentRepo,
+    findFabricCheckingRowsForStock,
+    findLoadSentExisting,
+    findLoadSentRowsForStock,
+    findLoadSentRowsForSummary,
+    findWastageRowsForStock,
+    getLoadSentById as getLoadSentByIdRepo,
+    listLoadSent as listLoadSentRepo,
+    updateLoadSent as updateLoadSentRepo,
+    type LoadSentRecordRow,
+} from '../repositories/loadSent.repository.js';
 
-// const loadSentSelect = {
-//     id: true,
-//     date: true,
-//     color: { select: { id: true, name: true } },
-//     size: { select: { id: true, name: true } },
-//     fabricWeight: true,
-//     fwWeight: true,
-//     bwWeight: true,
-//     totalWastageWeight: true,
-//     createdAt: true,
-//     createdBy: true,
-//     updatedAt: true,
-//     updatedBy: true,
-// } satisfies Prisma.LoadSentSelect;
-
-const loadSentSelect = {
-    id: true,
-
-    stage: true,
-
-    productionDate: true,
-
-    remarks: true,
-
-    color: {
-        select: {
-            id: true,
-            name: true,
-        },
-    },
-
-    size: {
-        select: {
-            id: true,
-            name: true,
-        },
-    },
-
-    loadSent: {
-        select: {
-            fabricWeight: true,
-            fwWeight: true,
-            bwWeight: true,
-            totalWastageWeight: true,
-            driverName: true,
-            vehicleNo: true,
-        },
-    },
-
-    createdAt: true,
-    createdBy: true,
-
-    updatedAt: true,
-    updatedBy: true,
-} satisfies Prisma.ProductionRecordSelect;
-
-// type LoadSentRow = Prisma.LoadSentGetPayload<{ select: typeof loadSentSelect }>;
-type LoadSentRecordRow =
-    Prisma.ProductionRecordGetPayload<{
-        select: typeof loadSentSelect;
-    }>;
-// function mapLoadSentRecord(record: LoadSentRow) {
-//     return {
-//         ...record,
-//         fabricWeight: record.fabricWeight.toNumber(),
-//         fwWeight: record.fwWeight.toNumber(),
-//         bwWeight: record.bwWeight.toNumber(),
-//         totalWastageWeight: record.totalWastageWeight.toNumber(),
-//     };
-// }
-
-function mapLoadSentRecord(
-    record: LoadSentRecordRow,
-) {
-    const {
-        loadSent,
-        ...rest
-    } = record;
-
-    return {
-        ...rest,
-
-        loadSent: loadSent
-            ? {
-                fabricWeight: loadSent.fabricWeight.toNumber(),
-                fwWeight: loadSent.fwWeight.toNumber(),
-                bwWeight: loadSent.bwWeight.toNumber(),
-                totalWastageWeight:
-                    loadSent.totalWastageWeight.toNumber(),
-                driverName: loadSent.driverName,
-                vehicleNo: loadSent.vehicleNo,
-            }
-            : null,
-    };
+function mapLoadSentRecord(record: LoadSentRecordRow) {
+    return record;
 }
-// export async function createLoadSent(input: CreateLoadSentInput, companyId: string, actor: string) {
-//     await Promise.all([assertColorExists(input.colorId, companyId), assertSizeExists(input.sizeId, companyId)]);
 
-//     const fabricWeight = input.fabricWeight ?? 0;
-//     const fwWeight = 0;
-//     const bwWeight = 0;
-//     const totalWastageWeight = 0;
+export async function createLoadSent(input: CreateLoadSentInput, companyId: string, actor: string) {
+    await Promise.all([assertColorExists(input.colorId, companyId), assertSizeExists(input.sizeId, companyId)]);
 
-//     const record = await prisma.loadSent.create({
-//         data: {
-//             companyId,
-//             date: input.date,
-//             colorId: input.colorId,
-//             sizeId: input.sizeId,
-//             fabricWeight,
-//             fwWeight,
-//             bwWeight,
-//             totalWastageWeight,
-//             createdBy: actor,
-//         },
-//         select: loadSentSelect,
-//     });
-
-//     return mapLoadSentRecord(record);
-// }
-
-export async function createLoadSent(
-    input: CreateLoadSentInput,
-    companyId: string,
-    actor: string,
-) {
-    await Promise.all([
-        assertColorExists(
-            input.colorId,
-            companyId,
-        ),
-
-        assertSizeExists(
-            input.sizeId,
-            companyId,
-        ),
-    ]);
-
-    const record =
-        await prisma.productionRecord.create({
-            data: {
-                companyId,
-
-                stage:
-                    ProductionStage.DELIVERY,
-
-                productionDate:
-                    input.productionDate,
-
-                colorId:
-                    input.colorId,
-
-                sizeId:
-                    input.sizeId,
-
-                createdBy:
-                    actor,
-
-                loadSent: {
-                    create: {
-                        company: {
-                            connect: {
-                                id: companyId,
-                            },
-                        },
-                        color: {
-                            connect: {
-                                id: input.colorId,
-                            },
-                        },
-                        size: {
-                            connect: {
-                                id: input.sizeId,
-                            },
-                        },
-                        fabricWeight: input.fabricWeight,
-                        driverName: input.driverName,
-                        vehicleNo: input.vehicleNo,
-                        createdBy: actor,
-                    },
-                },
-            },
-
-            select:
-                loadSentSelect,
-        });
-
-    return mapLoadSentRecord(record);
-}
-export async function listLoadSent(
-    query: ListLoadSentQuery,
-    companyId: string,
-) {
-    const { skip, take } = toSkipTake(query);
-
-    const where: Prisma.ProductionRecordWhereInput = {
+    const record = await createLoadSentRepo({
         companyId,
-        stage: ProductionStage.DELIVERY,
-
-        ...(query.date_from || query.date_to
-            ? {
-                productionDate: {
-                    ...(query.date_from
-                        ? { gte: query.date_from }
-                        : {}),
-
-                    ...(query.date_to
-                        ? { lte: query.date_to }
-                        : {}),
-                },
-            }
-            : {}),
-
-        ...(query.color_id
-            ? {
-                colorId: query.color_id,
-            }
-            : {}),
-
-        ...(query.size_id
-            ? {
-                sizeId: query.size_id,
-            }
-            : {}),
-
-        loadSent: {
-            isNot: null,
-        },
-    };
-
-    const [rows, total] = await prisma.$transaction([
-        prisma.productionRecord.findMany({
-            where,
-            select: loadSentSelect,
-
-            orderBy: [
-                {
-                    productionDate: 'desc',
-                },
-                {
-                    createdAt: 'desc',
-                },
-            ],
-
-            skip,
-            take,
-        }),
-
-        prisma.productionRecord.count({
-            where,
-        }),
-    ]);
-
-    return {
-        items: rows.map(mapLoadSentRecord),
-        meta: toPageMeta(query, total),
-    };
-}
-
-export async function getLoadSentById(
-    id: string,
-    companyId: string,
-) {
-    const record = await prisma.productionRecord.findFirst({
-        where: {
-            id,
-            companyId,
-            stage: ProductionStage.DELIVERY,
-            loadSent: {
-                isNot: null,
-            },
-        },
-        select: loadSentSelect,
+        productionDate: input.productionDate,
+        colorId: input.colorId,
+        sizeId: input.sizeId,
+        actor,
+        fabricWeight: input.fabricWeight,
+        driverName: input.driverName,
+        vehicleNo: input.vehicleNo,
     });
 
-    if (!record) {
-        throw new NotFoundError(
-            'Load Sent record not found',
-            'LOAD_SENT_NOT_FOUND',
-            { id },
-        );
-    }
-
     return mapLoadSentRecord(record);
 }
 
-export async function updateLoadSent(
-    id: string,
-    input: UpdateLoadSentInput,
-    companyId: string,
-    actor: string,
-) {
-    const existing =
-        await prisma.productionRecord.findFirst({
-            where: {
-                id,
-                companyId,
-                stage: ProductionStage.DELIVERY,
-                loadSent: {
-                    isNot: null,
-                },
-            },
+export async function listLoadSent(query: ListLoadSentQuery, companyId: string) {
+    const { skip, take } = toSkipTake(query);
+    const { rows, total } = await listLoadSentRepo(
+        { date_from: query.date_from, date_to: query.date_to, color_id: query.color_id, size: query.size_id },
+        companyId,
+        skip,
+        take,
+    );
 
-            select: {
-                id: true,
-                productionDate: true,
-                colorId: true,
-                sizeId: true,
+    return { items: rows.map(mapLoadSentRecord), meta: toPageMeta(query, total) };
+}
 
-                loadSent: {
-                    select: {
-                        fabricWeight: true,
-                        fwWeight: true,
-                        bwWeight: true,
-                        driverName: true,
-                        vehicleNo: true,
-                    },
-                },
-            },
-        });
+export async function getLoadSentById(id: string, companyId: string) {
+    const record = await getLoadSentByIdRepo(id, companyId);
+    if (!record) throw new NotFoundError('Load Sent record not found', 'LOAD_SENT_NOT_FOUND', { id });
+    return mapLoadSentRecord(record);
+}
 
-    if (!existing || !existing.loadSent) {
-        throw new NotFoundError(
-            'Load Sent record not found',
-            'LOAD_SENT_NOT_FOUND',
-            { id },
-        );
-    }
+export async function updateLoadSent(id: string, input: UpdateLoadSentInput, companyId: string, actor: string) {
+    const existing = await findLoadSentExisting(id, companyId);
+    if (!existing) throw new NotFoundError('Load Sent record not found', 'LOAD_SENT_NOT_FOUND', { id });
 
     // Validate new master-data IDs if supplied
     await Promise.all([
-        input.colorId
-            ? assertColorExists(
-                input.colorId,
-                companyId,
-            )
-            : undefined,
-
-        input.sizeId
-            ? assertSizeExists(
-                input.sizeId,
-                companyId,
-            )
-            : undefined,
+        input.colorId ? assertColorExists(input.colorId, companyId) : undefined,
+        input.sizeId ? assertSizeExists(input.sizeId, companyId) : undefined,
     ]);
 
-    const fabricWeight =
-        input.fabricWeight !== undefined
-            ? input.fabricWeight
-            : existing.loadSent.fabricWeight.toNumber();
+    const fabricWeight = input.fabricWeight !== undefined ? input.fabricWeight : existing.fabricWeight;
+    const fwWeight = input.fwWeight !== undefined ? input.fwWeight : existing.fwWeight;
+    const bwWeight = input.bwWeight !== undefined ? input.bwWeight : existing.bwWeight;
+    const totalWastageWeight = fwWeight + bwWeight;
+    const driverName = input.driverName !== undefined ? input.driverName : existing.driverName;
+    const vehicleNo = input.vehicleNo !== undefined ? input.vehicleNo : existing.vehicleNo;
 
-    const fwWeight =
-        input.fwWeight !== undefined
-            ? input.fwWeight
-            : existing.loadSent.fwWeight.toNumber();
-
-    const bwWeight =
-        input.bwWeight !== undefined
-            ? input.bwWeight
-            : existing.loadSent.bwWeight.toNumber();
-
-    const totalWastageWeight =
-        fwWeight + bwWeight;
-
-    const driverName =
-        input.driverName !== undefined
-            ? input.driverName
-            : existing.loadSent.driverName;
-
-    const vehicleNo =
-        input.vehicleNo !== undefined
-            ? input.vehicleNo
-            : existing.loadSent.vehicleNo;
-
-    const record =
-        await prisma.productionRecord.update({
-            where: {
-                id,
-            },
-
-            data: {
-                ...(input.productionDate !== undefined
-                    ? {
-                        productionDate:
-                            input.productionDate,
-                    }
-                    : {}),
-
-                ...(input.colorId !== undefined
-                    ? {
-                        color: {
-                            connect: {
-                                id: input.colorId,
-                            },
-                        },
-                    }
-                    : {}),
-
-                ...(input.sizeId !== undefined
-                    ? {
-                        size: {
-                            connect: {
-                                id: input.sizeId,
-                            },
-                        },
-                    }
-                    : {}),
-
-                updatedBy: actor,
-
-                loadSent: {
-                    update: {
-                        fabricWeight,
-                        fwWeight,
-                        bwWeight,
-                        totalWastageWeight,
-                        driverName,
-                        vehicleNo,
-                        updatedBy: actor,
-                    },
-                },
-            },
-
-            select: loadSentSelect,
-        });
+    const record = await updateLoadSentRepo(id, {
+        productionDate: input.productionDate,
+        colorId: input.colorId,
+        sizeId: input.sizeId,
+        actor,
+        fabricWeight,
+        fwWeight,
+        bwWeight,
+        totalWastageWeight,
+        driverName,
+        vehicleNo,
+    });
 
     return mapLoadSentRecord(record);
 }
 
-export async function deleteLoadSent(
-    id: string,
-    companyId: string,
-) {
-    const existing =
-        await prisma.productionRecord.findFirst({
-            where: {
-                id,
-                companyId,
-                stage: ProductionStage.DELIVERY,
-                loadSent: {
-                    isNot: null,
-                },
-            },
-            select: {
-                id: true,
-            },
-        });
+export async function deleteLoadSent(id: string, companyId: string) {
+    const existing = await findLoadSentExisting(id, companyId);
+    if (!existing) throw new NotFoundError('Load Sent record not found', 'LOAD_SENT_NOT_FOUND', { id });
 
-    if (!existing) {
-        throw new NotFoundError(
-            'Load Sent record not found',
-            'LOAD_SENT_NOT_FOUND',
-            { id },
-        );
-    }
-
-    await prisma.productionRecord.delete({
-        where: {
-            id,
-        },
-    });
+    await deleteLoadSentRepo(id);
 }
 
 export type LoadSentVariantSummary = {
@@ -492,30 +119,27 @@ export type LoadSentSummary = {
  *
  * Time: O(n) — n = Load Sent records in the range (one query, one pass).
  */
-export async function getLoadSentSummaryByDateRange(
-    companyId: string,
-    dateFrom: Date,
-    dateTo: Date,
-): Promise<LoadSentSummary> {
-    const rows = await prisma.productionRecord.findMany({
-        where: {
-            companyId,
-            stage: ProductionStage.DELIVERY,
-            productionDate: { gte: dateFrom, lte: dateTo },
-            loadSent: { isNot: null },
-        },
-        select: loadSentSelect,
-        orderBy: [{ productionDate: 'desc' }, { createdAt: 'desc' }],
-    });
+export async function getLoadSentSummaryByDateRange(companyId: string, dateFrom: Date, dateTo: Date): Promise<LoadSentSummary> {
+    const rows = await findLoadSentRowsForSummary(companyId, dateFrom, dateTo);
 
-    const items = rows.map(mapLoadSentRecord);
+    const items = rows.map((row) => ({
+        id: row.id,
+        color: { id: row.colorId, name: row.colorName },
+        size: { id: row.sizeId, name: row.sizeName },
+        productionDate: row.productionDate,
+        loadSent: {
+            fabricWeight: row.fabricWeight,
+            fwWeight: row.fwWeight,
+            bwWeight: row.bwWeight,
+            totalWastageWeight: row.totalWastageWeight,
+        },
+    }));
 
     const totals = { fabricWeightKg: 0, fwWeightKg: 0, bwWeightKg: 0, totalWastageWeightKg: 0 };
     const byVariantMap = new Map<string, LoadSentVariantSummary>();
     const dailyMap = new Map<string, number>();
 
     for (const item of items) {
-        if (!item.loadSent) continue;
         totals.fabricWeightKg += item.loadSent.fabricWeight;
         totals.fwWeightKg += item.loadSent.fwWeight;
         totals.bwWeightKg += item.loadSent.bwWeight;
@@ -537,7 +161,7 @@ export async function getLoadSentSummaryByDateRange(
     }
 
     return {
-        items,
+        items: items as unknown as ReturnType<typeof mapLoadSentRecord>[],
         totals: {
             fabricWeightKg: roundKg(totals.fabricWeightKg),
             fwWeightKg: roundKg(totals.fwWeightKg),
@@ -551,60 +175,18 @@ export async function getLoadSentSummaryByDateRange(
             bwWeightKg: roundKg(entry.bwWeightKg),
             totalWastageWeightKg: roundKg(entry.totalWastageWeightKg),
         })),
-        daily: Array.from(dailyMap.entries()).map(([date, quantityKg]) => ({
-            date,
-            quantityKg: roundKg(quantityKg),
-        })).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)),
+        daily: Array.from(dailyMap.entries())
+            .map(([date, quantityKg]) => ({ date, quantityKg: roundKg(quantityKg) }))
+            .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)),
     };
 }
 
 export async function getStockBalance(companyId: string) {
-    const fabricCheckingRows = await prisma.productionRecord.findMany({
-        where: { companyId, stage: 'FABRIC_CHECKING' },
-        select: {
-            colorId: true,
-            color: { select: { id: true, name: true } },
-            sizeId: true,
-            size: { select: { id: true, name: true } },
-            fabricCheck: {
-                select: {
-                    outputKg: true,
-                },
-            },
-        },
-    });
-
-    const wastageRows = await prisma.wastageRecord.findMany({
-        where: {
-            companyId,
-            productionRecord: { stage: 'FABRIC_CHECKING' },
-        },
-        select: {
-            quantityKg: true,
-            wastageType: { select: { code: true } },
-            productionRecord: {
-                select: {
-                    colorId: true,
-                    color: { select: { id: true, name: true } },
-                    sizeId: true,
-                    size: { select: { id: true, name: true } },
-                },
-            },
-        },
-    });
-
-    const loadSentRows = await prisma.loadSent.findMany({
-        where: { companyId },
-        select: {
-            colorId: true,
-            color: { select: { id: true, name: true } },
-            sizeId: true,
-            size: { select: { id: true, name: true } },
-            fabricWeight: true,
-            fwWeight: true,
-            bwWeight: true,
-        },
-    });
+    const [fabricCheckingRows, wastageRows, loadSentRows] = await Promise.all([
+        findFabricCheckingRowsForStock(companyId),
+        findWastageRowsForStock(companyId),
+        findLoadSentRowsForStock(companyId),
+    ]);
 
     const stockMap = new Map<
         string,
@@ -623,12 +205,7 @@ export async function getStockBalance(companyId: string) {
         }
     >();
 
-    function getOrCreate(
-        colorId: string,
-        sizeId: string,
-        color: { id: string; name: string },
-        size: { id: string; name: string },
-    ) {
+    function getOrCreate(colorId: string, sizeId: string, color: { id: string; name: string }, size: { id: string; name: string }) {
         const key = `${colorId}_${sizeId}`;
         if (!stockMap.has(key)) {
             stockMap.set(key, {
@@ -649,30 +226,24 @@ export async function getStockBalance(companyId: string) {
     }
 
     for (const row of fabricCheckingRows) {
-        if (!row.color || !row.size) continue;
-        const entry = getOrCreate(row.colorId, row.sizeId, row.color, row.size);
-        const output = row.fabricCheck?.outputKg ? row.fabricCheck.outputKg.toNumber() : 0;
-        entry.fabricCheckingOutputKg += output;
+        const entry = getOrCreate(row.colorId, row.sizeId, { id: row.colorId, name: row.colorName }, { id: row.sizeId, name: row.sizeName });
+        entry.fabricCheckingOutputKg += row.outputKg ?? 0;
     }
 
     for (const row of wastageRows) {
-        if (!row.productionRecord || !row.productionRecord.color || !row.productionRecord.size) continue;
-        const pRecord = row.productionRecord;
-        const entry = getOrCreate(pRecord.colorId, pRecord.sizeId, pRecord.color, pRecord.size);
-        const qty = row.quantityKg.toNumber();
-        if (row.wastageType.code === 'FW') {
-            entry.wastageFwGeneratedKg += qty;
-        } else if (row.wastageType.code === 'BW') {
-            entry.wastageBwGeneratedKg += qty;
+        const entry = getOrCreate(row.colorId, row.sizeId, { id: row.colorId, name: row.colorName }, { id: row.sizeId, name: row.sizeName });
+        if (row.wastageTypeCode === 'FW') {
+            entry.wastageFwGeneratedKg += row.quantityKg;
+        } else if (row.wastageTypeCode === 'BW') {
+            entry.wastageBwGeneratedKg += row.quantityKg;
         }
     }
 
     for (const row of loadSentRows) {
-        if (!row.color || !row.size) continue;
-        const entry = getOrCreate(row.colorId, row.sizeId, row.color, row.size);
-        entry.loadSentFabricWeightKg += row.fabricWeight.toNumber();
-        entry.loadSentFwWeightKg += row.fwWeight.toNumber();
-        entry.loadSentBwWeightKg += row.bwWeight.toNumber();
+        const entry = getOrCreate(row.colorId, row.sizeId, { id: row.colorId, name: row.colorName }, { id: row.sizeId, name: row.sizeName });
+        entry.loadSentFabricWeightKg += row.fabricWeight;
+        entry.loadSentFwWeightKg += row.fwWeight;
+        entry.loadSentBwWeightKg += row.bwWeight;
     }
 
     const items = Array.from(stockMap.values()).map((entry) => {

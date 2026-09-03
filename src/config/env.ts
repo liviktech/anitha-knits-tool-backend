@@ -14,6 +14,12 @@ const envSchema = z.object({
                 .filter(Boolean),
         ),
     DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
+    // Pool sizing is deliberately env-driven, not hard-coded: a long-running process (Render/local)
+    // wants a real pool (today's default: 10), while a Lambda-behind-RDS-Proxy deployment should set
+    // DB_POOL_MAX=1 per-instance and let RDS Proxy do the connection multiplexing across warm instances.
+    DB_POOL_MAX: z.coerce.number().int().positive().default(10),
+    DB_IDLE_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+    DB_CONNECTION_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
     JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
     JWT_EXPIRES_IN: z
         .string()

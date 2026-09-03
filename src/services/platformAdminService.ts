@@ -1,18 +1,9 @@
-import { Prisma } from '@prisma/client';
-import { prisma } from '../config/prisma.js';
+import { isUniqueViolation } from '../db/errors.js';
+import { countPlatformAdmins, createPlatformAdmin, findPlatformAdminByMobile } from '../repositories/platformAdmin.repository.js';
 import { ConflictError, ForbiddenError, UnauthorizedError } from '../utils/errors.js';
 import { comparePassword, dummyPasswordHash, hashPassword } from '../utils/password.js';
 import { signPlatformAdminAccessToken, signPlatformAdminRefreshToken } from '../utils/platformAdminJwt.js';
 import type { PlatformAdminLoginInput, PlatformAdminSignupInput } from '../validations/platformAdminValidation.js';
-
-const platformAdminSelect = {
-    id: true,
-    name: true,
-    mobile: true,
-    role: true,
-    isActive: true,
-    createdAt: true,
-} satisfies Prisma.PlatformAdminSelect;
 
 /**
  * Registers the platform's one super-admin. One-time bootstrap: once a PlatformAdmin
@@ -20,7 +11,7 @@ const platformAdminSelect = {
  * Time: O(1); Space: O(1).
  */
 export async function signupPlatformAdmin(input: PlatformAdminSignupInput) {
-    const existingCount = await prisma.platformAdmin.count();
+    const existingCount = await countPlatformAdmins();
     if (existingCount > 0) {
         throw new ConflictError('A platform admin already exists', 'PLATFORM_ADMIN_ALREADY_EXISTS');
     }
@@ -28,12 +19,9 @@ export async function signupPlatformAdmin(input: PlatformAdminSignupInput) {
     const passwordHash = await hashPassword(input.password);
 
     try {
-        return await prisma.platformAdmin.create({
-            data: { name: input.name, mobile: input.mobile, passwordHash },
-            select: platformAdminSelect,
-        });
+        return await createPlatformAdmin({ name: input.name, mobile: input.mobile, passwordHash });
     } catch (err) {
-        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        if (isUniqueViolation(err)) {
             throw new ConflictError('A platform admin already exists', 'PLATFORM_ADMIN_ALREADY_EXISTS');
         }
         throw err;
@@ -42,10 +30,7 @@ export async function signupPlatformAdmin(input: PlatformAdminSignupInput) {
 
 /** Authenticates a platform admin by mobile + password. Time: O(1); Space: O(1). */
 export async function loginPlatformAdmin(input: PlatformAdminLoginInput) {
-    const admin = await prisma.platformAdmin.findUnique({
-        where: { mobile: input.mobile },
-        select: { ...platformAdminSelect, passwordHash: true },
-    });
+    const admin = await findPlatformAdminByMobile(input.mobile);
 
     if (!admin) {
         // No real hash to check against — compare against a dummy one so this path

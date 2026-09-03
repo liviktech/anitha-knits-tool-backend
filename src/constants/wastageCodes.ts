@@ -1,5 +1,5 @@
 /**
- * Stable WastageType codes, matching prisma/seed.ts §6 exactly. Branch on
+ * Stable WastageType codes, matching scripts/seed.ts §6 exactly. Branch on
  * these, not on the human-readable `name` (which operators may rename).
  */
 export const WASTAGE_CODES = {

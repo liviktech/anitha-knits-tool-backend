@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { UserRole } from '@prisma/client';
+import { UserRole } from '../types/enums.js';
 import { booleanQueryParam, paginationSchema } from '../utils/pagination.js';
 
 export const signupSchema = z

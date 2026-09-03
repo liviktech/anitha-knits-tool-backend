@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { InventoryType } from '@prisma/client';
+import { InventoryType } from '../types/enums.js';
 import { paginationSchema } from '../utils/pagination.js';
 
 export const inventoryIdParamsSchema = z

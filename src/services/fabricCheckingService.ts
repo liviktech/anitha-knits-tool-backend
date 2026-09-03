@@ -1,15 +1,30 @@
-import { Prisma, ProductionStage, UserRole } from '@prisma/client';
-import { prisma } from '../config/prisma.js';
+import { withTransaction } from '../db/transaction.js';
+import { ProductionStage, UserRole } from '../types/enums.js';
 import { NotFoundError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import { roundKg } from '../utils/decimal.js';
-import { buildProductionWhere } from '../utils/productionFilters.js';
 import { assertColorExists, assertSizeExists } from './masterDataService.js';
-import { buildWastageCreates, mapWastageRecord, wastageSelect } from './wastageService.js';
+import { applyWastageUpdates, buildWastageCreates } from './wastageService.js';
 import { WASTAGE_CODES } from '../constants/wastageCodes.js';
 import { updateKoraBalance, reverseKoraBalance } from './koraBalanceService.js';
-import { applyWastageUpdates } from './wastageService.js';
 import { assertCanCreateProductionRecord, assertCanDeleteProductionRecord, assertCanUpdateProductionRecord } from './productionCeilings.js';
+import {
+    approveProductionRecord,
+    deleteProductionRecord,
+    deleteWastagesForProduction,
+    findFabricCheckingExisting,
+    findFabricCheckingProductionByIdTx,
+    findFabricCheckingRowsForSummary,
+    findFabricCheckingWastagesForSummary,
+    findLatestLoomFabricOutput,
+    getFabricCheckingProductionById as getFabricCheckingProductionByIdRepo,
+    insertFabricCheckingProduction,
+    listFabricCheckingProductions as listFabricCheckingProductionsRepo,
+    updateFabricCheckingDetail,
+    updateFabricCheckingHeader,
+    type FabricCheckingRecordRow,
+} from '../repositories/fabricChecking.repository.js';
+import { insertWastageRecord } from '../repositories/wastage.repository.js';
 import type { CreateFabricCheckingInput, UpdateFabricCheckingInput, ListFabricCheckingQuery } from '../validations/fabricCheckingValidation.js';
 
 /**
@@ -29,43 +44,9 @@ import type { CreateFabricCheckingInput, UpdateFabricCheckingInput, ListFabricCh
  * domain skill is explicit that reconciliation variances must stay visible
  * for management review, not be silently forced to match.
  */
-const fabricCheckingSelect = {
-    id: true,
-    stage: true,
-    productionDate: true,
-    remarks: true,
-    color: { select: { id: true, name: true } },
-    size: { select: { id: true, name: true } },
-    fabricCheck: {
-        select: {
-            fabricInputKg: true,
-            outputKg: true,
-        },
-    },
-    wastages: { select: wastageSelect },
-    isApproved: true,
-    approvedAt: true,
-    approvedBy: true,
-    createdAt: true,
-    createdBy: true,
-    updatedAt: true,
-    updatedBy: true,
-} satisfies Prisma.ProductionRecordSelect;
-
-type FabricCheckingRecordRow = Prisma.ProductionRecordGetPayload<{ select: typeof fabricCheckingSelect }>;
 
 function mapFabricCheckingRecord(record: FabricCheckingRecordRow) {
-    const { fabricCheck, wastages, ...rest } = record;
-    return {
-        ...rest,
-        fabricCheck: fabricCheck
-            ? {
-                fabricInputKg: fabricCheck.fabricInputKg.toNumber(),
-                outputKg: fabricCheck.outputKg ? fabricCheck.outputKg.toNumber() : null,
-            }
-            : null,
-        wastages: wastages.map(mapWastageRecord),
-    };
+    return record;
 }
 
 export async function createFabricCheckingRecord(
@@ -81,54 +62,45 @@ export async function createFabricCheckingRecord(
 
     // BW ("Bit Wastage") is colour-tracked (PRD "B White"/"B Blue"), so it's
     // stored against this record's own colour; FW ("Fabric Wastage") is not.
-    const wastageCreates = await buildWastageCreates(ProductionStage.FABRIC_CHECKING, companyId, actor, [
+    const wastagePlans = await buildWastageCreates(ProductionStage.FABRIC_CHECKING, companyId, actor, [
         { code: WASTAGE_CODES.FW, quantityKg: input.fwKg },
         { code: WASTAGE_CODES.BW, quantityKg: input.bwKg, colorId: input.colorId },
     ]);
 
-    const record = await prisma.$transaction(async (tx) => {
-        const created = await tx.productionRecord.create({
-            data: {
-                companyId,
-                stage: ProductionStage.FABRIC_CHECKING,
-                productionDate: input.productionDate,
-                colorId: input.colorId,
-                sizeId: input.sizeId,
-                remarks: input.remarks,
-                createdBy: actor,
-                fabricCheck: {
-                    create: {
-                        fabricInputKg: input.fabricInputKg,
-                        outputKg: input.outputKg,
-                    },
-                },
-                ...(wastageCreates.length > 0 ? { wastages: { create: wastageCreates } } : {}),
-            },
-            select: fabricCheckingSelect,
+    const record = await withTransaction(async (client) => {
+        const productionRecordId = await insertFabricCheckingProduction(client, {
+            companyId,
+            productionDate: input.productionDate,
+            colorId: input.colorId,
+            sizeId: input.sizeId,
+            remarks: input.remarks,
+            actor,
+            fabricInputKg: input.fabricInputKg,
+            outputKg: input.outputKg,
         });
+
+        for (const plan of wastagePlans) {
+            await insertWastageRecord(client, productionRecordId, { companyId, ...plan });
+        }
 
         // Kora balance is no longer credited at Loom creation time (see
         // loomsService.createLoomsProduction) — it's updated here instead, net of the
         // latest Loom batch's fabric output against this check's fabric input.
-        const latestLoom = await tx.productionRecord.findFirst({
-            where: { companyId, stage: ProductionStage.LOOMS, colorId: input.colorId, sizeId: input.sizeId },
-            orderBy: [{ productionDate: 'desc' }, { createdAt: 'desc' }],
-            select: { loom: { select: { fabricOutputKg: true } } },
-        });
+        const latestLoomFabricOutputKg = await findLatestLoomFabricOutput(client, companyId, input.colorId, input.sizeId);
 
         await updateKoraBalance(
             companyId,
             input.colorId,
             input.sizeId,
-            latestLoom?.loom?.fabricOutputKg ?? 0,
+            latestLoomFabricOutputKg ?? 0,
             input.fabricInputKg,
             input.productionDate,
-            created.id,
+            productionRecordId,
             actor,
-            tx,
+            client,
         );
 
-        return created;
+        return findFabricCheckingProductionByIdTx(client, productionRecordId);
     });
 
     return mapFabricCheckingRecord(record);
@@ -136,27 +108,13 @@ export async function createFabricCheckingRecord(
 
 export async function listFabricCheckingRecords(query: ListFabricCheckingQuery, companyId: string) {
     const { skip, take } = toSkipTake(query);
-    const where = buildProductionWhere(ProductionStage.FABRIC_CHECKING, query, companyId);
-
-    const [rows, total] = await prisma.$transaction([
-        prisma.productionRecord.findMany({
-            where,
-            select: fabricCheckingSelect,
-            orderBy: [{ productionDate: 'desc' }, { createdAt: 'desc' }],
-            skip,
-            take,
-        }),
-        prisma.productionRecord.count({ where }),
-    ]);
+    const { rows, total } = await listFabricCheckingProductionsRepo(query, companyId, skip, take);
 
     return { items: rows.map(mapFabricCheckingRecord), meta: toPageMeta(query, total) };
 }
 
 export async function getFabricCheckingRecordById(id: string, companyId: string) {
-    const record = await prisma.productionRecord.findFirst({
-        where: { id, companyId, stage: ProductionStage.FABRIC_CHECKING },
-        select: fabricCheckingSelect,
-    });
+    const record = await getFabricCheckingProductionByIdRepo(id, companyId);
     if (!record) throw new NotFoundError('Fabric checking record not found', 'FABRIC_CHECKING_NOT_FOUND', { id });
     return mapFabricCheckingRecord(record);
 }
@@ -169,10 +127,7 @@ export async function updateFabricCheckingRecord(
     role: UserRole,
     callerId: string,
 ) {
-    const existing = await prisma.productionRecord.findFirst({
-        where: { id, companyId, stage: ProductionStage.FABRIC_CHECKING },
-        select: { id: true, isApproved: true, colorId: true },
-    });
+    const existing = await findFabricCheckingExisting(id, companyId);
     if (!existing) throw new NotFoundError('Fabric checking record not found', 'FABRIC_CHECKING_NOT_FOUND', { id });
 
     await assertCanUpdateProductionRecord(role, callerId, companyId, existing.isApproved);
@@ -182,24 +137,18 @@ export async function updateFabricCheckingRecord(
         input.sizeId ? assertSizeExists(input.sizeId, companyId) : undefined,
     ]);
 
-    const updated = await prisma.$transaction(async (tx) => {
-        await tx.productionRecord.update({
-            where: { id },
-            data: {
-                ...(input.productionDate ? { productionDate: input.productionDate } : {}),
-                ...(input.colorId ? { colorId: input.colorId } : {}),
-                ...(input.sizeId ? { sizeId: input.sizeId } : {}),
-                ...(input.remarks !== undefined ? { remarks: input.remarks } : {}),
-                updatedBy: actor,
-            },
+    const updated = await withTransaction(async (client) => {
+        await updateFabricCheckingHeader(client, id, {
+            productionDate: input.productionDate,
+            colorId: input.colorId,
+            sizeId: input.sizeId,
+            remarks: input.remarks,
+            actor,
         });
 
-        await tx.fabricCheckDetail.update({
-            where: { productionRecordId: id },
-            data: {
-                ...(input.fabricInputKg !== undefined ? { fabricInputKg: input.fabricInputKg } : {}),
-                ...(input.outputKg !== undefined ? { outputKg: input.outputKg } : {}),
-            },
+        await updateFabricCheckingDetail(client, id, {
+            fabricInputKg: input.fabricInputKg,
+            outputKg: input.outputKg,
         });
 
         const wastageUpdates = [
@@ -207,10 +156,10 @@ export async function updateFabricCheckingRecord(
             ...(input.bwKg !== undefined ? [{ code: WASTAGE_CODES.BW, quantityKg: input.bwKg, colorId: input.colorId ?? existing.colorId }] : []),
         ];
         if (wastageUpdates.length > 0) {
-            await applyWastageUpdates(tx, id, ProductionStage.FABRIC_CHECKING, companyId, actor, wastageUpdates);
+            await applyWastageUpdates(client, id, ProductionStage.FABRIC_CHECKING, companyId, actor, wastageUpdates);
         }
 
-        return tx.productionRecord.findUniqueOrThrow({ where: { id }, select: fabricCheckingSelect });
+        return findFabricCheckingProductionByIdTx(client, id);
     });
 
     return mapFabricCheckingRecord(updated);
@@ -242,53 +191,59 @@ export type FabricProductionSummary = {
  * variant, by colour alone (with FW/BW wastage), plus an overall total —
  * backs the dashboard's monthly "fabric production" panel.
  *
- * Time: O(n) — n = Fabric Checking records in the range (one query, one pass).
+ * Time: O(n) — n = Fabric Checking records in the range (two queries, one pass).
  */
-export async function getFabricProductionSummaryByDateRange(
-    companyId: string,
-    dateFrom: Date,
-    dateTo: Date,
-): Promise<FabricProductionSummary> {
-    const rows = await prisma.productionRecord.findMany({
-        where: { companyId, stage: ProductionStage.FABRIC_CHECKING, productionDate: { gte: dateFrom, lte: dateTo } },
-        select: {
-            color: { select: { id: true, name: true } },
-            size: { select: { id: true, name: true } },
-            fabricCheck: { select: { fabricInputKg: true, outputKg: true } },
-            wastages: { select: { quantityKg: true, wastageType: { select: { code: true } } } },
-        },
-    });
+export async function getFabricProductionSummaryByDateRange(companyId: string, dateFrom: Date, dateTo: Date): Promise<FabricProductionSummary> {
+    const [rows, wastageRows] = await Promise.all([
+        findFabricCheckingRowsForSummary(companyId, dateFrom, dateTo),
+        findFabricCheckingWastagesForSummary(companyId, dateFrom, dateTo),
+    ]);
+
+    const wastagesByProductionRecordId = new Map<string, { fw: number; bw: number }>();
+    for (const w of wastageRows) {
+        let entry = wastagesByProductionRecordId.get(w.productionRecordId);
+        if (!entry) {
+            entry = { fw: 0, bw: 0 };
+            wastagesByProductionRecordId.set(w.productionRecordId, entry);
+        }
+        if (w.wastageTypeCode === WASTAGE_CODES.FW) entry.fw += w.quantityKg;
+        else if (w.wastageTypeCode === WASTAGE_CODES.BW) entry.bw += w.quantityKg;
+    }
 
     const byVariantMap = new Map<string, FabricProductionVariantSummary>();
     const byColorMap = new Map<string, FabricProductionColorSummary>();
     const overall = { fabricInputKg: 0, outputKg: 0 };
 
     for (const row of rows) {
-        if (!row.fabricCheck) continue;
-        const inputKg = row.fabricCheck.fabricInputKg.toNumber();
-        const outputKg = row.fabricCheck.outputKg ? row.fabricCheck.outputKg.toNumber() : 0;
+        if (row.fabricInputKg === null) continue;
+        const inputKg = row.fabricInputKg;
+        const outputKg = row.outputKg ?? 0;
 
         overall.fabricInputKg += inputKg;
         overall.outputKg += outputKg;
 
-        const variantKey = `${row.color.id}_${row.size.id}`;
+        const color = row.colorId ? { id: row.colorId, name: row.colorName! } : { id: 'UNSPECIFIED', name: 'Unspecified' };
+        const size = row.sizeId ? { id: row.sizeId, name: row.sizeName! } : { id: 'UNSPECIFIED', name: 'Unspecified' };
+
+        const variantKey = `${color.id}_${size.id}`;
         let variantEntry = byVariantMap.get(variantKey);
         if (!variantEntry) {
-            variantEntry = { color: row.color, size: row.size, fabricInputKg: 0, outputKg: 0 };
+            variantEntry = { color, size, fabricInputKg: 0, outputKg: 0 };
             byVariantMap.set(variantKey, variantEntry);
         }
         variantEntry.fabricInputKg += inputKg;
         variantEntry.outputKg += outputKg;
 
-        let colorEntry = byColorMap.get(row.color.id);
+        let colorEntry = byColorMap.get(color.id);
         if (!colorEntry) {
-            colorEntry = { color: row.color, production: 0, fwWasteKg: 0, bwWasteKg: 0, total: 0 };
-            byColorMap.set(row.color.id, colorEntry);
+            colorEntry = { color, production: 0, fwWasteKg: 0, bwWasteKg: 0, total: 0 };
+            byColorMap.set(color.id, colorEntry);
         }
         colorEntry.production += outputKg;
-        for (const w of row.wastages) {
-            if (w.wastageType.code === WASTAGE_CODES.FW) colorEntry.fwWasteKg += w.quantityKg.toNumber();
-            else if (w.wastageType.code === WASTAGE_CODES.BW) colorEntry.bwWasteKg += w.quantityKg.toNumber();
+        const wastageForRow = wastagesByProductionRecordId.get(row.id);
+        if (wastageForRow) {
+            colorEntry.fwWasteKg += wastageForRow.fw;
+            colorEntry.bwWasteKg += wastageForRow.bw;
         }
     }
 
@@ -312,35 +267,26 @@ export async function getFabricProductionSummaryByDateRange(
 export async function deleteFabricCheckingRecord(id: string, companyId: string, role: UserRole): Promise<void> {
     assertCanDeleteProductionRecord(role);
 
-    const existing = await prisma.productionRecord.findFirst({
-        where: { id, companyId, stage: ProductionStage.FABRIC_CHECKING },
-        select: { id: true },
-    });
+    const existing = await findFabricCheckingExisting(id, companyId);
     if (!existing) throw new NotFoundError('Fabric checking record not found', 'FABRIC_CHECKING_NOT_FOUND', { id });
 
-    await prisma.$transaction(async (tx) => {
+    await withTransaction(async (client) => {
         // WastageRecord and the kora ledger entry both have no onDelete: Cascade to
         // ProductionRecord, so both must be cleared explicitly before the record itself
         // can be deleted. reverseKoraBalance also undoes this record's effect on the
         // running kora balance.
-        await tx.wastageRecord.deleteMany({ where: { productionRecordId: id } });
-        await reverseKoraBalance(id, tx);
-        await tx.productionRecord.delete({ where: { id } });
+        await deleteWastagesForProduction(client, id);
+        await reverseKoraBalance(id, client);
+        await deleteProductionRecord(client, id);
     });
 }
 
 /** ADMIN-only (enforced at the route level) — sets isApproved, never exposed via Right/RoleAccess. */
 export async function approveFabricCheckingRecord(id: string, companyId: string, actor: string) {
-    const existing = await prisma.productionRecord.findFirst({
-        where: { id, companyId, stage: ProductionStage.FABRIC_CHECKING },
-        select: { id: true },
-    });
+    const existing = await findFabricCheckingExisting(id, companyId);
     if (!existing) throw new NotFoundError('Fabric checking record not found', 'FABRIC_CHECKING_NOT_FOUND', { id });
 
-    const record = await prisma.productionRecord.update({
-        where: { id },
-        data: { isApproved: true, approvedAt: new Date(), approvedBy: actor },
-        select: fabricCheckingSelect,
-    });
-    return mapFabricCheckingRecord(record);
+    await approveProductionRecord(id, actor);
+    const record = await getFabricCheckingProductionByIdRepo(id, companyId);
+    return mapFabricCheckingRecord(record!);
 }
