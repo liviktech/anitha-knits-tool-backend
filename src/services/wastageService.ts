@@ -1,34 +1,30 @@
-import { Prisma, ProductionStage } from '@prisma/client';
-import { prisma } from '../config/prisma.js';
+import type pg from 'pg';
 import { NotFoundError } from '../utils/errors.js';
 import { roundKg } from '../utils/decimal.js';
 import { WASTAGE_CODES } from '../constants/wastageCodes.js';
+import type { ProductionStage } from '../types/enums.js';
+import {
+    deleteWastageRecordById,
+    findWastageRecordByTypeForProduction,
+    findWastageRecordsForDateRange,
+    findWastageType,
+    findWastageTypesByCodes,
+    insertWastageRecord,
+    updateWastageRecord,
+    type WastageRow,
+} from '../repositories/wastage.repository.js';
 
 /**
  * Wastage entered alongside a production record (PRD §9/§26: "Wastage must be
  * linked to a production record whenever applicable"). The dedicated Wastage
  * API (list/get/edit, PRD §16.6) isn't built yet, so this is the only way
- * wastage gets into WastageRecord today — created in the same nested write as
+ * wastage gets into WastageRecord today — created in the same transaction as
  * the production record, so it's atomic with it and always has a
  * productionRecordId.
  */
 
-export const wastageSelect = {
-    id: true,
-    wastageType: { select: { id: true, code: true, name: true } },
-    color: { select: { id: true, name: true } },
-    quantityKg: true,
-} satisfies Prisma.WastageRecordSelect;
-
-type WastageRow = Prisma.WastageRecordGetPayload<{ select: typeof wastageSelect }>;
-
 export function mapWastageRecord(row: WastageRow) {
-    return {
-        id: row.id,
-        wastageType: row.wastageType,
-        color: row.color,
-        quantityKg: row.quantityKg.toNumber(),
-    };
+    return row;
 }
 
 export type WastageEntryInput = {
@@ -38,12 +34,19 @@ export type WastageEntryInput = {
     colorId?: string;
 };
 
+export interface WastageCreatePlan {
+    wastageTypeId: string;
+    colorId?: string;
+    quantityKg: number;
+    actor: string;
+}
+
 /**
- * Resolves (code, quantity) pairs into Prisma nested-create inputs for
- * WastageRecord, looking up each WastageType's id by (stage, code). Entries
- * with an undefined or non-positive quantity are skipped entirely — a
- * WastageRecord is only created when a real positive quantity was supplied,
- * so "no wastage of this type" never produces a zero-quantity row.
+ * Resolves (code, quantity) pairs into insert-ready wastage plans, looking up each WastageType's
+ * id by (stage, code). Entries with an undefined or non-positive quantity are skipped entirely —
+ * a WastageRecord is only created when a real positive quantity was supplied, so "no wastage of
+ * this type" never produces a zero-quantity row. The caller inserts these rows itself (via
+ * wastage.repository.insertWastageRecord) inside the same transaction as the production record.
  *
  * Time: O(k) — k = number of wastage entries for the stage (at most 2 today).
  */
@@ -52,20 +55,13 @@ export async function buildWastageCreates(
     companyId: string,
     actor: string,
     entries: WastageEntryInput[],
-): Promise<Prisma.WastageRecordCreateWithoutProductionRecordInput[]> {
+): Promise<WastageCreatePlan[]> {
     const withQuantity = entries.filter(
         (entry): entry is WastageEntryInput & { quantityKg: number } => typeof entry.quantityKg === 'number' && entry.quantityKg > 0,
     );
     if (withQuantity.length === 0) return [];
 
-    const types = await Promise.all(
-        withQuantity.map((entry) =>
-            prisma.wastageType.findUnique({
-                where: { companyId_stage_code: { companyId, stage, code: entry.code } },
-                select: { id: true, isActive: true },
-            }),
-        ),
-    );
+    const types = await Promise.all(withQuantity.map((entry) => findWastageType(undefined, companyId, stage, entry.code)));
 
     return withQuantity.map((entry, index) => {
         const type = types[index];
@@ -77,11 +73,10 @@ export async function buildWastageCreates(
             );
         }
         return {
-            company: { connect: { id: companyId } },
-            wastageType: { connect: { id: type.id } },
-            color: entry.colorId ? { connect: { id: entry.colorId } } : undefined,
+            wastageTypeId: type.id,
+            colorId: entry.colorId,
             quantityKg: entry.quantityKg,
-            createdBy: actor,
+            actor,
         };
     });
 }
@@ -94,13 +89,12 @@ export async function buildWastageCreates(
  * a positive quantity is given and none exists yet, or deletes the existing
  * one if the new quantity is 0 (explicitly clearing that wastage).
  *
- * Runs inside the caller's transaction so it stays atomic with the rest of
- * the update.
+ * Runs inside the caller's transaction (`client`) so it stays atomic with the rest of the update.
  *
  * Time: O(k) — k = number of wastage entries being updated (at most 2 today).
  */
 export async function applyWastageUpdates(
-    tx: Prisma.TransactionClient,
+    client: pg.PoolClient,
     productionRecordId: string,
     stage: ProductionStage,
     companyId: string,
@@ -108,10 +102,7 @@ export async function applyWastageUpdates(
     entries: WastageEntryInput[],
 ): Promise<void> {
     for (const entry of entries) {
-        const type = await tx.wastageType.findUnique({
-            where: { companyId_stage_code: { companyId, stage, code: entry.code } },
-            select: { id: true, isActive: true },
-        });
+        const type = await findWastageType(client, companyId, stage, entry.code);
         if (!type || !type.isActive) {
             throw new NotFoundError(
                 `Wastage type "${entry.code}" is not configured for stage ${stage}`,
@@ -120,32 +111,23 @@ export async function applyWastageUpdates(
             );
         }
 
-        const existing = await tx.wastageRecord.findFirst({
-            where: { productionRecordId, wastageTypeId: type.id },
-            select: { id: true },
-        });
+        const existing = await findWastageRecordByTypeForProduction(client, productionRecordId, type.id);
 
         const quantityKg = entry.quantityKg ?? 0;
         if (quantityKg > 0) {
             if (existing) {
-                await tx.wastageRecord.update({
-                    where: { id: existing.id },
-                    data: { quantityKg, colorId: entry.colorId, updatedBy: actor },
-                });
+                await updateWastageRecord(client, existing.id, { quantityKg, colorId: entry.colorId, actor });
             } else {
-                await tx.wastageRecord.create({
-                    data: {
-                        companyId,
-                        productionRecordId,
-                        wastageTypeId: type.id,
-                        colorId: entry.colorId,
-                        quantityKg,
-                        createdBy: actor,
-                    },
+                await insertWastageRecord(client, productionRecordId, {
+                    companyId,
+                    wastageTypeId: type.id,
+                    colorId: entry.colorId,
+                    quantityKg,
+                    actor,
                 });
             }
         } else if (existing) {
-            await tx.wastageRecord.delete({ where: { id: existing.id } });
+            await deleteWastageRecordById(client, existing.id);
         }
     }
 }
@@ -170,20 +152,13 @@ export async function getWastageSummaryByDateRange(
     const codes: string[] = Object.values(WASTAGE_CODES);
 
     const [types, rows] = await Promise.all([
-        prisma.wastageType.findMany({
-            where: { companyId, code: { in: codes } },
-            select: { code: true, name: true, stage: true },
-        }),
-        prisma.wastageRecord.findMany({
-            where: { companyId, productionRecord: { productionDate: { gte: dateFrom, lte: dateTo } } },
-            select: { quantityKg: true, wastageType: { select: { code: true } } },
-        }),
+        findWastageTypesByCodes(companyId, codes),
+        findWastageRecordsForDateRange(companyId, dateFrom, dateTo),
     ]);
 
     const quantityByCode = new Map<string, number>();
     for (const row of rows) {
-        const code = row.wastageType.code;
-        quantityByCode.set(code, (quantityByCode.get(code) ?? 0) + row.quantityKg.toNumber());
+        quantityByCode.set(row.code, (quantityByCode.get(row.code) ?? 0) + row.quantityKg);
     }
 
     const byType = types.map((type) => ({

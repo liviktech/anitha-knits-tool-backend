@@ -3,8 +3,22 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 import { parseOrThrow } from '../utils/validate.js';
 import { clearPlatformAdminAuthCookies, setPlatformAdminAuthCookies } from '../utils/platformAdminCookie.js';
-import { loginPlatformAdmin, signupPlatformAdmin } from '../services/platformAdminService.js';
-import { platformAdminLoginSchema, platformAdminSignupSchema } from '../validations/platformAdminValidation.js';
+import {
+    getCurrentPlatformAdmin,
+    loginPlatformAdmin,
+    loginPlatformAdminWithOtp,
+    resetPlatformAdminPassword,
+    signupPlatformAdmin,
+} from '../services/platformAdminService.js';
+import { issueResetToken, requestOtp, verifyOtp } from '../services/otpService.js';
+import {
+    platformAdminLoginSchema,
+    platformAdminRequestOtpSchema,
+    platformAdminResetPasswordSchema,
+    platformAdminSignupSchema,
+    platformAdminVerifyOtpLoginSchema,
+    platformAdminVerifyOtpResetSchema,
+} from '../validations/platformAdminValidation.js';
 import { getCompanyById, listCompanies, listCompanyUsers, signupCompany, updateCompany } from '../services/authService.js';
 import {
     companyIdParamsSchema,
@@ -25,9 +39,16 @@ export const signup = asyncHandler(async (req: Request, res: Response) => {
 
 export const login = asyncHandler(async (req: Request, res: Response) => {
     const input = parseOrThrow(platformAdminLoginSchema, req.body);
-    const { tokens, admin } = await loginPlatformAdmin(input);
+    const { tokens, admin, access } = await loginPlatformAdmin(input);
     setPlatformAdminAuthCookies(res, tokens);
-    sendSuccess(res, { admin });
+    sendSuccess(res, { admin, access });
+});
+
+/** Re-resolves the caller's own LK Space profile + access (PlatformRoleAccess -> module grants) from scratch. */
+export const me = asyncHandler(async (req: Request, res: Response) => {
+    if (!req.platformAdmin) throw new UnauthorizedError('Authentication required', 'AUTH_REQUIRED');
+    const result = await getCurrentPlatformAdmin(req.platformAdmin.role, req.platformAdmin.sub);
+    sendSuccess(res, result);
 });
 
 // Company signup is not public — only an authenticated platform admin can create a company
@@ -78,4 +99,42 @@ export const listCompanyUsersHandler = asyncHandler(async (req: Request, res: Re
 export const logout = asyncHandler(async (req: Request, res: Response) => {
     clearPlatformAdminAuthCookies(res);
     sendSuccess(res, { loggedOut: true });
+});
+
+/** Requests an OTP for OTP-based platform-admin login. Purpose is hardcoded here. */
+export const requestOtpLogin = asyncHandler(async (req: Request, res: Response) => {
+    const { mobile } = parseOrThrow(platformAdminRequestOtpSchema, req.body);
+    await requestOtp({ mobile, purpose: 'LOGIN', actorType: 'PLATFORM_ADMIN' });
+    sendSuccess(res, { message: 'If this mobile number is registered, an OTP has been sent' });
+});
+
+/** Requests an OTP to start the platform-admin forgot-password flow. Purpose is hardcoded here. */
+export const requestPasswordResetOtp = asyncHandler(async (req: Request, res: Response) => {
+    const { mobile } = parseOrThrow(platformAdminRequestOtpSchema, req.body);
+    await requestOtp({ mobile, purpose: 'RESET_PASSWORD', actorType: 'PLATFORM_ADMIN' });
+    sendSuccess(res, { message: 'If this mobile number is registered, an OTP has been sent' });
+});
+
+/** Verifies a LOGIN OTP and, on success, signs in exactly like POST /login. */
+export const verifyOtpLogin = asyncHandler(async (req: Request, res: Response) => {
+    const { mobile, otp } = parseOrThrow(platformAdminVerifyOtpLoginSchema, req.body);
+    await verifyOtp({ mobile, otp, purpose: 'LOGIN', actorType: 'PLATFORM_ADMIN' });
+    const { tokens, admin } = await loginPlatformAdminWithOtp(mobile);
+    setPlatformAdminAuthCookies(res, tokens);
+    sendSuccess(res, { admin });
+});
+
+/** Verifies a RESET_PASSWORD OTP and returns a short-lived resetToken for POST .../password/reset. */
+export const verifyPasswordResetOtp = asyncHandler(async (req: Request, res: Response) => {
+    const { mobile, otp } = parseOrThrow(platformAdminVerifyOtpResetSchema, req.body);
+    await verifyOtp({ mobile, otp, purpose: 'RESET_PASSWORD', actorType: 'PLATFORM_ADMIN' });
+    const resetToken = issueResetToken({ mobile, actorType: 'PLATFORM_ADMIN' });
+    sendSuccess(res, { resetToken });
+});
+
+/** Completes the platform-admin forgot-password flow using the resetToken from verifyPasswordResetOtp. */
+export const resetPassword = asyncHandler(async (req: Request, res: Response) => {
+    const { mobile, resetToken, newPassword } = parseOrThrow(platformAdminResetPasswordSchema, req.body);
+    await resetPlatformAdminPassword(mobile, resetToken, newPassword);
+    sendSuccess(res, { passwordReset: true });
 });

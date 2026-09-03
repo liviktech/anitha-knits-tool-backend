@@ -8,11 +8,13 @@ import {
     approveLoomsProduction,
     createLoomsProduction,
     deleteLoomsProduction,
+    getAvailableYarnStockKg,
     getLoomsProductionById,
     listLoomsProductions,
     updateLoomsProduction,
 } from '../services/loomsService.js';
 import {
+    availableYarnQuerySchema,
     createLoomsSchema,
     listLoomsQuerySchema,
     loomsIdParamsSchema,
@@ -30,6 +32,13 @@ export const createLooms = asyncHandler(async (req: Request, res: Response) => {
     const { companyId, actor, userId } = getAuthContext(req);
     const record = await createLoomsProduction(input, companyId, actor, requireRole(req), userId);
     sendSuccess(res, record, undefined, 201);
+});
+
+export const getAvailableYarn = asyncHandler(async (req: Request, res: Response) => {
+    const { colorId, sizeId } = parseOrThrow(availableYarnQuerySchema, req.query);
+    const { companyId } = getAuthContext(req);
+    const availableKg = await getAvailableYarnStockKg(companyId, colorId, sizeId);
+    sendSuccess(res, { colorId, sizeId, availableKg });
 });
 
 export const listLooms = asyncHandler(async (req: Request, res: Response) => {

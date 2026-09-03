@@ -19,10 +19,19 @@ export interface RefreshTokenPayload extends TokenPayload {
     type: 'refresh';
 }
 
-/** The only PlatformAdmin role today; kept as an enum-like union so more can be added without a breaking change. */
-export type PlatformAdminRole = 'SUPER_ADMIN';
+/**
+ * `SUPER_ADMIN` is the one seeded PlatformAdmin (unrestricted). `EMPLOYEE` is a Livik employee
+ * logging in with their own Livik credentials (see platformAdminService.loginPlatformAdmin) —
+ * their access is whatever PlatformEmployeeAccess/PlatformRoleAccess resolves to
+ * (resolvePlatformAccess), never unrestricted.
+ */
+export type PlatformAdminRole = 'SUPER_ADMIN' | 'EMPLOYEE';
 
-/** Claim set shared by platform-admin access and refresh tokens — deliberately has no companyId. */
+/**
+ * Claim set shared by platform-admin access and refresh tokens — deliberately has no companyId.
+ * `sub` is the PlatformAdmin.id (uuid) when role is SUPER_ADMIN, or the Livik Employee.empId
+ * string when role is EMPLOYEE — there's no single table both could be a row in.
+ */
 export interface PlatformAdminTokenPayload {
     sub: string;
     role: PlatformAdminRole;

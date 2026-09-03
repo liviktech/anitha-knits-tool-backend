@@ -1,5 +1,18 @@
-import { prisma } from '../config/prisma.js';
+import { withTransaction } from '../db/transaction.js';
 import { ApiError } from '../utils/ApiError.js';
+import {
+    deletePayrollRecords,
+    findActiveEmployeesWithSalary,
+    findAllSalaryAdvances,
+    findAttendancesForRange,
+    findMarketValueAllocationsForRange,
+    findSalaryAdvancesWithEmployee,
+    findSavedPayrollRecords as findSavedPayrollRecordsRepo,
+    insertMarketValueAllocations,
+    insertMarketValueDistribution,
+    insertPayrollRecords,
+    insertSalaryAdvance,
+} from '../repositories/payroll.repository.js';
 
 export const distributeMarketValue = async (
     companyId: string,
@@ -16,26 +29,13 @@ export const distributeMarketValue = async (
         throw new ApiError(400, 'Total pool does not match the sum of allocations');
     }
 
-    return await prisma.$transaction(async (tx) => {
-        const distribution = await tx.marketValueDistribution.create({
-            data: {
-                companyId,
-                effectiveDate,
-                totalPool: data.totalPool,
-                createdBy: userId,
-            },
-        });
+    return withTransaction(async (client) => {
+        const distribution = await insertMarketValueDistribution(client, { companyId, effectiveDate, totalPool: data.totalPool, actor: userId });
 
-        const allocationRecords = allocationEntries.map(([empId, amt]) => ({
-            distributionId: distribution.id,
-            employeeId: empId,
-            amount: amt,
-        }));
+        const allocationRecords = allocationEntries.map(([empId, amt]) => ({ employeeId: empId, amount: amt }));
 
         if (allocationRecords.length > 0) {
-            await tx.marketValueAllocation.createMany({
-                data: allocationRecords,
-            });
+            await insertMarketValueAllocations(client, distribution.id, allocationRecords);
         }
 
         return distribution;
@@ -69,17 +69,15 @@ export const grantSalaryAdvance = async (
     // risks the last installment drifting from what earlier months already deducted.
     const emiAmount = isEmi ? roundMoney(data.amount / data.totalMonths!) : null;
 
-    return await prisma.salaryAdvance.create({
-        data: {
-            companyId,
-            employeeId: data.employeeId,
-            amount: data.amount,
-            effectiveDate: new Date(data.effectiveDate),
-            repaymentMethod: data.repaymentMethod,
-            totalMonths: isEmi ? data.totalMonths : null,
-            emiAmount,
-            createdBy: userId,
-        },
+    return insertSalaryAdvance({
+        companyId,
+        employeeId: data.employeeId,
+        amount: data.amount,
+        effectiveDate: new Date(data.effectiveDate),
+        repaymentMethod: data.repaymentMethod,
+        totalMonths: isEmi ? data.totalMonths! : null,
+        emiAmount,
+        actor: userId,
     });
 };
 
@@ -91,15 +89,7 @@ export const grantSalaryAdvance = async (
  * its last installment's month has passed.
  */
 export const getSalaryAdvances = async (companyId: string) => {
-    const advances = await prisma.salaryAdvance.findMany({
-        where: { companyId },
-        include: {
-            employee: {
-                select: { id: true, name: true, employeeDetails: { select: { customUserId: true } } },
-            },
-        },
-        orderBy: { effectiveDate: 'desc' },
-    });
+    const advances = await findSalaryAdvancesWithEmployee(companyId);
 
     const now = new Date();
     const currentMonth = now.getUTCMonth() + 1;
@@ -118,8 +108,8 @@ export const getSalaryAdvances = async (companyId: string) => {
         return {
             id: adv.id,
             employeeId: adv.employeeId,
-            employeeName: adv.employee.name,
-            customUserId: adv.employee.employeeDetails?.customUserId ?? null,
+            employeeName: adv.employeeName,
+            customUserId: adv.customUserId ?? null,
             amount: Number(adv.amount),
             effectiveDate: adv.effectiveDate,
             repaymentMethod: adv.repaymentMethod,
@@ -136,10 +126,7 @@ export const getSalaryAdvances = async (companyId: string) => {
 
 export const getPayrollSummary = async (companyId: string, month: number, year: number) => {
     // 1. Get all employees in the company with their salaries
-    const employees = await prisma.user.findMany({
-        where: { companyId, isActive: true },
-        include: { employeeDetails: true },
-    });
+    const employees = await findActiveEmployeesWithSalary(companyId);
 
     // Calculate start and end dates for the month
     const startDate = new Date(year, month - 1, 1);
@@ -147,29 +134,17 @@ export const getPayrollSummary = async (companyId: string, month: number, year: 
     const totalDaysInMonth = endDate.getDate();
 
     // 2. Fetch Attendances for the month
-    const attendances = await prisma.attendance.findMany({
-        where: {
-            companyId,
-            date: { gte: startDate, lte: endDate },
-        },
-    });
+    const attendances = await findAttendancesForRange(companyId, startDate, endDate);
 
     // 3. Fetch every advance for the company — not just ones dated this month.
     // An EMI advance granted in an earlier (or even later, for backfills) month
     // still owes an installment this month; a single-payment advance only ever
     // deducts in its own effective month. Both cases need the full history to
     // resolve correctly, not a date-range filter on effectiveDate alone.
-    const allAdvances = await prisma.salaryAdvance.findMany({ where: { companyId } });
+    const allAdvances = await findAllSalaryAdvances(companyId);
 
     // 4. Fetch Market Value Allocations for the month
-    const marketValues = await prisma.marketValueAllocation.findMany({
-        where: {
-            distribution: {
-                companyId,
-                effectiveDate: { gte: startDate, lte: endDate },
-            },
-        },
-    });
+    const marketValues = await findMarketValueAllocationsForRange(companyId, startDate, endDate);
 
     // Grouping Helpers
     const attendanceByEmployee = attendances.reduce((acc: any, curr: any) => {
@@ -200,7 +175,7 @@ export const getPayrollSummary = async (companyId: string, month: number, year: 
 
     // 5. Calculate Final Summary
     return employees.map((emp: any) => {
-        const baseSalary = Number(emp.employeeDetails?.salary || 0);
+        const baseSalary = Number(emp.salary || 0);
         const oneDaySalary = baseSalary / totalDaysInMonth;
 
         let absentDeductions = 0;
@@ -209,7 +184,7 @@ export const getPayrollSummary = async (companyId: string, month: number, year: 
         let absentDays = 0;
 
         // Note: The loop below assumes attendance records cover all 31 days.
-        // If an attendance record for a weekday is completely missing, 
+        // If an attendance record for a weekday is completely missing,
         // they are effectively absent in a real system, but based on typical logic
         // we count explicit 'ABSENT' records, or we iterate through all days.
         // Let's iterate through all days of the month to be accurate.
@@ -243,7 +218,7 @@ export const getPayrollSummary = async (companyId: string, month: number, year: 
 
         return {
             id: emp.id,
-            customUserId: emp.employeeDetails?.customUserId,
+            customUserId: emp.customUserId,
             name: emp.name,
             baseSalary,
             totalDaysInMonth,
@@ -266,20 +241,15 @@ export const savePayrollRecords = async (
     // Generate the summary internally instead of trusting the frontend payload
     const summaryRecords = await getPayrollSummary(companyId, data.month, data.year);
 
-    return await prisma.$transaction(async (tx) => {
+    return withTransaction(async (client) => {
         // Delete existing records for this month/year for this company
-        await tx.payrollRecord.deleteMany({
-            where: {
-                companyId,
-                month: data.month,
-                year: data.year,
-            },
-        });
+        await deletePayrollRecords(client, companyId, data.month, data.year);
 
         // Insert new records
         if (summaryRecords.length > 0) {
-            await tx.payrollRecord.createMany({
-                data: summaryRecords.map((r: any) => ({
+            await insertPayrollRecords(
+                client,
+                summaryRecords.map((r: any) => ({
                     companyId,
                     employeeId: r.id,
                     month: data.month,
@@ -293,11 +263,10 @@ export const savePayrollRecords = async (
                     marketValueBonus: r.marketValueBonus,
                     grossSalary: r.grossSalary,
                     netSalary: r.netSalary,
-                    status: 'PENDING',
                 })),
-            });
+            );
         }
-        
+
         return { message: 'Payroll records saved successfully' };
     });
 };
@@ -307,27 +276,14 @@ export const getSavedPayrollRecords = async (
     month: number,
     year: number
 ) => {
-    return prisma.payrollRecord.findMany({
-        where: {
-            companyId,
-            month,
-            year,
-        },
-    });
+    return findSavedPayrollRecordsRepo(companyId, month, year);
 };
 
 export const getMarketValueAllocations = async (companyId: string, month: number, year: number) => {
     const startDate = new Date(year, month - 1, 1);
     const endDate = new Date(year, month, 0, 23, 59, 59, 999);
-    
-    const marketValues = await prisma.marketValueAllocation.findMany({
-        where: {
-            distribution: {
-                companyId,
-                effectiveDate: { gte: startDate, lte: endDate },
-            },
-        },
-    });
+
+    const marketValues = await findMarketValueAllocationsForRange(companyId, startDate, endDate);
 
     const marketValueByEmployee = marketValues.reduce((acc: any, curr: any) => {
         acc[curr.employeeId] = (acc[curr.employeeId] || 0) + Number(curr.amount);

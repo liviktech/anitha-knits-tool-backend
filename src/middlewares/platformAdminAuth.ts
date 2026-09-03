@@ -1,7 +1,7 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { env } from '../config/env.js';
 import { verifyPlatformAdminAccessToken } from '../utils/platformAdminJwt.js';
-import { UnauthorizedError } from '../utils/errors.js';
+import { ForbiddenError, UnauthorizedError } from '../utils/errors.js';
 
 /** Reads the platform-admin access token from its cookie, falling back to `Authorization: Bearer`. Time: O(1); Space: O(1). */
 function extractPlatformAdminAccessToken(req: Request): string | undefined {
@@ -32,4 +32,18 @@ export const requirePlatformAdmin: RequestHandler = (req: Request, _res: Respons
     } catch (err) {
         next(err);
     }
+};
+
+/**
+ * Requires the caller to be the seeded super admin, not a Livik employee with LK Space access —
+ * only SUPER_ADMIN manages the RBAC catalog itself (Modules/Tabs/Rights/RoleAccess), same
+ * convention as the company side's requireAuth('ADMIN') on its own catalog routes. Must run
+ * after requirePlatformAdmin().
+ */
+export const requireSuperAdmin: RequestHandler = (req: Request, _res: Response, next: NextFunction) => {
+    if (req.platformAdmin?.role !== 'SUPER_ADMIN') {
+        next(new ForbiddenError('Only the super admin can manage roles and rights', 'SUPER_ADMIN_ONLY'));
+        return;
+    }
+    next();
 };

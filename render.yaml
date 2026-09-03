@@ -5,7 +5,6 @@ services:
     plan: starter
     region: oregon
     buildCommand: npm install && npm run build
-    preDeployCommand: npx prisma migrate deploy
     startCommand: npm start
     envVars:
       - key: NODE_ENV

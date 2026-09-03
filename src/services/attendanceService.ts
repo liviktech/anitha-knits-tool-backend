@@ -1,5 +1,6 @@
-import { Prisma, RightAction, UserRole } from '@prisma/client';
-import { prisma } from '../config/prisma.js';
+import { withTransaction } from '../db/transaction.js';
+import { RightAction, UserRole } from '../types/enums.js';
+import { findAttendanceRecords, upsertAttendance } from '../repositories/attendance.repository.js';
 import { assertModuleActionAllowed } from './roleAccessService.js';
 
 const EMPLOYEES_MODULE_CODE = 'employees';
@@ -12,32 +13,7 @@ export interface BulkAttendancePayload {
 }
 
 export const getAttendanceRecords = async (companyId: string, dateFrom: Date, dateTo: Date) => {
-  return prisma.attendance.findMany({
-    where: {
-      companyId,
-      date: {
-        gte: dateFrom,
-        lte: dateTo,
-      },
-    },
-    include: {
-      employee: {
-        select: {
-          id: true,
-          name: true,
-          employeeDetails: {
-            select: {
-              customUserId: true,
-              designation: true,
-            },
-          },
-        },
-      },
-    },
-    orderBy: {
-      date: 'desc',
-    },
-  });
+  return findAttendanceRecords(companyId, dateFrom, dateTo);
 };
 
 export const upsertDailyAttendance = async (
@@ -51,31 +27,16 @@ export const upsertDailyAttendance = async (
   // creates-or-updates in one shot, and "editing today's attendance grid" is the closer fit.
   await assertModuleActionAllowed(callerRole, userId, companyId, EMPLOYEES_MODULE_CODE, RightAction.EDIT, ATTENDANCE_TAB_CODE);
 
-  return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+  return withTransaction(async (client) => {
     const results = [];
     for (const record of records) {
-      const result = await tx.attendance.upsert({
-        where: {
-          companyId_employeeId_date: {
-            companyId,
-            employeeId: record.employeeId,
-            date,
-          },
-        },
-        update: {
-          status: record.status,
-          remarks: record.remarks || null,
-          updatedBy: userId,
-        },
-        create: {
-          companyId,
-          employeeId: record.employeeId,
-          date,
-          status: record.status,
-          remarks: record.remarks || null,
-          createdBy: userId,
-          updatedBy: userId,
-        },
+      const result = await upsertAttendance(client, {
+        companyId,
+        employeeId: record.employeeId,
+        date,
+        status: record.status,
+        remarks: record.remarks || null,
+        actor: userId,
       });
       results.push(result);
     }

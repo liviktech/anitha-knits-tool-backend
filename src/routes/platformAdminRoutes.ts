@@ -5,12 +5,20 @@ import {
     listCompaniesHandler,
     listCompanyUsersHandler,
     login,
+    me,
     refresh,
     signup,
     updateCompanyHandler,
     logout,
+    requestOtpLogin,
+    requestPasswordResetOtp,
+    verifyOtpLogin,
+    verifyPasswordResetOtp,
+    resetPassword,
 } from '../controllers/platformAdminController.js';
 import { requirePlatformAdmin } from '../middlewares/platformAdminAuth.js';
+import { requirePlatformModuleAccess } from '../middlewares/requirePlatformModuleAccess.js';
+import { otpRequestLimiter } from '../middlewares/rateLimit.js';
 
 const router = Router();
 
@@ -127,6 +135,24 @@ router.post('/logout', logout);
 
 /**
  * @openapi
+ * /api/v1/platform/admin/me:
+ *   get:
+ *     tags: [Platform Admin]
+ *     summary: Re-resolve the current LK Space session
+ *     description: >
+ *       Re-resolves the caller's own profile + access (PlatformRoleAccess -> module grants) from
+ *       scratch — lets an already-logged-in Livik employee pick up a role change without
+ *       re-authenticating, mirroring GET /company/auth/me.
+ *     responses:
+ *       200:
+ *         description: OK.
+ *       401:
+ *         description: Missing, invalid, or expired platform-admin session (AUTH_REQUIRED / AUTH_TOKEN_EXPIRED / AUTH_TOKEN_INVALID).
+ */
+router.get('/me', requirePlatformAdmin, me);
+
+/**
+ * @openapi
  * /api/v1/platform/admin/companies:
  *   post:
  *     tags: [Platform Admin]
@@ -167,7 +193,7 @@ router.post('/logout', logout);
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.post('/companies', requirePlatformAdmin, createCompany);
+router.post('/companies', requirePlatformAdmin, requirePlatformModuleAccess('companies'), createCompany);
 
 /**
  * @openapi
@@ -204,7 +230,7 @@ router.post('/companies', requirePlatformAdmin, createCompany);
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.get('/companies', requirePlatformAdmin, listCompaniesHandler);
+router.get('/companies', requirePlatformAdmin, requirePlatformModuleAccess('companies'), listCompaniesHandler);
 
 /**
  * @openapi
@@ -273,8 +299,8 @@ router.get('/companies', requirePlatformAdmin, listCompaniesHandler);
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.get('/companies/:id', requirePlatformAdmin, getCompanyHandler);
-router.patch('/companies/:id', requirePlatformAdmin, updateCompanyHandler);
+router.get('/companies/:id', requirePlatformAdmin, requirePlatformModuleAccess('companies'), getCompanyHandler);
+router.patch('/companies/:id', requirePlatformAdmin, requirePlatformModuleAccess('companies'), updateCompanyHandler);
 
 /**
  * @openapi
@@ -323,5 +349,149 @@ router.patch('/companies/:id', requirePlatformAdmin, updateCompanyHandler);
  *         $ref: '#/components/responses/NotFound'
  */
 router.get('/companies/:id/users', requirePlatformAdmin, listCompanyUsersHandler);
+
+/**
+ * @openapi
+ * /api/v1/platform/admin/otp/request-login:
+ *   post:
+ *     tags: [Platform Admin]
+ *     summary: Request an OTP for OTP-based platform-admin login
+ *     description: >
+ *       Sends a LOGIN-purpose SMS OTP via AWS Pinpoint if this mobile matches an active platform
+ *       admin. Response is deliberately generic either way. Rate-limited (3 requests / 10 minutes
+ *       per mobile number).
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [mobile]
+ *             properties:
+ *               mobile: { type: string }
+ *     responses:
+ *       200:
+ *         description: OK. Generic response regardless of match.
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ *       429:
+ *         description: Too many OTP requests (OTP_RATE_LIMITED).
+ */
+router.post('/otp/request-login', otpRequestLimiter, requestOtpLogin);
+
+/**
+ * @openapi
+ * /api/v1/platform/admin/otp/login:
+ *   post:
+ *     tags: [Platform Admin]
+ *     summary: Verify a LOGIN OTP and sign in
+ *     description: Verifies the OTP requested via POST /otp/request-login, then signs in exactly like POST /login (sets the same httpOnly cookies).
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [mobile, otp]
+ *             properties:
+ *               mobile: { type: string }
+ *               otp: { type: string }
+ *     responses:
+ *       200:
+ *         description: OK. Sets platform-admin httpOnly cookies.
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ *       401:
+ *         description: Invalid/expired/exhausted OTP, or no matching admin (OTP_INVALID / OTP_EXPIRED / OTP_MAX_ATTEMPTS / INVALID_CREDENTIALS).
+ *       403:
+ *         description: This platform-admin account is inactive (ACCOUNT_INACTIVE).
+ */
+router.post('/otp/login', verifyOtpLogin);
+
+/**
+ * @openapi
+ * /api/v1/platform/admin/password/otp/request:
+ *   post:
+ *     tags: [Platform Admin]
+ *     summary: Request an OTP to start the platform-admin forgot-password flow
+ *     description: >
+ *       Sends a RESET_PASSWORD-purpose SMS OTP if this mobile matches an active platform admin.
+ *       Response is deliberately generic either way. Rate-limited (3 requests / 10 minutes per
+ *       mobile number).
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [mobile]
+ *             properties:
+ *               mobile: { type: string }
+ *     responses:
+ *       200:
+ *         description: OK. Generic response regardless of match.
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ *       429:
+ *         description: Too many OTP requests (OTP_RATE_LIMITED).
+ */
+router.post('/password/otp/request', otpRequestLimiter, requestPasswordResetOtp);
+
+/**
+ * @openapi
+ * /api/v1/platform/admin/password/otp/verify:
+ *   post:
+ *     tags: [Platform Admin]
+ *     summary: Verify a RESET_PASSWORD OTP
+ *     description: Verifies the OTP requested via POST /password/otp/request and returns a short-lived resetToken (10 minutes) for POST /password/reset.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [mobile, otp]
+ *             properties:
+ *               mobile: { type: string }
+ *               otp: { type: string }
+ *     responses:
+ *       200:
+ *         description: OK.
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ *       401:
+ *         description: Invalid/expired/exhausted OTP (OTP_INVALID / OTP_EXPIRED / OTP_MAX_ATTEMPTS).
+ */
+router.post('/password/otp/verify', verifyPasswordResetOtp);
+
+/**
+ * @openapi
+ * /api/v1/platform/admin/password/reset:
+ *   post:
+ *     tags: [Platform Admin]
+ *     summary: Complete the platform-admin forgot-password flow
+ *     description: Consumes the resetToken from POST /password/otp/verify and sets a new password.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [mobile, resetToken, newPassword]
+ *             properties:
+ *               mobile: { type: string }
+ *               resetToken: { type: string }
+ *               newPassword: { type: string }
+ *     responses:
+ *       200:
+ *         description: OK.
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ *       401:
+ *         description: Invalid or expired reset token (RESET_TOKEN_INVALID).
+ *       403:
+ *         description: This platform-admin account is inactive (ACCOUNT_INACTIVE).
+ */
+router.post('/password/reset', resetPassword);
 
 export default router;

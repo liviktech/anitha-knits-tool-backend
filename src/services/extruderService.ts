@@ -1,13 +1,28 @@
-import { Prisma, ProductionStage, UserRole } from '@prisma/client';
-import { prisma } from '../config/prisma.js';
+import { withTransaction } from '../db/transaction.js';
+import { ProductionStage, UserRole } from '../types/enums.js';
 import { NotFoundError, ValidationError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
-import { buildProductionWhere } from '../utils/productionFilters.js';
 import { assertBrandExists, assertChemicalExists, assertColorExists, assertSizeExists } from './masterDataService.js';
+import { findLookupItemName } from '../repositories/lookupItem.repository.js';
 import { getKgPerBasisForColor } from './adminConfig.js';
-import { applyWastageUpdates, buildWastageCreates, mapWastageRecord, wastageSelect } from './wastageService.js';
+import { applyWastageUpdates, buildWastageCreates } from './wastageService.js';
 import { WASTAGE_CODES } from '../constants/wastageCodes.js';
 import { assertCanCreateProductionRecord, assertCanDeleteProductionRecord, assertCanUpdateProductionRecord } from './productionCeilings.js';
+import {
+    approveProductionRecord,
+    deleteProductionRecord,
+    deleteWastagesForProduction,
+    findExtruderExisting,
+    findExtruderProductionByIdTx,
+    findExtruderRowsForSummary,
+    getExtruderProductionById as getExtruderProductionByIdRepo,
+    insertExtruderProduction,
+    listExtruderProductions as listExtruderProductionsRepo,
+    updateExtruderDetail,
+    updateExtruderHeader,
+    type ExtruderRecordRow,
+} from '../repositories/extruder.repository.js';
+import { insertWastageRecord } from '../repositories/wastage.repository.js';
 import type { CreateExtruderInput, UpdateExtruderInput, ListExtruderQuery } from '../validations/extruderValidation.js';
 
 /**
@@ -20,64 +35,8 @@ import type { CreateExtruderInput, UpdateExtruderInput, ListExtruderQuery } from
 const COLOR_CONSUMPTION_TOLERANCE_KG = 0.0005;
 const DEFAULT_OVERRIDE_REASON = 'Colour consumed was crossing the standard';
 
-
-const extruderSelect = {
-    id: true,
-    stage: true,
-    productionDate: true,
-    remarks: true,
-    color: { select: { id: true, name: true } },
-    size: { select: { id: true, name: true } },
-    extruder: {
-        select: {
-            brand: { select: { id: true, name: true } },
-            rawMaterialKg: true,
-            chemical: { select: { id: true, name: true } },
-            chemicalKg: true,
-            colorConsumedKg: true,
-            yarnOutputKg: true,
-            isRecipeOverridden: true,
-            overrideReason: true,
-            bagCount: true,
-            bagWeightKg: true,
-            looseWeightKg: true,
-            totalWeightKg: true,
-        },
-    },
-    wastages: { select: wastageSelect },
-    isApproved: true,
-    approvedAt: true,
-    approvedBy: true,
-    createdAt: true,
-    createdBy: true,
-    updatedAt: true,
-    updatedBy: true,
-} satisfies Prisma.ProductionRecordSelect;
-
-type ExtruderRecordRow = Prisma.ProductionRecordGetPayload<{ select: typeof extruderSelect }>;
-
 function mapExtruderRecord(record: ExtruderRecordRow) {
-    const { extruder, wastages, ...rest } = record;
-    return {
-        ...rest,
-        extruder: extruder
-            ? {
-                  brand: extruder.brand,
-                  rawMaterialKg: extruder.rawMaterialKg.toNumber(),
-                  chemical: extruder.chemical,
-                  chemicalKg: extruder.chemicalKg.toNumber(),
-                  colorConsumedKg: extruder.colorConsumedKg.toNumber(),
-                  yarnOutputKg: extruder.yarnOutputKg.toNumber(),
-                  isRecipeOverridden: extruder.isRecipeOverridden,
-                  overrideReason: extruder.overrideReason,
-                  bagCount: extruder.bagCount,
-                  bagWeightKg: extruder.bagWeightKg ? extruder.bagWeightKg.toNumber() : null,
-                  looseWeightKg: extruder.looseWeightKg ? extruder.looseWeightKg.toNumber() : null,
-                  totalWeightKg: extruder.totalWeightKg ? extruder.totalWeightKg.toNumber() : null,
-              }
-            : null,
-        wastages: wastages.map(mapWastageRecord),
-    };
+    return record;
 }
 
 function roundKg(value: number): number {
@@ -113,12 +72,10 @@ async function resolveColorConsumption(
     requestedColorConsumedKg: number | undefined,
     overrideReason: string | undefined,
 ): Promise<ColorConsumptionResolution> {
-    const color = await prisma.color.findFirst({ where: { id: colorId, companyId }, select: { name: true } });
-    const standard = color ? await getKgPerBasisForColor(companyId, color.name, productionDate) : null;
+    const colorName = await findLookupItemName('colors', colorId, companyId);
+    const standard = colorName ? await getKgPerBasisForColor(companyId, colorName, productionDate) : null;
 
-    const standardKg = standard
-        ? roundKg(standard.kgPerBasis.toNumber() * (rawMaterialKg / standard.basisWeightKg.toNumber()))
-        : null;
+    const standardKg = standard ? roundKg(standard.kgPerBasis * (rawMaterialKg / standard.basisWeightKg)) : null;
 
     if (requestedColorConsumedKg === undefined) {
         if (standardKg === null) {
@@ -134,9 +91,7 @@ async function resolveColorConsumption(
     const deviatesFromStandard = standardKg === null || Math.abs(requestedColorConsumedKg - standardKg) > COLOR_CONSUMPTION_TOLERANCE_KG;
 
     //default ovverride reason
-    const resolvedOverrideReason = deviatesFromStandard
-        ? overrideReason?.trim() || DEFAULT_OVERRIDE_REASON
-        : null;
+    const resolvedOverrideReason = deviatesFromStandard ? overrideReason?.trim() || DEFAULT_OVERRIDE_REASON : null;
 
     // No overrideReason requirement: isRecipeOverridden still records the deviation, just without forcing a reason.
     return {
@@ -146,13 +101,7 @@ async function resolveColorConsumption(
     };
 }
 
-export async function createExtruderProduction(
-    input: CreateExtruderInput,
-    companyId: string,
-    actor: string,
-    role: UserRole,
-    callerId: string,
-) {
+export async function createExtruderProduction(input: CreateExtruderInput, companyId: string, actor: string, role: UserRole, callerId: string) {
     await assertCanCreateProductionRecord(role, callerId, companyId);
 
     await Promise.all([
@@ -171,40 +120,39 @@ export async function createExtruderProduction(
         input.overrideReason,
     );
 
-    const wastageCreates = await buildWastageCreates(ProductionStage.EXTRUDER, companyId, actor, [
+    const wastagePlans = await buildWastageCreates(ProductionStage.EXTRUDER, companyId, actor, [
         { code: WASTAGE_CODES.YARN_WASTE, quantityKg: input.yarnWasteKg },
         { code: WASTAGE_CODES.LUMPS, quantityKg: input.lumpsKg },
     ]);
 
-    const record = await prisma.productionRecord.create({
-        data: {
+    const record = await withTransaction(async (client) => {
+        const productionRecordId = await insertExtruderProduction(client, {
             companyId,
-            stage: ProductionStage.EXTRUDER,
             productionDate: input.productionDate,
             colorId: input.colorId,
-            type: input.type,
             sizeId: input.sizeId,
+            type: input.type,
             remarks: input.remarks,
-            createdBy: actor,
-            extruder: {
-                create: {
-                    brandId: input.brandId,
-                    rawMaterialKg: input.rawMaterialKg,
-                    chemicalId: input.chemicalId,
-                    chemicalKg: input.chemicalKg,
-                    colorConsumedKg: consumption.colorConsumedKg,
-                    yarnOutputKg: input.yarnOutputKg,
-                    isRecipeOverridden: consumption.isRecipeOverridden,
-                    overrideReason: consumption.overrideReason,
-                    bagCount: input.bagCount,
-                    bagWeightKg: input.bagWeightKg,
-                    looseWeightKg: input.looseWeightKg,
-                    totalWeightKg: input.totalWeightKg,
-                },
-            },
-            ...(wastageCreates.length > 0 ? { wastages: { create: wastageCreates } } : {}),
-        },
-        select: extruderSelect,
+            actor,
+            brandId: input.brandId,
+            rawMaterialKg: input.rawMaterialKg,
+            chemicalId: input.chemicalId,
+            chemicalKg: input.chemicalKg,
+            colorConsumedKg: consumption.colorConsumedKg,
+            yarnOutputKg: input.yarnOutputKg,
+            isRecipeOverridden: consumption.isRecipeOverridden,
+            overrideReason: consumption.overrideReason,
+            bagCount: input.bagCount,
+            bagWeightKg: input.bagWeightKg,
+            looseWeightKg: input.looseWeightKg,
+            totalWeightKg: input.totalWeightKg,
+        });
+
+        for (const plan of wastagePlans) {
+            await insertWastageRecord(client, productionRecordId, { companyId, ...plan });
+        }
+
+        return findExtruderProductionByIdTx(client, productionRecordId);
     });
 
     return mapExtruderRecord(record);
@@ -212,27 +160,13 @@ export async function createExtruderProduction(
 
 export async function listExtruderProductions(query: ListExtruderQuery, companyId: string) {
     const { skip, take } = toSkipTake(query);
-    const where = buildProductionWhere(ProductionStage.EXTRUDER, query, companyId);
-
-    const [rows, total] = await prisma.$transaction([
-        prisma.productionRecord.findMany({
-            where,
-            select: extruderSelect,
-            orderBy: [{ productionDate: 'desc' }, { createdAt: 'desc' }],
-            skip,
-            take,
-        }),
-        prisma.productionRecord.count({ where }),
-    ]);
+    const { rows, total } = await listExtruderProductionsRepo(query, companyId, skip, take);
 
     return { items: rows.map(mapExtruderRecord), meta: toPageMeta(query, total) };
 }
 
 export async function getExtruderProductionById(id: string, companyId: string) {
-    const record = await prisma.productionRecord.findFirst({
-        where: { id, companyId, stage: ProductionStage.EXTRUDER },
-        select: extruderSelect,
-    });
+    const record = await getExtruderProductionByIdRepo(id, companyId);
     if (!record) throw new NotFoundError('Extruder production not found', 'EXTRUDER_NOT_FOUND', { id });
     return mapExtruderRecord(record);
 }
@@ -245,10 +179,7 @@ export async function updateExtruderProduction(
     role: UserRole,
     callerId: string,
 ) {
-    const existing = await prisma.productionRecord.findFirst({
-        where: { id, companyId, stage: ProductionStage.EXTRUDER },
-        select: { id: true, colorId: true, productionDate: true, isApproved: true, extruder: { select: { rawMaterialKg: true } } },
-    });
+    const existing = await findExtruderExisting(id, companyId);
     if (!existing) throw new NotFoundError('Extruder production not found', 'EXTRUDER_NOT_FOUND', { id });
 
     await assertCanUpdateProductionRecord(role, callerId, companyId, existing.isApproved);
@@ -266,44 +197,38 @@ export async function updateExtruderProduction(
             input.colorId ?? existing.colorId,
             companyId,
             input.productionDate ?? existing.productionDate,
-            input.rawMaterialKg ?? (existing.extruder?.rawMaterialKg.toNumber() ?? 0),
+            input.rawMaterialKg ?? existing.rawMaterialKg ?? 0,
             input.colorConsumedKg,
             input.overrideReason,
         );
     }
 
-    const updated = await prisma.$transaction(async (tx) => {
-        await tx.productionRecord.update({
-            where: { id },
-            data: {
-                ...(input.productionDate ? { productionDate: input.productionDate } : {}),
-                ...(input.colorId ? { colorId: input.colorId } : {}),
-                ...(input.sizeId ? { sizeId: input.sizeId } : {}),
-                ...(input.remarks !== undefined ? { remarks: input.remarks } : {}),
-                updatedBy: actor,
-            },
+    const updated = await withTransaction(async (client) => {
+        await updateExtruderHeader(client, id, {
+            productionDate: input.productionDate,
+            colorId: input.colorId,
+            sizeId: input.sizeId,
+            remarks: input.remarks,
+            actor,
         });
 
-        await tx.extruderDetail.update({
-            where: { productionRecordId: id },
-            data: {
-                ...(input.brandId ? { brandId: input.brandId } : {}),
-                ...(input.rawMaterialKg !== undefined ? { rawMaterialKg: input.rawMaterialKg } : {}),
-                ...(input.chemicalId ? { chemicalId: input.chemicalId } : {}),
-                ...(input.chemicalKg !== undefined ? { chemicalKg: input.chemicalKg } : {}),
-                ...(input.yarnOutputKg !== undefined ? { yarnOutputKg: input.yarnOutputKg } : {}),
-                ...(input.bagCount !== undefined ? { bagCount: input.bagCount } : {}),
-                ...(input.bagWeightKg !== undefined ? { bagWeightKg: input.bagWeightKg } : {}),
-                ...(input.looseWeightKg !== undefined ? { looseWeightKg: input.looseWeightKg } : {}),
-                ...(input.totalWeightKg !== undefined ? { totalWeightKg: input.totalWeightKg } : {}),
-                ...(consumption
-                    ? {
-                          colorConsumedKg: consumption.colorConsumedKg,
-                          isRecipeOverridden: consumption.isRecipeOverridden,
-                          overrideReason: consumption.overrideReason,
-                      }
-                    : {}),
-            },
+        await updateExtruderDetail(client, id, {
+            brandId: input.brandId,
+            rawMaterialKg: input.rawMaterialKg,
+            chemicalId: input.chemicalId,
+            chemicalKg: input.chemicalKg,
+            yarnOutputKg: input.yarnOutputKg,
+            bagCount: input.bagCount,
+            bagWeightKg: input.bagWeightKg,
+            looseWeightKg: input.looseWeightKg,
+            totalWeightKg: input.totalWeightKg,
+            ...(consumption
+                ? {
+                      colorConsumedKg: consumption.colorConsumedKg,
+                      isRecipeOverridden: consumption.isRecipeOverridden,
+                      overrideReason: consumption.overrideReason,
+                  }
+                : {}),
         });
 
         const wastageUpdates = [
@@ -311,10 +236,10 @@ export async function updateExtruderProduction(
             ...(input.lumpsKg !== undefined ? [{ code: WASTAGE_CODES.LUMPS, quantityKg: input.lumpsKg }] : []),
         ];
         if (wastageUpdates.length > 0) {
-            await applyWastageUpdates(tx, id, ProductionStage.EXTRUDER, companyId, actor, wastageUpdates);
+            await applyWastageUpdates(client, id, ProductionStage.EXTRUDER, companyId, actor, wastageUpdates);
         }
 
-        return tx.productionRecord.findUniqueOrThrow({ where: { id }, select: extruderSelect });
+        return findExtruderProductionByIdTx(client, id);
     });
 
     return mapExtruderRecord(updated);
@@ -323,63 +248,43 @@ export async function updateExtruderProduction(
 export async function deleteExtruderProduction(id: string, companyId: string, role: UserRole): Promise<void> {
     assertCanDeleteProductionRecord(role);
 
-    const existing = await prisma.productionRecord.findFirst({
-        where: { id, companyId, stage: ProductionStage.EXTRUDER },
-        select: { id: true },
-    });
+    const existing = await findExtruderExisting(id, companyId);
     if (!existing) throw new NotFoundError('Extruder production not found', 'EXTRUDER_NOT_FOUND', { id });
 
-    await prisma.$transaction(async (tx) => {
+    await withTransaction(async (client) => {
         // WastageRecord has no onDelete: Cascade to ProductionRecord, so it
         // must be cleared explicitly before the record itself can be deleted.
-        await tx.wastageRecord.deleteMany({ where: { productionRecordId: id } });
-        await tx.productionRecord.delete({ where: { id } });
+        await deleteWastagesForProduction(client, id);
+        await deleteProductionRecord(client, id);
     });
 }
 
 /** ADMIN-only (enforced at the route level) — sets isApproved, never exposed via Right/RoleAccess. */
 export async function approveExtruderProduction(id: string, companyId: string, actor: string) {
-    const existing = await prisma.productionRecord.findFirst({
-        where: { id, companyId, stage: ProductionStage.EXTRUDER },
-        select: { id: true },
-    });
+    const existing = await findExtruderExisting(id, companyId);
     if (!existing) throw new NotFoundError('Extruder production not found', 'EXTRUDER_NOT_FOUND', { id });
 
-    const record = await prisma.productionRecord.update({
-        where: { id },
-        data: { isApproved: true, approvedAt: new Date(), approvedBy: actor },
-        select: extruderSelect,
-    });
-    return mapExtruderRecord(record);
+    await approveProductionRecord(id, actor);
+    const record = await getExtruderProductionByIdRepo(id, companyId);
+    return mapExtruderRecord(record!);
 }
 
 export async function getExtruderProductionSummaryByDateRange(companyId: string, dateFrom: Date, dateTo: Date) {
-    const rows = await prisma.productionRecord.findMany({
-        where: { companyId, stage: ProductionStage.EXTRUDER, productionDate: { gte: dateFrom, lte: dateTo } },
-        select: {
-            color: { select: { id: true, name: true } },
-            extruder: { select: { yarnOutputKg: true } },
-            wastages: { select: { quantityKg: true, wastageType: { select: { code: true } } } },
-        },
-    });
+    const rows = await findExtruderRowsForSummary(companyId, dateFrom, dateTo);
 
     const byColorMap = new Map<string, { color: { id: string; name: string }; production: number; lumsKg: number; yarnWasteKg: number }>();
 
     for (const row of rows) {
-        const colorKey = row.color?.id ?? 'UNSPECIFIED';
+        const colorKey = row.colorId ?? 'UNSPECIFIED';
         let entry = byColorMap.get(colorKey);
         if (!entry) {
-            entry = { color: row.color ?? { id: 'UNSPECIFIED', name: 'Unspecified' }, production: 0, lumsKg: 0, yarnWasteKg: 0 };
+            entry = { color: row.colorId ? { id: row.colorId, name: row.colorName! } : { id: 'UNSPECIFIED', name: 'Unspecified' }, production: 0, lumsKg: 0, yarnWasteKg: 0 };
             byColorMap.set(colorKey, entry);
         }
-        entry.production += row.extruder?.yarnOutputKg?.toNumber() ?? 0;
-        for (const w of row.wastages) {
-            if (w.wastageType.code === WASTAGE_CODES.LUMPS) entry.lumsKg += w.quantityKg.toNumber();
-            else if (w.wastageType.code === WASTAGE_CODES.YARN_WASTE) entry.yarnWasteKg += w.quantityKg.toNumber();
-        }
+        entry.production += row.yarnOutputKg ?? 0;
     }
 
-    return Array.from(byColorMap.values()).map(e => ({
+    return Array.from(byColorMap.values()).map((e) => ({
         ...e,
         production: roundKg(e.production),
         lumsKg: roundKg(e.lumsKg),

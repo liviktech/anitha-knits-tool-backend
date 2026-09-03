@@ -1,4 +1,4 @@
-import { RightAction, UserRole } from '@prisma/client';
+import { RightAction, UserRole } from '../types/enums.js';
 import { ForbiddenError } from '../utils/errors.js';
 import { userHasModuleAction } from './roleAccessService.js';
 

@@ -8,11 +8,13 @@ import {
     approveFabricCheckingRecord,
     createFabricCheckingRecord,
     deleteFabricCheckingRecord,
+    getAvailableFabricStockKg,
     getFabricCheckingRecordById,
     listFabricCheckingRecords,
     updateFabricCheckingRecord,
 } from '../services/fabricCheckingService.js';
 import {
+    availableFabricQuerySchema,
     createFabricCheckingSchema,
     fabricCheckingIdParamsSchema,
     listFabricCheckingQuerySchema,
@@ -30,6 +32,13 @@ export const createFabricChecking = asyncHandler(async (req: Request, res: Respo
     const { companyId, actor, userId } = getAuthContext(req);
     const record = await createFabricCheckingRecord(input, companyId, actor, requireRole(req), userId);
     sendSuccess(res, record, undefined, 201);
+});
+
+export const getAvailableFabric = asyncHandler(async (req: Request, res: Response) => {
+    const { colorId, sizeId } = parseOrThrow(availableFabricQuerySchema, req.query);
+    const { companyId } = getAuthContext(req);
+    const availableKg = await getAvailableFabricStockKg(companyId, colorId, sizeId);
+    sendSuccess(res, { colorId, sizeId, availableKg });
 });
 
 export const listFabricChecking = asyncHandler(async (req: Request, res: Response) => {

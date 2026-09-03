@@ -39,6 +39,13 @@ export const updateLoomsSchema = z
     .strict()
     .refine((data) => Object.keys(data).length > 0, { message: 'At least one field must be provided' });
 
+export const availableYarnQuerySchema = z
+    .object({
+        colorId: z.string().uuid(),
+        sizeId: z.string().uuid(),
+    })
+    .strict();
+
 export const listLoomsQuerySchema = paginationSchema
     .extend({
         date_from: z.coerce.date().optional(),
@@ -51,3 +58,4 @@ export const listLoomsQuerySchema = paginationSchema
 export type CreateLoomsInput = z.infer<typeof createLoomsSchema>;
 export type UpdateLoomsInput = z.infer<typeof updateLoomsSchema>;
 export type ListLoomsQuery = z.infer<typeof listLoomsQuerySchema>;
+export type AvailableYarnQuery = z.infer<typeof availableYarnQuerySchema>;

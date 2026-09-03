@@ -14,6 +14,15 @@ const envSchema = z.object({
                 .filter(Boolean),
         ),
     DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
+    // Separate Postgres instance backing the Livik internal tool (its own Employee table) — read
+    // from the platform-admin "Users" page, never written to from this backend.
+    LIVIK_DATABASE_URL: z.string().min(1, 'LIVIK_DATABASE_URL is required'),
+    // Pool sizing is deliberately env-driven, not hard-coded: a long-running process (Render/local)
+    // wants a real pool (today's default: 10), while a Lambda-behind-RDS-Proxy deployment should set
+    // DB_POOL_MAX=1 per-instance and let RDS Proxy do the connection multiplexing across warm instances.
+    DB_POOL_MAX: z.coerce.number().int().positive().default(10),
+    DB_IDLE_TIMEOUT_MS: z.coerce.number().int().positive().default(30_000),
+    DB_CONNECTION_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
     JWT_SECRET: z.string().min(32, 'JWT_SECRET must be at least 32 characters'),
     JWT_EXPIRES_IN: z
         .string()
@@ -47,6 +56,19 @@ const envSchema = z.object({
     AWS_ACCESS_KEY_ID: z.string().min(1, 'AWS_ACCESS_KEY_ID is required'),
     AWS_SECRET_ACCESS_KEY: z.string().min(1, 'AWS_SECRET_ACCESS_KEY is required'),
     AWS_S3_BUCKET_NAME: z.string().min(1, 'AWS_S3_BUCKET_NAME is required'),
+    // AWS Pinpoint (SMS OTP) - reuses AWS_REGION/AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY above.
+    PINPOINT_APPLICATION_ID: z.string().min(1, 'PINPOINT_APPLICATION_ID is required'),
+    PINPOINT_SMS_TEMPLATE_LOGIN: z.string().min(1, 'PINPOINT_SMS_TEMPLATE_LOGIN is required'),
+    PINPOINT_SMS_TEMPLATE_RESET: z.string().min(1, 'PINPOINT_SMS_TEMPLATE_RESET is required'),
+    // Optional: SMSMessage.OriginationNumber is optional in the Pinpoint SDK — if unset, Pinpoint
+    // assigns a random long code per message.
+    PINPOINT_ORIGINATION_NUMBER: z.string().optional(),
+    OTP_LENGTH: z.coerce.number().int().positive().default(6),
+    OTP_TTL_MINUTES: z.coerce.number().int().positive().default(2),
+    OTP_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
+    // Signs the short-lived token handed back after a successful RESET_PASSWORD OTP verify,
+    // exchanged for the actual password reset — separate secret from JWT_SECRET.
+    RESET_TOKEN_SECRET: z.string().min(32, 'RESET_TOKEN_SECRET must be at least 32 characters'),
 });
 
 const parsed = envSchema.safeParse(process.env);

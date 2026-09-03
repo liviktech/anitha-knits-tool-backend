@@ -1,6 +1,18 @@
 import { z } from 'zod';
-import { UserRole } from '@prisma/client';
+import { UserRole } from '../types/enums.js';
 import { booleanQueryParam, paginationSchema } from '../utils/pagination.js';
+import { env } from '../config/env.js';
+
+const mobileSchema = z
+    .string()
+    .trim()
+    .regex(/^[0-9]{10,15}$/, 'mobile must be 10-15 digits');
+
+const otpSchema = z
+    .string()
+    .trim()
+    .regex(/^[0-9]+$/, 'otp must be numeric')
+    .length(env.OTP_LENGTH, `otp must be ${env.OTP_LENGTH} digits`);
 
 export const signupSchema = z
     .object({
@@ -63,8 +75,41 @@ export const listCompanyUsersQuerySchema = paginationSchema
     })
     .strict();
 
+/** Purpose (LOGIN vs RESET_PASSWORD) is never client-supplied — each route hardcodes its own. */
+export const requestOtpSchema = z
+    .object({
+        mobile: mobileSchema,
+    })
+    .strict();
+
+export const verifyOtpLoginSchema = z
+    .object({
+        mobile: mobileSchema,
+        otp: otpSchema,
+    })
+    .strict();
+
+export const verifyOtpResetSchema = z
+    .object({
+        mobile: mobileSchema,
+        otp: otpSchema,
+    })
+    .strict();
+
+export const resetPasswordSchema = z
+    .object({
+        mobile: mobileSchema,
+        resetToken: z.string().min(1),
+        newPassword: z.string().min(8).max(128),
+    })
+    .strict();
+
 export type SignupInput = z.infer<typeof signupSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type ListCompaniesQuery = z.infer<typeof listCompaniesQuerySchema>;
 export type UpdateCompanyInput = z.infer<typeof updateCompanySchema>;
 export type ListCompanyUsersQuery = z.infer<typeof listCompanyUsersQuerySchema>;
+export type RequestOtpInput = z.infer<typeof requestOtpSchema>;
+export type VerifyOtpLoginInput = z.infer<typeof verifyOtpLoginSchema>;
+export type VerifyOtpResetInput = z.infer<typeof verifyOtpResetSchema>;
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;

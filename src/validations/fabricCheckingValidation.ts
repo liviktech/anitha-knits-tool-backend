@@ -45,6 +45,13 @@ export const updateFabricCheckingSchema = z
     .strict()
     .refine((data) => Object.keys(data).length > 0, { message: 'At least one field must be provided' });
 
+export const availableFabricQuerySchema = z
+    .object({
+        colorId: z.string().uuid(),
+        sizeId: z.string().uuid(),
+    })
+    .strict();
+
 export const listFabricCheckingQuerySchema = paginationSchema
     .extend({
         date_from: z.coerce.date().optional(),
@@ -57,3 +64,4 @@ export const listFabricCheckingQuerySchema = paginationSchema
 export type CreateFabricCheckingInput = z.infer<typeof createFabricCheckingSchema>;
 export type UpdateFabricCheckingInput = z.infer<typeof updateFabricCheckingSchema>;
 export type ListFabricCheckingQuery = z.infer<typeof listFabricCheckingQuerySchema>;
+export type AvailableFabricQuery = z.infer<typeof availableFabricQuerySchema>;
