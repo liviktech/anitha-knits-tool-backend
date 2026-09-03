@@ -27,7 +27,7 @@
  * (default 2, applied per module per day).
  */
 
-import { InventoryType } from '@prisma/client';
+import { InventoryType, UserRole } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { createExtruderProduction } from '../services/extruderService.js';
 import { createLoomsProduction } from '../services/loomsService.js';
@@ -94,9 +94,9 @@ async function main() {
     // never runs an item negative — plenty of headroom for demo purposes.
     console.log('Seeding opening Inventory balances...');
     await Promise.all([
-        ...brands.map((brand) => createInventory({ type: InventoryType.HDPE, brandId: brand.id, quantityKg: 1_000_000 }, companyId, SYSTEM)),
-        ...chemicals.map((chemical) => createInventory({ type: InventoryType.CHEMICAL, chemicalId: chemical.id, quantityKg: 1_000_000 }, companyId, SYSTEM)),
-        ...colors.map((color) => createInventory({ type: InventoryType.COLOR, colorId: color.id, quantityKg: 1_000_000 }, companyId, SYSTEM)),
+        ...brands.map((brand) => createInventory({ type: InventoryType.HDPE, brandId: brand.id, quantityKg: 1_000_000, DC: 'DEMO_DC' }, companyId, SYSTEM, UserRole.ADMIN, SYSTEM)),
+        ...chemicals.map((chemical) => createInventory({ type: InventoryType.CHEMICAL, chemicalId: chemical.id, quantityKg: 1_000_000, DC: 'DEMO_DC' }, companyId, SYSTEM, UserRole.ADMIN, SYSTEM)),
+        ...colors.map((color) => createInventory({ type: InventoryType.COLOR, colorId: color.id, quantityKg: 1_000_000, DC: 'DEMO_DC' }, companyId, SYSTEM, UserRole.ADMIN, SYSTEM)),
     ]);
 
     const days = eachDate(startDate, endDate);
@@ -118,6 +118,7 @@ async function main() {
             dayTasks.push(
                 createExtruderProduction(
                     {
+                        type: 'PRODUCTION',
                         productionDate: day,
                         colorId: color.id,
                         sizeId: size.id,
@@ -131,6 +132,8 @@ async function main() {
                     },
                     companyId,
                     SYSTEM,
+                    UserRole.ADMIN,
+                    SYSTEM,
                 ),
             );
 
@@ -138,6 +141,7 @@ async function main() {
             dayTasks.push(
                 createLoomsProduction(
                     {
+                        type: 'PRODUCTION',
                         productionDate: day,
                         colorId: color.id,
                         sizeId: size.id,
@@ -147,6 +151,8 @@ async function main() {
                     },
                     companyId,
                     SYSTEM,
+                    UserRole.ADMIN,
+                    SYSTEM,
                 ),
             );
 
@@ -154,6 +160,7 @@ async function main() {
             dayTasks.push(
                 createFabricCheckingRecord(
                     {
+                        type: 'PRODUCTION',
                         productionDate: day,
                         colorId: color.id,
                         sizeId: size.id,
@@ -163,6 +170,8 @@ async function main() {
                         bwKg: maybeWastage(0.02, 0.2),
                     },
                     companyId,
+                    SYSTEM,
+                    UserRole.ADMIN,
                     SYSTEM,
                 ),
             );
@@ -179,6 +188,7 @@ async function main() {
                     },
                     companyId,
                     SYSTEM,
+                    // Note: createLoadSent in loadSentService.ts doesn't seem to take role/callerId in the signature based on previous view: (input, companyId, actor)
                 ),
             );
 
@@ -192,8 +202,10 @@ async function main() {
                         : { type: invType, colorId: color.id };
             dayTasks.push(
                 createInventory(
-                    { date: day, quantityKg: randomFloat(100, 500), ...invInput },
+                    { date: day, quantityKg: randomFloat(100, 500), DC: 'DEMO_DC', ...invInput },
                     companyId,
+                    SYSTEM,
+                    UserRole.ADMIN,
                     SYSTEM,
                 ),
             );

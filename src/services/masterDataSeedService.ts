@@ -1,5 +1,6 @@
 import type { Prisma } from '@prisma/client';
 import { ProductionStage } from '@prisma/client';
+import { DEFAULT_MODULES } from '../constants/defaultAccessCatalog.js';
 
 const SYSTEM_SEED_ACTOR = 'system:seed';
 
@@ -159,4 +160,31 @@ export async function seedCompanyMasterData(
     },
   });
 }
+
+  for (const mod of DEFAULT_MODULES) {
+    const moduleRecord = await tx.module.upsert({
+      where: { companyId_moduleCode: { companyId, moduleCode: mod.code } },
+      update: {},
+      create: { companyId, moduleCode: mod.code, moduleName: mod.name },
+    });
+
+    for (const tab of mod.tabs) {
+      await tx.tab.upsert({
+        where: {
+          companyId_moduleId_tabCode: {
+            companyId,
+            moduleId: moduleRecord.id,
+            tabCode: tab.code,
+          },
+        },
+        update: {},
+        create: {
+          companyId,
+          moduleId: moduleRecord.id,
+          tabCode: tab.code,
+          tabName: tab.name,
+        },
+      });
+    }
+  }
 }

@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, ProductionStage } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
 import { NotFoundError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
@@ -8,27 +8,11 @@ import type { CreateLoadSentInput, UpdateLoadSentInput, ListLoadSentQuery } from
 
 const loadSentSelect = {
     id: true,
-
     stage: true,
-
     productionDate: true,
-
     remarks: true,
-
-    color: {
-        select: {
-            id: true,
-            name: true,
-        },
-    },
-
-    size: {
-        select: {
-            id: true,
-            name: true,
-        },
-    },
-
+    color: { select: { id: true, name: true, } },
+    size: { select: { id: true, name: true, } },
     loadSent: {
         select: {
             fabricWeight: true,
@@ -39,19 +23,18 @@ const loadSentSelect = {
             vehicleNo: true,
         },
     },
-
     createdAt: true,
     createdBy: true,
     updatedAt: true,
     updatedBy: true,
-} satisfies Prisma.LoadSentSelect;
+} satisfies Prisma.ProductionRecordSelect;
 
-type LoadSentRow = Prisma.LoadSentGetPayload<{ select: typeof loadSentSelect }>;
+type LoadSentRow = Prisma.ProductionRecordGetPayload<{ select: typeof loadSentSelect }>;
 
 function mapLoadSentRecord(record: LoadSentRow) {
+    const { loadSent, ...rest } = record;
     return {
         ...rest,
-
         loadSent: loadSent
             ? {
                 fabricWeight: loadSent.fabricWeight.toNumber(),
@@ -74,16 +57,7 @@ export async function createLoadSent(input: CreateLoadSentInput, companyId: stri
     const bwWeight = input.bwWeight ?? 0;
     const totalWastageWeight = fwWeight + bwWeight;
 
-    const record = await prisma.loadSent.create({
-        data: {
-            companyId,
-        ),
 
-        assertSizeExists(
-            input.sizeId,
-            companyId,
-        ),
-    ]);
 
     const record =
         await prisma.productionRecord.create({
@@ -94,7 +68,7 @@ export async function createLoadSent(input: CreateLoadSentInput, companyId: stri
                     ProductionStage.DELIVERY,
 
                 productionDate:
-                    input.productionDate,
+                    input.date ?? new Date(),
 
                 colorId:
                     input.colorId,
@@ -134,7 +108,7 @@ export async function createLoadSent(input: CreateLoadSentInput, companyId: stri
                 loadSentSelect,
         });
 
-    return mapLoadSentRecord(record);
+    return mapLoadSentRecord(record as any);
 }
 
 export async function listLoadSent(query: ListLoadSentQuery, companyId: string) {
@@ -223,9 +197,9 @@ export async function updateLoadSent(
         input.sizeId ? assertSizeExists(input.sizeId, companyId) : undefined,
     ]);
 
-    const fabricWeight = input.fabricWeight !== undefined ? input.fabricWeight : existing.fabricWeight.toNumber();
-    const fwWeight = input.fwWeight !== undefined ? input.fwWeight : existing.fwWeight.toNumber();
-    const bwWeight = input.bwWeight !== undefined ? input.bwWeight : existing.bwWeight.toNumber();
+    const fabricWeight = input.fabricWeight !== undefined ? input.fabricWeight : existing.loadSent.fabricWeight.toNumber();
+    const fwWeight = input.fwWeight !== undefined ? input.fwWeight : existing.loadSent.fwWeight.toNumber();
+    const bwWeight = input.bwWeight !== undefined ? input.bwWeight : existing.loadSent.bwWeight.toNumber();
     const totalWastageWeight = fwWeight + bwWeight;
 
     const driverName =
@@ -245,10 +219,10 @@ export async function updateLoadSent(
             },
 
             data: {
-                ...(input.productionDate !== undefined
+                ...(input.date !== undefined
                     ? {
                         productionDate:
-                            input.productionDate,
+                            input.date,
                     }
                     : {}),
 
