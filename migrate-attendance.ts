@@ -1,8 +1,8 @@
-import { prisma } from './src/config/prisma';
+import { pool } from './src/db/pool.js';
 
 async function main() {
-  const result = await prisma.$executeRaw`UPDATE "attendances" SET "status" = 'DAY_SHIFT' WHERE "status" = 'PRESENT'`;
-  console.log(`Updated ${result} attendance records.`);
+  const result = await pool.query(`UPDATE "attendances" SET "status" = 'DAY_SHIFT' WHERE "status" = 'PRESENT'`);
+  console.log(`Updated ${result.rowCount} attendance records.`);
 }
 
 main()
@@ -11,5 +11,5 @@ main()
     process.exit(1);
   })
   .finally(async () => {
-    await prisma.$disconnect();
+    await pool.end();
   });

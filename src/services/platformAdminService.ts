@@ -1,6 +1,6 @@
-import { Prisma } from '@prisma/client';
-import { prisma } from '../config/prisma.js';
 import { livikPool } from '../config/livikDb.js';
+import { isUniqueViolation } from '../db/errors.js';
+import { countPlatformAdmins, createPlatformAdmin, findPlatformAdminByMobile, findPlatformAdminById } from '../repositories/platformAdmin.repository.js';
 import { ConflictError, ForbiddenError, UnauthorizedError } from '../utils/errors.js';
 import { comparePassword, dummyPasswordHash, hashPassword } from '../utils/password.js';
 import { signPlatformAdminAccessToken, signPlatformAdminRefreshToken } from '../utils/platformAdminJwt.js';
@@ -42,22 +42,13 @@ async function findLivikEmployeeByEmpId(empId: string): Promise<LivikEmployeeAut
     return result.rows[0] ?? null;
 }
 
-const platformAdminSelect = {
-    id: true,
-    name: true,
-    mobile: true,
-    role: true,
-    isActive: true,
-    createdAt: true,
-} satisfies Prisma.PlatformAdminSelect;
-
 /**
  * Registers the platform's one super-admin. One-time bootstrap: once a PlatformAdmin
  * row exists, this always rejects — there is no public, unbounded way to become one.
  * Time: O(1); Space: O(1).
  */
 export async function signupPlatformAdmin(input: PlatformAdminSignupInput) {
-    const existingCount = await prisma.platformAdmin.count();
+    const existingCount = await countPlatformAdmins();
     if (existingCount > 0) {
         throw new ConflictError('A platform admin already exists', 'PLATFORM_ADMIN_ALREADY_EXISTS');
     }
@@ -65,12 +56,9 @@ export async function signupPlatformAdmin(input: PlatformAdminSignupInput) {
     const passwordHash = await hashPassword(input.password);
 
     try {
-        return await prisma.platformAdmin.create({
-            data: { name: input.name, mobile: input.mobile, passwordHash },
-            select: platformAdminSelect,
-        });
+        return await createPlatformAdmin({ name: input.name, mobile: input.mobile, passwordHash });
     } catch (err) {
-        if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        if (isUniqueViolation(err)) {
             throw new ConflictError('A platform admin already exists', 'PLATFORM_ADMIN_ALREADY_EXISTS');
         }
         throw err;
@@ -81,13 +69,14 @@ export async function signupPlatformAdmin(input: PlatformAdminSignupInput) {
  * Authenticates against the LK Space session — the seeded PlatformAdmin (SUPER_ADMIN, always
  * unrestricted) first, falling back to a Livik employee's own credentials (checked against the
  * separate Livik database, see config/livikDb.ts) for anyone the super admin has explicitly
- * granted a PlatformEmployeeAccess row to. Time: O(1); Space: O(1).
+ * granted LK Space access to. Time: O(1); Space: O(1).
+ *
+ * TODO(platform-rbac-pg-migration): the platform_employee_access table doesn't exist yet (see
+ * platformRoleAccessService.ts), so no Livik employee can currently be granted access — every
+ * employee login correctly falls through to PLATFORM_ACCESS_NOT_GRANTED below until that lands.
  */
 export async function loginPlatformAdmin(input: PlatformAdminLoginInput) {
-    const admin = await prisma.platformAdmin.findUnique({
-        where: { mobile: input.mobile },
-        select: { ...platformAdminSelect, passwordHash: true },
-    });
+    const admin = await findPlatformAdminByMobile(input.mobile);
 
     if (admin) {
         if (!(await comparePassword(input.password, admin.passwordHash))) {
@@ -123,33 +112,9 @@ export async function loginPlatformAdmin(input: PlatformAdminLoginInput) {
         throw new ForbiddenError('This account is inactive', 'ACCOUNT_INACTIVE');
     }
 
-    const employeeAccess = await prisma.platformEmployeeAccess.findUnique({
-        where: { livikEmpId: employee.empId },
-        select: { isActive: true },
-    });
-    if (!employeeAccess || !employeeAccess.isActive) {
-        // Being a Livik employee is not enough on its own — LK Space access is an explicit
-        // allow-list grant made from the Users page, not automatic.
-        throw new ForbiddenError('You have not been granted access to LK Space', 'PLATFORM_ACCESS_NOT_GRANTED');
-    }
-
-    const payload = { sub: employee.empId, role: 'EMPLOYEE' as PlatformAdminRole, mobile: employee.phoneNumber ?? input.mobile };
-    const access = await resolvePlatformAccess('EMPLOYEE', employee.empId);
-
-    return {
-        tokens: {
-            accessToken: signPlatformAdminAccessToken(payload),
-            refreshToken: signPlatformAdminRefreshToken(payload),
-        },
-        admin: {
-            id: employee.empId,
-            name: `${employee.firstName} ${employee.lastName}`.trim(),
-            mobile: employee.phoneNumber ?? input.mobile,
-            role: 'EMPLOYEE' as PlatformAdminRole,
-            isActive: true,
-        },
-        access,
-    };
+    // Being a Livik employee is not enough on its own — LK Space access is an explicit
+    // allow-list grant made from the Users page, not automatic.
+    throw new ForbiddenError('You have not been granted access to LK Space', 'PLATFORM_ACCESS_NOT_GRANTED');
 }
 
 /**
@@ -159,7 +124,7 @@ export async function loginPlatformAdmin(input: PlatformAdminLoginInput) {
  */
 export async function getCurrentPlatformAdmin(role: PlatformAdminRole, sub: string) {
     if (role === 'SUPER_ADMIN') {
-        const admin = await prisma.platformAdmin.findUnique({ where: { id: sub }, select: platformAdminSelect });
+        const admin = await findPlatformAdminById(sub);
         if (!admin) throw new UnauthorizedError('Authentication required', 'AUTH_REQUIRED');
         return { admin: { id: admin.id, name: admin.name, mobile: admin.mobile, role: admin.role as PlatformAdminRole, isActive: admin.isActive }, access: null };
     }

@@ -1,6 +1,12 @@
-import { Prisma } from '@prisma/client';
-import { prisma } from '../config/prisma.js';
+import { isUniqueViolation } from '../db/errors.js';
 import { ConflictError, NotFoundError } from '../utils/errors.js';
+import {
+  createLookupItem,
+  deleteLookupItem,
+  existsLookupItem,
+  listLookupItems,
+  updateLookupItem,
+} from '../repositories/lookupItem.repository.js';
 import type {
   CreateBrandInput,
   CreateChemicalInput,
@@ -13,13 +19,11 @@ import type {
 } from '../validations/lookupValidation.js';
 
 export async function getLookups(companyId: string) {
-  const lookupSelect = { id: true, itemCode: true, name: true, createdAt: true, updatedAt: true };
-
   const [brands, colors, chemicals, sizes] = await Promise.all([
-    prisma.brand.findMany({ where: { companyId }, select: lookupSelect, orderBy: { name: 'asc' } }),
-    prisma.color.findMany({ where: { companyId }, select: lookupSelect, orderBy: { name: 'asc' } }),
-    prisma.chemical.findMany({ where: { companyId }, select: lookupSelect, orderBy: { name: 'asc' } }),
-    prisma.size.findMany({ where: { companyId }, select: lookupSelect, orderBy: { name: 'asc' } }),
+    listLookupItems('brands', companyId),
+    listLookupItems('colors', companyId),
+    listLookupItems('chemicals', companyId),
+    listLookupItems('sizes', companyId),
   ]);
 
   return { brands, colors, chemicals, sizes };
@@ -27,7 +31,7 @@ export async function getLookups(companyId: string) {
 
 /** Maps a unique-constraint violation on [companyId, name] to a stable conflict error. */
 function mapNameConflict(err: unknown, resource: string, code: string): never | undefined {
-  if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== 'P2002') return undefined;
+  if (!isUniqueViolation(err)) return undefined;
   throw new ConflictError(`A ${resource} with this name already exists`, code);
 }
 
@@ -35,25 +39,9 @@ function mapNameConflict(err: unknown, resource: string, code: string): never | 
 // Colors
 // ---------------------------------------------------------------------------
 
-/** Atomically assigns the next colour itemCode: "CR" + a zero-padded per-company sequence. Mirrors userService.nextCustomUserId. */
-async function nextColorCode(tx: Prisma.TransactionClient, companyId: string): Promise<string> {
-  const company = await tx.company.update({
-    where: { id: companyId },
-    data: { colorSeq: { increment: 1 } },
-    select: { colorSeq: true },
-  });
-  return `CR${String(company.colorSeq - 1).padStart(3, '0')}`;
-}
-
 export async function createColor(input: CreateColorInput, companyId: string, actor: string) {
   try {
-    return await prisma.$transaction(async (tx) => {
-      const itemCode = await nextColorCode(tx, companyId);
-      return tx.color.create({
-        data: { companyId, itemCode, name: input.name, createdBy: actor },
-        select: { id: true, itemCode: true, name: true, createdAt: true, updatedAt: true },
-      });
-    });
+    return await createLookupItem('colors', companyId, input.name, actor);
   } catch (err) {
     mapNameConflict(err, 'color', 'COLOR_NAME_EXISTS');
     throw err;
@@ -61,18 +49,14 @@ export async function createColor(input: CreateColorInput, companyId: string, ac
 }
 
 async function assertColorExists(id: string, companyId: string): Promise<void> {
-  const found = await prisma.color.findFirst({ where: { id, companyId }, select: { id: true } });
+  const found = await existsLookupItem('colors', id, companyId);
   if (!found) throw new NotFoundError('Color not found', 'COLOR_NOT_FOUND', { id });
 }
 
 export async function updateColor(id: string, input: UpdateColorInput, companyId: string, actor: string) {
   await assertColorExists(id, companyId);
   try {
-    return await prisma.color.update({
-      where: { id },
-      data: { name: input.name, updatedBy: actor },
-      select: { id: true, itemCode: true, name: true, createdAt: true, updatedAt: true },
-    });
+    return await updateLookupItem('colors', id, input.name, actor);
   } catch (err) {
     mapNameConflict(err, 'color', 'COLOR_NAME_EXISTS');
     throw err;
@@ -81,32 +65,16 @@ export async function updateColor(id: string, input: UpdateColorInput, companyId
 
 export async function deleteColor(id: string, companyId: string): Promise<void> {
   await assertColorExists(id, companyId);
-  await prisma.color.delete({ where: { id } });
+  await deleteLookupItem('colors', id);
 }
 
 // ---------------------------------------------------------------------------
 // Sizes
 // ---------------------------------------------------------------------------
 
-/** Atomically assigns the next size itemCode: "SE" + a zero-padded per-company sequence. */
-async function nextSizeCode(tx: Prisma.TransactionClient, companyId: string): Promise<string> {
-  const company = await tx.company.update({
-    where: { id: companyId },
-    data: { sizeSeq: { increment: 1 } },
-    select: { sizeSeq: true },
-  });
-  return `SE${String(company.sizeSeq - 1).padStart(3, '0')}`;
-}
-
 export async function createSize(input: CreateSizeInput, companyId: string, actor: string) {
   try {
-    return await prisma.$transaction(async (tx) => {
-      const itemCode = await nextSizeCode(tx, companyId);
-      return tx.size.create({
-        data: { companyId, itemCode, name: input.name, createdBy: actor },
-        select: { id: true, itemCode: true, name: true, createdAt: true, updatedAt: true },
-      });
-    });
+    return await createLookupItem('sizes', companyId, input.name, actor);
   } catch (err) {
     mapNameConflict(err, 'size', 'SIZE_NAME_EXISTS');
     throw err;
@@ -114,18 +82,14 @@ export async function createSize(input: CreateSizeInput, companyId: string, acto
 }
 
 async function assertSizeExists(id: string, companyId: string): Promise<void> {
-  const found = await prisma.size.findFirst({ where: { id, companyId }, select: { id: true } });
+  const found = await existsLookupItem('sizes', id, companyId);
   if (!found) throw new NotFoundError('Size not found', 'SIZE_NOT_FOUND', { id });
 }
 
 export async function updateSize(id: string, input: UpdateSizeInput, companyId: string, actor: string) {
   await assertSizeExists(id, companyId);
   try {
-    return await prisma.size.update({
-      where: { id },
-      data: { name: input.name, updatedBy: actor },
-      select: { id: true, itemCode: true, name: true, createdAt: true, updatedAt: true },
-    });
+    return await updateLookupItem('sizes', id, input.name, actor);
   } catch (err) {
     mapNameConflict(err, 'size', 'SIZE_NAME_EXISTS');
     throw err;
@@ -134,32 +98,16 @@ export async function updateSize(id: string, input: UpdateSizeInput, companyId: 
 
 export async function deleteSize(id: string, companyId: string): Promise<void> {
   await assertSizeExists(id, companyId);
-  await prisma.size.delete({ where: { id } });
+  await deleteLookupItem('sizes', id);
 }
 
 // ---------------------------------------------------------------------------
 // Chemicals
 // ---------------------------------------------------------------------------
 
-/** Atomically assigns the next chemical itemCode: "CL" + a zero-padded per-company sequence. */
-async function nextChemicalCode(tx: Prisma.TransactionClient, companyId: string): Promise<string> {
-  const company = await tx.company.update({
-    where: { id: companyId },
-    data: { chemicalSeq: { increment: 1 } },
-    select: { chemicalSeq: true },
-  });
-  return `CL${String(company.chemicalSeq - 1).padStart(3, '0')}`;
-}
-
 export async function createChemical(input: CreateChemicalInput, companyId: string, actor: string) {
   try {
-    return await prisma.$transaction(async (tx) => {
-      const itemCode = await nextChemicalCode(tx, companyId);
-      return tx.chemical.create({
-        data: { companyId, itemCode, name: input.name, createdBy: actor },
-        select: { id: true, itemCode: true, name: true, createdAt: true, updatedAt: true },
-      });
-    });
+    return await createLookupItem('chemicals', companyId, input.name, actor);
   } catch (err) {
     mapNameConflict(err, 'chemical', 'CHEMICAL_NAME_EXISTS');
     throw err;
@@ -167,18 +115,14 @@ export async function createChemical(input: CreateChemicalInput, companyId: stri
 }
 
 async function assertChemicalExists(id: string, companyId: string): Promise<void> {
-  const found = await prisma.chemical.findFirst({ where: { id, companyId }, select: { id: true } });
+  const found = await existsLookupItem('chemicals', id, companyId);
   if (!found) throw new NotFoundError('Chemical not found', 'CHEMICAL_NOT_FOUND', { id });
 }
 
 export async function updateChemical(id: string, input: UpdateChemicalInput, companyId: string, actor: string) {
   await assertChemicalExists(id, companyId);
   try {
-    return await prisma.chemical.update({
-      where: { id },
-      data: { name: input.name, updatedBy: actor },
-      select: { id: true, itemCode: true, name: true, createdAt: true, updatedAt: true },
-    });
+    return await updateLookupItem('chemicals', id, input.name, actor);
   } catch (err) {
     mapNameConflict(err, 'chemical', 'CHEMICAL_NAME_EXISTS');
     throw err;
@@ -187,32 +131,16 @@ export async function updateChemical(id: string, input: UpdateChemicalInput, com
 
 export async function deleteChemical(id: string, companyId: string): Promise<void> {
   await assertChemicalExists(id, companyId);
-  await prisma.chemical.delete({ where: { id } });
+  await deleteLookupItem('chemicals', id);
 }
 
 // ---------------------------------------------------------------------------
 // Brands
 // ---------------------------------------------------------------------------
 
-/** Atomically assigns the next brand itemCode: "BD" + a zero-padded per-company sequence. */
-async function nextBrandCode(tx: Prisma.TransactionClient, companyId: string): Promise<string> {
-  const company = await tx.company.update({
-    where: { id: companyId },
-    data: { brandSeq: { increment: 1 } },
-    select: { brandSeq: true },
-  });
-  return `BD${String(company.brandSeq - 1).padStart(3, '0')}`;
-}
-
 export async function createBrand(input: CreateBrandInput, companyId: string, actor: string) {
   try {
-    return await prisma.$transaction(async (tx) => {
-      const itemCode = await nextBrandCode(tx, companyId);
-      return tx.brand.create({
-        data: { companyId, itemCode, name: input.name, createdBy: actor },
-        select: { id: true, itemCode: true, name: true, createdAt: true, updatedAt: true },
-      });
-    });
+    return await createLookupItem('brands', companyId, input.name, actor);
   } catch (err) {
     mapNameConflict(err, 'brand', 'BRAND_NAME_EXISTS');
     throw err;
@@ -220,18 +148,14 @@ export async function createBrand(input: CreateBrandInput, companyId: string, ac
 }
 
 async function assertBrandExists(id: string, companyId: string): Promise<void> {
-  const found = await prisma.brand.findFirst({ where: { id, companyId }, select: { id: true } });
+  const found = await existsLookupItem('brands', id, companyId);
   if (!found) throw new NotFoundError('Brand not found', 'BRAND_NOT_FOUND', { id });
 }
 
 export async function updateBrand(id: string, input: UpdateBrandInput, companyId: string, actor: string) {
   await assertBrandExists(id, companyId);
   try {
-    return await prisma.brand.update({
-      where: { id },
-      data: { name: input.name, updatedBy: actor },
-      select: { id: true, itemCode: true, name: true, createdAt: true, updatedAt: true },
-    });
+    return await updateLookupItem('brands', id, input.name, actor);
   } catch (err) {
     mapNameConflict(err, 'brand', 'BRAND_NAME_EXISTS');
     throw err;
@@ -240,5 +164,5 @@ export async function updateBrand(id: string, input: UpdateBrandInput, companyId
 
 export async function deleteBrand(id: string, companyId: string): Promise<void> {
   await assertBrandExists(id, companyId);
-  await prisma.brand.delete({ where: { id } });
+  await deleteLookupItem('brands', id);
 }

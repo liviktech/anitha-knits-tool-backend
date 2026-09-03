@@ -39,3 +39,11 @@ export class ForbiddenError extends ApiError {
         this.name = 'ForbiddenError';
     }
 }
+
+/** 501 — the endpoint exists but its implementation is deliberately not available yet (e.g. mid-migration). */
+export class NotImplementedError extends ApiError {
+    constructor(message: string, code: string = 'NOT_IMPLEMENTED', details?: unknown) {
+        super(501, message, code, details);
+        this.name = 'NotImplementedError';
+    }
+}

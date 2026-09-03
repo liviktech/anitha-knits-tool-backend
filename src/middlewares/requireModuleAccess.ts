@@ -1,5 +1,5 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
-import { prisma } from '../config/prisma.js';
+import { findUserRoleAndAccessId } from '../repositories/user.repository.js';
 import { resolveUserAccess } from '../services/roleAccessService.js';
 import { ForbiddenError, UnauthorizedError } from '../utils/errors.js';
 
@@ -23,10 +23,7 @@ export function requireModuleAccess(moduleCode: string | string[], tabCode?: str
         }
 
         try {
-            const user = await prisma.user.findFirst({
-                where: { id: req.user.sub, companyId: req.user.companyId },
-                select: { role: true, roleAccessId: true },
-            });
+            const user = await findUserRoleAndAccessId(req.user.sub, req.user.companyId);
             if (!user) {
                 next(new UnauthorizedError('Authentication required', 'AUTH_REQUIRED'));
                 return;

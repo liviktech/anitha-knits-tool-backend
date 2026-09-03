@@ -1,5 +1,5 @@
-import { InventoryType } from '@prisma/client';
-import { prisma } from '../config/prisma.js';
+import { InventoryType } from '../types/enums.js';
+import { findBrandsChemicalsColors, findExtruderRowsForStock, findInventoryRowsForStock, type NamedItemRow } from '../repositories/stock.repository.js';
 
 function roundKg(value: number): number {
     return Math.round(value * 1000) / 1000;
@@ -7,11 +7,7 @@ function roundKg(value: number): number {
 
 type StockRow = { id: string; name: string; intakeKg: number; consumedKg: number; stockKg: number };
 
-function toStockRows(
-    items: { id: string; name: string }[],
-    intakeById: Map<string, number>,
-    consumedById: Map<string, number>,
-): StockRow[] {
+function toStockRows(items: NamedItemRow[], intakeById: Map<string, number>, consumedById: Map<string, number>): StockRow[] {
     return items.map((item) => {
         const intakeKg = roundKg(intakeById.get(item.id) ?? 0);
         const consumedKg = roundKg(consumedById.get(item.id) ?? 0);
@@ -27,32 +23,17 @@ function toStockRows(
  * still shows up (with a negative balance) instead of being silently dropped.
  */
 export async function getInventoryStockSummary(companyId: string) {
-    const [brands, chemicals, colors, inventoryRows, extruderRows] = await Promise.all([
-        prisma.brand.findMany({ where: { companyId }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
-        prisma.chemical.findMany({ where: { companyId }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
-        prisma.color.findMany({ where: { companyId }, select: { id: true, name: true }, orderBy: { name: 'asc' } }),
-        prisma.inventory.findMany({
-            where: { companyId },
-            select: { type: true, weightKg: true, brandId: true, chemicalId: true, colorId: true },
-        }),
-        prisma.extruderDetail.findMany({
-            where: { productionRecord: { companyId } },
-            select: {
-                brandId: true,
-                rawMaterialKg: true,
-                chemicalId: true,
-                chemicalKg: true,
-                colorConsumedKg: true,
-                productionRecord: { select: { colorId: true } },
-            },
-        }),
+    const [{ brands, chemicals, colors }, inventoryRows, extruderRows] = await Promise.all([
+        findBrandsChemicalsColors(companyId),
+        findInventoryRowsForStock(companyId),
+        findExtruderRowsForStock(companyId),
     ]);
 
     const intakeByBrand = new Map<string, number>();
     const intakeByChemical = new Map<string, number>();
     const intakeByColor = new Map<string, number>();
     for (const row of inventoryRows) {
-        const kg = row.weightKg.toNumber();
+        const kg = row.weightKg;
         if (row.type === InventoryType.HDPE && row.brandId) intakeByBrand.set(row.brandId, (intakeByBrand.get(row.brandId) ?? 0) + kg);
         else if (row.type === InventoryType.CHEMICAL && row.chemicalId) intakeByChemical.set(row.chemicalId, (intakeByChemical.get(row.chemicalId) ?? 0) + kg);
         else if (row.type === InventoryType.COLOR && row.colorId) intakeByColor.set(row.colorId, (intakeByColor.get(row.colorId) ?? 0) + kg);
@@ -62,10 +43,9 @@ export async function getInventoryStockSummary(companyId: string) {
     const consumedByChemical = new Map<string, number>();
     const consumedByColor = new Map<string, number>();
     for (const row of extruderRows) {
-        consumedByBrand.set(row.brandId, (consumedByBrand.get(row.brandId) ?? 0) + row.rawMaterialKg.toNumber());
-        consumedByChemical.set(row.chemicalId, (consumedByChemical.get(row.chemicalId) ?? 0) + row.chemicalKg.toNumber());
-        const colorId = row.productionRecord.colorId;
-        consumedByColor.set(colorId, (consumedByColor.get(colorId) ?? 0) + row.colorConsumedKg.toNumber());
+        consumedByBrand.set(row.brandId, (consumedByBrand.get(row.brandId) ?? 0) + row.rawMaterialKg);
+        consumedByChemical.set(row.chemicalId, (consumedByChemical.get(row.chemicalId) ?? 0) + row.chemicalKg);
+        consumedByColor.set(row.colorId, (consumedByColor.get(row.colorId) ?? 0) + row.colorConsumedKg);
     }
 
     return {
