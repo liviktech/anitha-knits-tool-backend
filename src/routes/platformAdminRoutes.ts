@@ -17,6 +17,7 @@ import {
     resetPassword,
 } from '../controllers/platformAdminController.js';
 import { requirePlatformAdmin } from '../middlewares/platformAdminAuth.js';
+import { requirePlatformModuleAccess } from '../middlewares/requirePlatformModuleAccess.js';
 import { otpRequestLimiter } from '../middlewares/rateLimit.js';
 
 const router = Router();

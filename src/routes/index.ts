@@ -16,6 +16,9 @@ import moduleRoutes from './moduleRoutes.js';
 import tabRoutes from './tabRoutes.js';
 import rightRoutes from './rightRoutes.js';
 import roleAccessRoutes from './roleAccessRoutes.js';
+import openingBalanceRawMaterialRoutes from './openingBalanceRawMaterialRoutes.js';
+import openingBalanceWastageRoutes from './openingBalanceWastageRoutes.js';
+import openingBalanceFabricStockRoutes from './openingBalanceFabricStockRoutes.js';
 import { requireAuth } from '../middlewares/auth.js';
 import { requireModuleAccess } from '../middlewares/requireModuleAccess.js';
 
@@ -81,6 +84,9 @@ router.use('/modules', requireAuth('ADMIN'), moduleRoutes);
 router.use('/tabs', requireAuth('ADMIN'), tabRoutes);
 router.use('/rights', requireAuth('ADMIN'), rightRoutes);
 router.use('/role-access', requireAuth('ADMIN'), roleAccessRoutes);
+router.use('/opening-balance/raw-materials', requireAuth('ADMIN'), openingBalanceRawMaterialRoutes);
+router.use('/opening-balance/wastage', requireAuth('ADMIN'), openingBalanceWastageRoutes);
+router.use('/opening-balance/fabric-stock', requireAuth('ADMIN'), openingBalanceFabricStockRoutes);
 
 import employeeRoutes from './employeeRoutes.js';
 import attendanceRoutes from './attendanceRoutes.js';
