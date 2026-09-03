@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { approveLooms, createLooms, deleteLooms, getLooms, listLooms, updateLooms } from '../controllers/loomsController.js';
+import { approveLooms, createLooms, deleteLooms, getAvailableYarn, getLooms, listLooms, updateLooms } from '../controllers/loomsController.js';
 import { requireAuth } from '../middlewares/auth.js';
 
 const router = Router();
@@ -74,6 +74,33 @@ const router = Router();
  */
 router.post('/', requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'), createLooms);
 router.get('/', listLooms);
+
+/**
+ * @openapi
+ * /api/v1/production/looms/available:
+ *   get:
+ *     tags: [Looms]
+ *     summary: Get the yarn available for Looms to consume for a colour+size variant
+ *     description: >
+ *       Cumulative, all-time Extruder yarnOutputKg for this colour+size minus
+ *       all-time Looms yarnInputKg already recorded against it — the same
+ *       figure the create/update guard enforces (YARN_INPUT_EXCEEDS_AVAILABLE).
+ *     parameters:
+ *       - name: colorId
+ *         in: query
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: sizeId
+ *         in: query
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: OK.
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ */
+router.get('/available', getAvailableYarn);
 
 /**
  * @openapi

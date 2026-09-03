@@ -3,6 +3,7 @@ import {
   approveFabricChecking,
   createFabricChecking,
   deleteFabricChecking,
+  getAvailableFabric,
   getFabricChecking,
   listFabricChecking,
   updateFabricChecking,
@@ -87,6 +88,35 @@ router.post(
   createFabricChecking,
 );
 router.get('/', listFabricChecking);
+
+/**
+ * @openapi
+ * /api/v1/fabric-checking/available:
+ *   get:
+ *     tags: [Fabric Checking]
+ *     summary: Get the fabric available to check for a colour+size variant
+ *     description: >
+ *       Cumulative, all-time Looms fabricOutputKg for this colour+size minus
+ *       all-time Fabric Checking fabricInputKg already recorded against it —
+ *       the same figure the create/update guard enforces
+ *       (FABRIC_INPUT_EXCEEDS_AVAILABLE). Independent of the Kora Balance
+ *       ledger, which tracks a different running total.
+ *     parameters:
+ *       - name: colorId
+ *         in: query
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: sizeId
+ *         in: query
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: OK.
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ */
+router.get('/available', getAvailableFabric);
 
 /**
  * @openapi

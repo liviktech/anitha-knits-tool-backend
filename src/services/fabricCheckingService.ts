@@ -1,6 +1,6 @@
 import { Prisma, ProductionStage, UserRole } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
-import { NotFoundError } from '../utils/errors.js';
+import { ConflictError, NotFoundError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import { roundKg } from '../utils/decimal.js';
 import { buildProductionWhere } from '../utils/productionFilters.js';
@@ -68,6 +68,65 @@ function mapFabricCheckingRecord(record: FabricCheckingRecordRow) {
     };
 }
 
+/**
+ * Fabric Checking consumes fabric produced at the Looms stage, so a colour+size variant
+ * can't be checked in past what Looms has ever produced for it, net of what's already
+ * been checked. Cumulative across all history (not just the latest Loom batch or this
+ * production date) — independent of the Kora Balance ledger, which tracks a different,
+ * looser running total.
+ *
+ * `excludeRecordId` omits a record's own existing fabricInputKg from the "already
+ * consumed" side, so re-validating an update against its own prior value isn't a
+ * false rejection.
+ */
+async function getAvailableFabricKg(
+    companyId: string,
+    colorId: string,
+    sizeId: string,
+    tx: Prisma.TransactionClient | typeof prisma,
+    excludeRecordId?: string,
+): Promise<Prisma.Decimal> {
+    const [loomAgg, checkAgg] = await Promise.all([
+        tx.loomDetail.aggregate({
+            where: { productionRecord: { companyId, stage: ProductionStage.LOOMS, colorId, sizeId } },
+            _sum: { fabricOutputKg: true },
+        }),
+        tx.fabricCheckDetail.aggregate({
+            where: {
+                productionRecord: { companyId, stage: ProductionStage.FABRIC_CHECKING, colorId, sizeId },
+                ...(excludeRecordId ? { productionRecordId: { not: excludeRecordId } } : {}),
+            },
+            _sum: { fabricInputKg: true },
+        }),
+    ]);
+
+    return (loomAgg._sum.fabricOutputKg ?? new Prisma.Decimal(0)).minus(checkAgg._sum.fabricInputKg ?? new Prisma.Decimal(0));
+}
+
+async function assertFabricInputWithinAvailable(
+    companyId: string,
+    colorId: string,
+    sizeId: string,
+    fabricInputKg: number,
+    tx: Prisma.TransactionClient | typeof prisma,
+    excludeRecordId?: string,
+): Promise<void> {
+    const availableKg = await getAvailableFabricKg(companyId, colorId, sizeId, tx, excludeRecordId);
+    if (new Prisma.Decimal(fabricInputKg).greaterThan(availableKg)) {
+        throw new ConflictError(
+            `Fabric input (${fabricInputKg} kg) exceeds the available Looms production for this colour and size (${availableKg.toFixed(3)} kg available)`,
+            'FABRIC_INPUT_EXCEEDS_AVAILABLE',
+            { colorId, sizeId, availableKg: availableKg.toNumber(), requestedKg: fabricInputKg },
+        );
+    }
+}
+
+/** Backs GET /fabric-checking/available — lets the entry form show/validate against the same cumulative figure the create/update guard enforces. */
+export async function getAvailableFabricStockKg(companyId: string, colorId: string, sizeId: string): Promise<number> {
+    const availableKg = await getAvailableFabricKg(companyId, colorId, sizeId, prisma);
+    return availableKg.toNumber();
+}
+
 export async function createFabricCheckingRecord(
     input: CreateFabricCheckingInput,
     companyId: string,
@@ -87,6 +146,8 @@ export async function createFabricCheckingRecord(
     ]);
 
     const record = await prisma.$transaction(async (tx) => {
+        await assertFabricInputWithinAvailable(companyId, input.colorId, input.sizeId, input.fabricInputKg, tx);
+
         const created = await tx.productionRecord.create({
             data: {
                 companyId,
@@ -171,7 +232,7 @@ export async function updateFabricCheckingRecord(
 ) {
     const existing = await prisma.productionRecord.findFirst({
         where: { id, companyId, stage: ProductionStage.FABRIC_CHECKING },
-        select: { id: true, isApproved: true, colorId: true },
+        select: { id: true, isApproved: true, colorId: true, sizeId: true },
     });
     if (!existing) throw new NotFoundError('Fabric checking record not found', 'FABRIC_CHECKING_NOT_FOUND', { id });
 
@@ -183,6 +244,17 @@ export async function updateFabricCheckingRecord(
     ]);
 
     const updated = await prisma.$transaction(async (tx) => {
+        if (input.fabricInputKg !== undefined || input.colorId !== undefined || input.sizeId !== undefined) {
+            await assertFabricInputWithinAvailable(
+                companyId,
+                input.colorId ?? existing.colorId,
+                input.sizeId ?? existing.sizeId,
+                input.fabricInputKg ?? (await tx.fabricCheckDetail.findUniqueOrThrow({ where: { productionRecordId: id }, select: { fabricInputKg: true } })).fabricInputKg.toNumber(),
+                tx,
+                id,
+            );
+        }
+
         await tx.productionRecord.update({
             where: { id },
             data: {

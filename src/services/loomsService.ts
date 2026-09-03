@@ -1,6 +1,6 @@
 import { Prisma, ProductionStage, UserRole } from '@prisma/client';
 import { prisma } from '../config/prisma.js';
-import { NotFoundError } from '../utils/errors.js';
+import { ConflictError, NotFoundError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import { buildProductionWhere } from '../utils/productionFilters.js';
 import { assertColorExists, assertSizeExists } from './masterDataService.js';
@@ -13,8 +13,8 @@ import type { CreateLoomsInput, UpdateLoomsInput, ListLoomsQuery } from '../vali
  * Looms is PRD §16.4: create/list/get, no approval workflow — records are
  * created directly and are immediately final.
  *
- * Yarn/Kora Balance consumption (PRD §8) is out of scope: Kora Balance isn't
- * modeled in this schema.
+ * Yarn/Kora Balance consumption (PRD §8) beyond the Extruder-yarn-availability
+ * check below is out of scope: Kora Balance isn't modeled in this schema.
  */
 const loomsSelect = {
     id: true,
@@ -40,6 +40,64 @@ const loomsSelect = {
 } satisfies Prisma.ProductionRecordSelect;
 
 type LoomsRecordRow = Prisma.ProductionRecordGetPayload<{ select: typeof loomsSelect }>;
+
+/**
+ * Looms consumes yarn produced at the Extruder stage, so a colour+size variant can't
+ * take in more yarn than Extruder has ever produced for it, net of what Looms has
+ * already consumed. Cumulative across all history — mirrors
+ * fabricCheckingService.getAvailableFabricKg for the Looms→Fabric Checking stage.
+ *
+ * `excludeRecordId` omits a record's own existing yarnInputKg from the "already
+ * consumed" side, so re-validating an update against its own prior value isn't a
+ * false rejection.
+ */
+async function getAvailableYarnKg(
+    companyId: string,
+    colorId: string,
+    sizeId: string,
+    tx: Prisma.TransactionClient | typeof prisma,
+    excludeRecordId?: string,
+): Promise<Prisma.Decimal> {
+    const [extruderAgg, loomAgg] = await Promise.all([
+        tx.extruderDetail.aggregate({
+            where: { productionRecord: { companyId, stage: ProductionStage.EXTRUDER, colorId, sizeId } },
+            _sum: { yarnOutputKg: true },
+        }),
+        tx.loomDetail.aggregate({
+            where: {
+                productionRecord: { companyId, stage: ProductionStage.LOOMS, colorId, sizeId },
+                ...(excludeRecordId ? { productionRecordId: { not: excludeRecordId } } : {}),
+            },
+            _sum: { yarnInputKg: true },
+        }),
+    ]);
+
+    return (extruderAgg._sum.yarnOutputKg ?? new Prisma.Decimal(0)).minus(loomAgg._sum.yarnInputKg ?? new Prisma.Decimal(0));
+}
+
+async function assertYarnInputWithinAvailable(
+    companyId: string,
+    colorId: string,
+    sizeId: string,
+    yarnInputKg: number,
+    tx: Prisma.TransactionClient | typeof prisma,
+    excludeRecordId?: string,
+): Promise<void> {
+    const availableKg = await getAvailableYarnKg(companyId, colorId, sizeId, tx, excludeRecordId);
+    if (new Prisma.Decimal(yarnInputKg).greaterThan(availableKg)) {
+        throw new ConflictError(
+            `Loom Production (${yarnInputKg} kg) exceeds the available Extruder yarn for this colour and size (${availableKg.toFixed(3)} kg available)`,
+            'YARN_INPUT_EXCEEDS_AVAILABLE',
+            { colorId, sizeId, availableKg: availableKg.toNumber(), requestedKg: yarnInputKg },
+        );
+    }
+}
+
+/** Backs GET /production/looms/available — lets the entry form show/validate against the same cumulative figure the create/update guard enforces. */
+export async function getAvailableYarnStockKg(companyId: string, colorId: string, sizeId: string): Promise<number> {
+    const availableKg = await getAvailableYarnKg(companyId, colorId, sizeId, prisma);
+    return availableKg.toNumber();
+}
 
 function mapLoomsRecord(record: LoomsRecordRow) {
     const { loom, wastages, ...rest } = record;
@@ -73,6 +131,8 @@ export async function createLoomsProduction(
     ]);
 
     const record = await prisma.$transaction(async (tx) => {
+        await assertYarnInputWithinAvailable(companyId, input.colorId, input.sizeId, input.yarnInputKg, tx);
+
         const created = await tx.productionRecord.create({
             data: {
                 companyId,
@@ -139,7 +199,7 @@ export async function updateLoomsProduction(
 ) {
     const existing = await prisma.productionRecord.findFirst({
         where: { id, companyId, stage: ProductionStage.LOOMS },
-        select: { id: true, isApproved: true },
+        select: { id: true, isApproved: true, colorId: true, sizeId: true },
     });
     if (!existing) throw new NotFoundError('Looms production not found', 'LOOMS_NOT_FOUND', { id });
 
@@ -151,6 +211,17 @@ export async function updateLoomsProduction(
     ]);
 
     const updated = await prisma.$transaction(async (tx) => {
+        if (input.yarnInputKg !== undefined || input.colorId !== undefined || input.sizeId !== undefined) {
+            await assertYarnInputWithinAvailable(
+                companyId,
+                input.colorId ?? existing.colorId,
+                input.sizeId ?? existing.sizeId,
+                input.yarnInputKg ?? (await tx.loomDetail.findUniqueOrThrow({ where: { productionRecordId: id }, select: { yarnInputKg: true } })).yarnInputKg.toNumber(),
+                tx,
+                id,
+            );
+        }
+
         await tx.productionRecord.update({
             where: { id },
             data: {
