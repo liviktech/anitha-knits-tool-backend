@@ -1,5 +1,8 @@
 import type pg from 'pg';
 import { ProductionStage } from '../types/enums.js';
+import { DEFAULT_MODULES } from '../constants/defaultAccessCatalog.js';
+import { insertModule } from '../repositories/module.repository.js';
+import { insertTabs } from '../repositories/tab.repository.js';
 
 const SYSTEM_SEED_ACTOR = 'system:seed';
 
@@ -39,8 +42,9 @@ async function seedLookupTable(
 
 /**
  * Seeds a new company's Layer-0 master data (brand/chemical/size/color + colour consumption
- * standard + wastage types) — PRD §12/§4/§5 defaults every new company starts with. Must run
- * inside the same transaction (same `client`) as the caller's other signup/seed writes.
+ * standard + wastage types) — PRD §12/§4/§5 defaults every new company starts with — plus the
+ * default Module/Tab catalog. Must run inside the same transaction (same `client`) as the
+ * caller's other signup/seed writes.
  */
 export async function seedCompanyMasterData(client: pg.PoolClient, companyId: string, actor: string = SYSTEM_SEED_ACTOR): Promise<void> {
   await seedLookupTable(client, 'brands', 'BD', 'brand_seq', BRANDS, companyId, actor);
@@ -68,5 +72,21 @@ export async function seedCompanyMasterData(client: pg.PoolClient, companyId: st
        ON CONFLICT (company_id, stage, code) DO UPDATE SET name = EXCLUDED.name, is_color_tracked = EXCLUDED.is_color_tracked, updated_at = now()`,
       [companyId, wastageType.stage, wastageType.code, wastageType.name, wastageType.isColorTracked, actor],
     );
+  }
+
+  await seedDefaultModulesAndTabs(client, companyId);
+}
+
+/**
+ * Seeds a new company's default Module/Tab catalog (DEFAULT_MODULES). Admins can
+ * add/edit/delete beyond this via the Module/Tab CRUD endpoints. No Rights are
+ * seeded here — every Right is created manually by the admin via the Roles tab.
+ */
+async function seedDefaultModulesAndTabs(client: pg.PoolClient, companyId: string): Promise<void> {
+  for (const mod of DEFAULT_MODULES) {
+    const createdModule = await insertModule(client, { companyId, moduleCode: mod.code, moduleName: mod.name });
+    if (mod.tabs.length > 0) {
+      await insertTabs(client, companyId, createdModule.id, mod.tabs as unknown as { code: string; name: string }[]);
+    }
   }
 }

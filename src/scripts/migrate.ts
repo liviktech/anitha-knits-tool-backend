@@ -1,14 +1,14 @@
 /**
  * scripts/migrate.ts — applies database/migrations/*.sql files in filename order, tracking
- * what's already been applied in a `schema_migrations` table. No ORM, no external migration
+ * what's already been applied in a `migration_history` table. No ORM, no external migration
  * library — just the same `pg` Pool the app uses.
  *
  * Usage:
  *   npm run migrate              — apply every not-yet-applied migration
  *   npm run migrate:baseline     — mark every not-yet-applied migration as applied WITHOUT
  *                                  running it (for a database that already has that schema —
- *                                  e.g. dev/production right after 0001_baseline.sql was
- *                                  generated FROM them via pg_dump)
+ *                                  e.g. dev/production, both baselined against 000-009 on
+ *                                  2026-09-03 right after those files were written)
  */
 import { readdirSync, readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -19,7 +19,7 @@ import { pool } from '../db/pool.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = path.resolve(__dirname, '../../database/migrations');
 
-/** pg_dump (18+) prefixes/suffixes its output with `\restrict`/`\unrestrict` — psql-only meta-commands, not valid SQL for a driver to execute. Strip any backslash-command line before running a file. */
+/** Defensive: strips any psql-only backslash meta-command line (e.g. `\restrict`/`\unrestrict`, which pg_dump 18+ emits) — not valid SQL for a driver to execute, in case a future migration file is pasted in from pg_dump output. */
 function stripPsqlMetaCommands(sql: string): string {
     return sql
         .split('\n')
@@ -34,13 +34,12 @@ function listMigrationFiles(): string[] {
 }
 
 /**
- * pg_dump emits `SELECT pg_catalog.set_config('search_path', '', false)` — a *session-level*
- * (non-transactional; the `false` means "not local to this transaction") change. On a pooled
- * connection that persists past this script and can leak into a completely unrelated later
- * query on the same physical backend connection (confirmed empirically against Neon's pooler;
- * the same risk applies to RDS Proxy). `DISCARD ALL` resets search_path and all other session
- * state back to defaults — run it both defensively on connect (in case a previous pool user left
- * something dirty) and before releasing the connection back to the pool.
+ * Defensive: a migration file that changes session-level state non-transactionally (e.g.
+ * pg_dump's `SELECT pg_catalog.set_config('search_path', '', false)`) can leak that state into a
+ * later, unrelated query on the same pooled backend connection — reproduced empirically against
+ * Neon's pooler while building this runner; the same risk applies to RDS Proxy. `DISCARD ALL`
+ * resets search_path and all other session state back to defaults; run it both on connect (in
+ * case a previous pool user left something dirty) and before releasing the connection.
  */
 async function resetSession(client: pg.PoolClient): Promise<void> {
     await client.query('DISCARD ALL');
@@ -53,14 +52,15 @@ async function main() {
 
     try {
         await client.query(`
-            CREATE TABLE IF NOT EXISTS schema_migrations (
-                name TEXT PRIMARY KEY,
-                applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            CREATE TABLE IF NOT EXISTS migration_history (
+                id         SERIAL PRIMARY KEY,
+                filename   VARCHAR(255) UNIQUE NOT NULL,
+                applied_at TIMESTAMPTZ DEFAULT NOW()
             )
         `);
 
-        const appliedResult = await client.query<{ name: string }>('SELECT name FROM schema_migrations');
-        const applied = new Set(appliedResult.rows.map((row) => row.name));
+        const appliedResult = await client.query<{ filename: string }>('SELECT filename FROM migration_history');
+        const applied = new Set(appliedResult.rows.map((row) => row.filename));
 
         const pending = listMigrationFiles().filter((file) => !applied.has(file));
 
@@ -71,7 +71,7 @@ async function main() {
 
         for (const file of pending) {
             if (baselineOnly) {
-                await client.query('INSERT INTO schema_migrations (name) VALUES ($1)', [file]);
+                await client.query('INSERT INTO migration_history (filename) VALUES ($1)', [file]);
                 console.log(`Baselined ${file} (marked applied, not executed)`);
                 continue;
             }
@@ -82,7 +82,7 @@ async function main() {
             await client.query('BEGIN');
             try {
                 await client.query(sql);
-                await client.query('INSERT INTO schema_migrations (name) VALUES ($1)', [file]);
+                await client.query('INSERT INTO migration_history (filename) VALUES ($1)', [file]);
                 await client.query('COMMIT');
                 console.log(`Applied ${file}`);
             } catch (err) {
@@ -90,7 +90,7 @@ async function main() {
                 throw err;
             } finally {
                 // BEGIN/COMMIT/ROLLBACK don't scope session-level GUC changes (see resetSession above) —
-                // the migration file's own SET/set_config statements persist regardless, so reset explicitly.
+                // a migration file's own SET/set_config statements persist regardless, so reset explicitly.
                 await resetSession(client);
             }
         }

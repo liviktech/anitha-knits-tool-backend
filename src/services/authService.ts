@@ -14,7 +14,6 @@ import {
 import { signAccessToken, signRefreshToken } from '../utils/jwt.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import { nextCustomUserId, withMappedEmployeeDetails } from './userService.js';
-import { DEFAULT_MODULES } from '../constants/defaultAccessCatalog.js';
 import { seedCompanyMasterData } from './masterDataSeedService.js';
 import { resolveUserAccess } from './roleAccessService.js';
 import {
@@ -32,8 +31,6 @@ import {
   listCompanyUsers as listCompanyUsersRepo,
   updateLastLogin,
 } from '../repositories/user.repository.js';
-import { insertModule } from '../repositories/module.repository.js';
-import { insertTabs } from '../repositories/tab.repository.js';
 import type { TokenPayload } from '../types/auth.js';
 import type {
   LoginInput,
@@ -81,15 +78,9 @@ export async function signupCompany(input: SignupInput) {
       );
 
       // Layer 0 master data (brand/chemical/size/color + colour consumption
-      // standard) — PRD §12/§4/§5 defaults every new company starts with.
+      // standard + wastage types) — PRD §12/§4/§5 defaults every new company starts
+      // with — plus the default Module/Tab catalog.
       await seedCompanyMasterData(client, company.id);
-
-      for (const mod of DEFAULT_MODULES) {
-        const createdModule = await insertModule(client, { companyId: company.id, moduleCode: mod.code, moduleName: mod.name });
-        if (mod.tabs.length > 0) {
-          await insertTabs(client, company.id, createdModule.id, mod.tabs as unknown as { code: string; name: string }[]);
-        }
-      }
 
       // No Rights are seeded here — every Right (including the Production Details
       // Add/Edit ones the hard ceilings in productionCeilings.ts look for) is created
