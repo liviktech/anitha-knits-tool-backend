@@ -41,6 +41,11 @@ export async function updateLastLogin(userId: string): Promise<void> {
     await query('UPDATE users SET last_login_at = now() WHERE id = $1', [userId]);
 }
 
+/** Sets a freshly-hashed password (forgot-password flow) — never accepts a plaintext value. */
+export async function updatePasswordHash(userId: string, passwordHash: string): Promise<void> {
+    await query('UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2', [passwordHash, userId]);
+}
+
 export interface MeRow {
     id: string;
     companyId: string;

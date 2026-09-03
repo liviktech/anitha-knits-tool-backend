@@ -1,45 +1,22 @@
-import { livikPool } from '../config/livikDb.js';
+import jwt from 'jsonwebtoken';
 import { isUniqueViolation } from '../db/errors.js';
-import { countPlatformAdmins, createPlatformAdmin, findPlatformAdminByMobile, findPlatformAdminById } from '../repositories/platformAdmin.repository.js';
+import {
+    countPlatformAdmins,
+    createPlatformAdmin,
+    findPlatformAdminByMobile,
+    updatePasswordHash,
+} from '../repositories/platformAdmin.repository.js';
 import { ConflictError, ForbiddenError, UnauthorizedError } from '../utils/errors.js';
 import { comparePassword, dummyPasswordHash, hashPassword } from '../utils/password.js';
 import { signPlatformAdminAccessToken, signPlatformAdminRefreshToken } from '../utils/platformAdminJwt.js';
-import { resolvePlatformAccess } from './platformRoleAccessService.js';
-import type { PlatformAdminRole } from '../types/auth.js';
+import { env } from '../config/env.js';
 import type { PlatformAdminLoginInput, PlatformAdminSignupInput } from '../validations/platformAdminValidation.js';
 
-interface LivikEmployeeAuthRow {
-    id: string;
-    empId: string;
-    firstName: string;
-    lastName: string;
-    phoneNumber: string | null;
-    password: string | null;
-    isActive: boolean;
-}
-
-/** Looks up a Livik employee by phone number for LK Space login — see config/livikDb.ts. */
-async function findLivikEmployeeByPhone(phoneNumber: string): Promise<LivikEmployeeAuthRow | null> {
-    const result = await livikPool.query<LivikEmployeeAuthRow>(
-        `SELECT "id", "empId", "firstName", "lastName", "phoneNumber", "password", "isActive"
-         FROM "Employee"
-         WHERE "phoneNumber" = $1
-         LIMIT 1`,
-        [phoneNumber],
-    );
-    return result.rows[0] ?? null;
-}
-
-/** Looks up a Livik employee by their stable empId — used to re-resolve an EMPLOYEE session's profile (GET /me) from the JWT's `sub` claim. */
-async function findLivikEmployeeByEmpId(empId: string): Promise<LivikEmployeeAuthRow | null> {
-    const result = await livikPool.query<LivikEmployeeAuthRow>(
-        `SELECT "id", "empId", "firstName", "lastName", "phoneNumber", "password", "isActive"
-         FROM "Employee"
-         WHERE "empId" = $1
-         LIMIT 1`,
-        [empId],
-    );
-    return result.rows[0] ?? null;
+/** Claims signed by otpService.issueResetToken and expected here. */
+interface ResetTokenPayload {
+    mobile: string;
+    actorType: 'COMPANY_USER' | 'PLATFORM_ADMIN';
+    purpose: 'password_reset';
 }
 
 /**
@@ -105,43 +82,76 @@ export async function loginPlatformAdmin(input: PlatformAdminLoginInput) {
         throw new UnauthorizedError('Invalid mobile number or password', 'INVALID_CREDENTIALS');
     }
 
-    if (!(await comparePassword(input.password, employee.password))) {
+    if (!(await comparePassword(input.password, admin.passwordHash))) {
         throw new UnauthorizedError('Invalid mobile number or password', 'INVALID_CREDENTIALS');
     }
-    if (!employee.isActive) {
+    if (!admin.isActive) {
         throw new ForbiddenError('This account is inactive', 'ACCOUNT_INACTIVE');
     }
 
-    // Being a Livik employee is not enough on its own — LK Space access is an explicit
-    // allow-list grant made from the Users page, not automatic.
-    throw new ForbiddenError('You have not been granted access to LK Space', 'PLATFORM_ACCESS_NOT_GRANTED');
+    const payload = { sub: admin.id, role: admin.role, mobile: admin.mobile };
+    const tokens = {
+        accessToken: signPlatformAdminAccessToken(payload),
+        refreshToken: signPlatformAdminRefreshToken(payload),
+    };
+
+    return {
+        tokens,
+        admin: { id: admin.id, name: admin.name, mobile: admin.mobile, role: admin.role, isActive: admin.isActive },
+    };
 }
 
 /**
- * Re-resolves the current LK Space session's profile + access from scratch — used by GET
- * /platform/admin/me so a role change reaches an already-logged-in employee session without
- * forcing logout, mirroring the company-side getCurrentUser.
+ * Issues a session for a platform-admin mobile whose OTP the caller has already verified
+ * (otpService.verifyOtp with purpose: 'LOGIN', actorType: 'PLATFORM_ADMIN'). No ambiguity branch
+ * needed — platform_admins.mobile is globally unique, unlike company-user mobiles.
+ * Time: O(1); Space: O(1).
  */
-export async function getCurrentPlatformAdmin(role: PlatformAdminRole, sub: string) {
-    if (role === 'SUPER_ADMIN') {
-        const admin = await findPlatformAdminById(sub);
-        if (!admin) throw new UnauthorizedError('Authentication required', 'AUTH_REQUIRED');
-        return { admin: { id: admin.id, name: admin.name, mobile: admin.mobile, role: admin.role as PlatformAdminRole, isActive: admin.isActive }, access: null };
+export async function loginPlatformAdminWithOtp(mobile: string) {
+    const admin = await findPlatformAdminByMobile(mobile);
+    if (!admin) {
+        throw new UnauthorizedError('Invalid mobile number or password', 'INVALID_CREDENTIALS');
+    }
+    if (!admin.isActive) {
+        throw new ForbiddenError('This account is inactive', 'ACCOUNT_INACTIVE');
     }
 
-    const employee = await findLivikEmployeeByEmpId(sub);
-    if (!employee) {
-        throw new UnauthorizedError('Authentication required', 'AUTH_REQUIRED');
-    }
-    const access = await resolvePlatformAccess('EMPLOYEE', employee.empId);
-    return {
-        admin: {
-            id: employee.empId,
-            name: `${employee.firstName} ${employee.lastName}`.trim(),
-            mobile: employee.phoneNumber ?? '',
-            role: 'EMPLOYEE' as PlatformAdminRole,
-            isActive: employee.isActive,
-        },
-        access,
+    const payload = { sub: admin.id, role: admin.role, mobile: admin.mobile };
+    const tokens = {
+        accessToken: signPlatformAdminAccessToken(payload),
+        refreshToken: signPlatformAdminRefreshToken(payload),
     };
+
+    return {
+        tokens,
+        admin: { id: admin.id, name: admin.name, mobile: admin.mobile, role: admin.role, isActive: admin.isActive },
+    };
+}
+
+/**
+ * Completes the platform-admin forgot-password flow: verifies the short-lived resetToken issued
+ * right after a successful RESET_PASSWORD OTP verify, re-resolves the admin by mobile, and
+ * overwrites its password hash. Time: O(1); Space: O(1).
+ */
+export async function resetPlatformAdminPassword(mobile: string, resetToken: string, newPassword: string): Promise<void> {
+    let payload: ResetTokenPayload;
+    try {
+        payload = jwt.verify(resetToken, env.RESET_TOKEN_SECRET) as ResetTokenPayload;
+    } catch {
+        throw new UnauthorizedError('Invalid or expired reset token', 'RESET_TOKEN_INVALID');
+    }
+    if (payload.mobile !== mobile || payload.purpose !== 'password_reset' || payload.actorType !== 'PLATFORM_ADMIN') {
+        throw new UnauthorizedError('Invalid or expired reset token', 'RESET_TOKEN_INVALID');
+    }
+
+    const admin = await findPlatformAdminByMobile(mobile);
+    if (!admin) {
+        throw new UnauthorizedError('Invalid or expired reset token', 'RESET_TOKEN_INVALID');
+    }
+    if (!admin.isActive) {
+        throw new ForbiddenError('This account is inactive', 'ACCOUNT_INACTIVE');
+    }
+
+    const passwordHash = await hashPassword(newPassword);
+    await updatePasswordHash(admin.id, passwordHash);
 }

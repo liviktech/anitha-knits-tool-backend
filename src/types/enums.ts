@@ -74,3 +74,15 @@ export const RightAction = {
     DELETE: 'DELETE',
 } as const;
 export type RightAction = (typeof RightAction)[keyof typeof RightAction];
+
+export const OtpPurpose = {
+    LOGIN: 'LOGIN',
+    RESET_PASSWORD: 'RESET_PASSWORD',
+} as const;
+export type OtpPurpose = (typeof OtpPurpose)[keyof typeof OtpPurpose];
+
+export const OtpActorType = {
+    COMPANY_USER: 'COMPANY_USER',
+    PLATFORM_ADMIN: 'PLATFORM_ADMIN',
+} as const;
+export type OtpActorType = (typeof OtpActorType)[keyof typeof OtpActorType];
