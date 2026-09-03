@@ -232,7 +232,7 @@ export async function updateFabricCheckingRecord(
 ) {
     const existing = await prisma.productionRecord.findFirst({
         where: { id, companyId, stage: ProductionStage.FABRIC_CHECKING },
-        select: { id: true, isApproved: true, colorId: true, sizeId: true },
+        select: { id: true, isApproved: true, colorId: true, sizeId: true, productionDate: true },
     });
     if (!existing) throw new NotFoundError('Fabric checking record not found', 'FABRIC_CHECKING_NOT_FOUND', { id });
 
@@ -243,13 +243,23 @@ export async function updateFabricCheckingRecord(
         input.sizeId ? assertSizeExists(input.sizeId, companyId) : undefined,
     ]);
 
+    // Any of these three changing invalidates the kora ledger entry this record created
+    // back in createFabricCheckingRecord — net = latest Loom batch's fabric output minus
+    // this record's fabricInputKg, keyed by colour+size.
+    const koraAffectingFieldsChanged =
+        input.fabricInputKg !== undefined || input.colorId !== undefined || input.sizeId !== undefined;
+
     const updated = await prisma.$transaction(async (tx) => {
-        if (input.fabricInputKg !== undefined || input.colorId !== undefined || input.sizeId !== undefined) {
+        const finalFabricInputKg = koraAffectingFieldsChanged
+            ? input.fabricInputKg ?? (await tx.fabricCheckDetail.findUniqueOrThrow({ where: { productionRecordId: id }, select: { fabricInputKg: true } })).fabricInputKg.toNumber()
+            : undefined;
+
+        if (koraAffectingFieldsChanged) {
             await assertFabricInputWithinAvailable(
                 companyId,
                 input.colorId ?? existing.colorId,
                 input.sizeId ?? existing.sizeId,
-                input.fabricInputKg ?? (await tx.fabricCheckDetail.findUniqueOrThrow({ where: { productionRecordId: id }, select: { fabricInputKg: true } })).fabricInputKg.toNumber(),
+                finalFabricInputKg!,
                 tx,
                 id,
             );
@@ -273,6 +283,35 @@ export async function updateFabricCheckingRecord(
                 ...(input.outputKg !== undefined ? { outputKg: input.outputKg } : {}),
             },
         });
+
+        // Reverse this record's prior effect on the kora ledger (using its own ledger entry,
+        // so the reversal is exact even if the variant is changing) and recompute against the
+        // now-current values and variant — mirroring create's own logic exactly.
+        if (koraAffectingFieldsChanged) {
+            const finalColorId = input.colorId ?? existing.colorId;
+            const finalSizeId = input.sizeId ?? existing.sizeId;
+            const finalProductionDate = input.productionDate ?? existing.productionDate;
+
+            await reverseKoraBalance(id, tx);
+
+            const latestLoom = await tx.productionRecord.findFirst({
+                where: { companyId, stage: ProductionStage.LOOMS, colorId: finalColorId, sizeId: finalSizeId },
+                orderBy: [{ productionDate: 'desc' }, { createdAt: 'desc' }],
+                select: { loom: { select: { fabricOutputKg: true } } },
+            });
+
+            await updateKoraBalance(
+                companyId,
+                finalColorId,
+                finalSizeId,
+                latestLoom?.loom?.fabricOutputKg ?? 0,
+                finalFabricInputKg!,
+                finalProductionDate,
+                id,
+                actor,
+                tx,
+            );
+        }
 
         const wastageUpdates = [
             ...(input.fwKg !== undefined ? [{ code: WASTAGE_CODES.FW, quantityKg: input.fwKg }] : []),

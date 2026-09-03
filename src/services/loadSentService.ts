@@ -114,11 +114,13 @@ export async function createLoadSent(input: CreateLoadSentInput, companyId: stri
 export async function listLoadSent(query: ListLoadSentQuery, companyId: string) {
     const { skip, take } = toSkipTake(query);
 
-    const where: Prisma.LoadSentWhereInput = {
+    const where: Prisma.ProductionRecordWhereInput = {
         companyId,
+        stage: ProductionStage.DELIVERY,
+        loadSent: { isNot: null },
         ...(query.date_from || query.date_to
             ? {
-                sentDate: {
+                productionDate: {
                     ...(query.date_from ? { gte: query.date_from } : {}),
                     ...(query.date_to ? { lte: query.date_to } : {}),
                 },
@@ -129,21 +131,24 @@ export async function listLoadSent(query: ListLoadSentQuery, companyId: string) 
     };
 
     const [rows, total] = await prisma.$transaction([
-        prisma.loadSent.findMany({
+        prisma.productionRecord.findMany({
             where,
             select: loadSentSelect,
-            orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+            orderBy: [{ productionDate: 'desc' }, { createdAt: 'desc' }],
             skip,
             take,
         }),
-        prisma.loadSent.count({ where }),
+        prisma.productionRecord.count({ where }),
     ]);
 
     return { items: rows.map(mapLoadSentRecord), meta: toPageMeta(query, total) };
 }
 
 export async function getLoadSentById(id: string, companyId: string) {
-    const record = await prisma.loadSent.findFirst({ where: { id, companyId }, select: loadSentSelect });
+    const record = await prisma.productionRecord.findFirst({
+        where: { id, companyId, stage: ProductionStage.DELIVERY, loadSent: { isNot: null } },
+        select: loadSentSelect,
+    });
     if (!record) throw new NotFoundError('Load Sent record not found', 'LOAD_SENT_NOT_FOUND', { id });
     return mapLoadSentRecord(record);
 }
