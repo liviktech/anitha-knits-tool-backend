@@ -149,23 +149,14 @@ export async function findWastageTypesByCodes(companyId: string, codes: string[]
 export interface WastageRecordForSummaryRow {
     quantityKg: number;
     code: string;
-    /** The linked production record's own colour/size (not wastage_records.color_id, which is only ever set for BW and always mirrors this anyway) — lets callers break wastage down by variant. */
-    colorId: string | null;
-    colorName: string | null;
-    sizeId: string | null;
-    sizeName: string | null;
 }
 
 export async function findWastageRecordsForDateRange(companyId: string, dateFrom: Date, dateTo: Date): Promise<WastageRecordForSummaryRow[]> {
     const result = await query<WastageRecordForSummaryRow>(
-        `SELECT wr.quantity_kg AS "quantityKg", wt.code,
-                pc.id AS "colorId", pc.name AS "colorName",
-                ps.id AS "sizeId", ps.name AS "sizeName"
+        `SELECT wr.quantity_kg AS "quantityKg", wt.code
          FROM wastage_records wr
          JOIN wastage_types wt ON wt.id = wr.wastage_type_id
          JOIN production_records pr ON pr.id = wr.production_record_id
-         LEFT JOIN colors pc ON pc.id = pr.color_id
-         LEFT JOIN sizes ps ON ps.id = pr.size_id
          WHERE wr.company_id = $1 AND pr.production_date >= $2 AND pr.production_date <= $3`,
         [companyId, dateFrom, dateTo],
     );
