@@ -1,3 +1,4 @@
+import type pg from 'pg';
 import { query, queryOne } from '../db/query.js';
 import { withReadClient } from '../db/transaction.js';
 import type { RightAction } from '../types/enums.js';
@@ -46,6 +47,22 @@ export async function createRight(input: {
          LEFT JOIN tabs t ON t.id = i.tab_id`,
         [input.companyId, input.moduleId, input.tabId, input.action, input.rightName, input.displayName],
     );
+    if (!row) throw new Error('Insert into rights returned no row');
+    return row;
+}
+
+/** Transaction-scoped insert — used by authService.signupCompany's default-catalog seeding (needs only the id back). Mirrors module.repository.ts's insertModule. */
+export async function insertRight(
+    client: pg.PoolClient,
+    input: { companyId: string; moduleId: string; tabId: string | null; action: RightAction; rightName: string; displayName: string },
+): Promise<{ id: string }> {
+    const result = await client.query<{ id: string }>(
+        `INSERT INTO rights (id, company_id, module_id, tab_id, action, right_name, display_name, updated_at)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, now())
+         RETURNING id`,
+        [input.companyId, input.moduleId, input.tabId, input.action, input.rightName, input.displayName],
+    );
+    const row = result.rows[0];
     if (!row) throw new Error('Insert into rights returned no row');
     return row;
 }

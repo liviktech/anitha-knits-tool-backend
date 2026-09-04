@@ -19,14 +19,18 @@ const TAB_SELECT_SQL = `
     JOIN modules m ON m.id = t.module_id
 `;
 
-/** Bulk-inserts Tab rows for one module — used by authService.signupCompany's default-catalog seeding. No-op if `tabs` is empty. */
+/**
+ * Bulk-inserts Tab rows for one module — used by authService.signupCompany's default-catalog
+ * seeding. Returns the inserted id/tabCode pairs so callers can resolve tab ids for
+ * tab-scoped Rights without a follow-up query. No-op (returns []) if `tabs` is empty.
+ */
 export async function insertTabs(
     client: pg.PoolClient,
     companyId: string,
     moduleId: string,
     tabs: { code: string; name: string }[],
-): Promise<void> {
-    if (tabs.length === 0) return;
+): Promise<{ id: string; tabCode: string }[]> {
+    if (tabs.length === 0) return [];
     const values: string[] = [];
     const params: unknown[] = [];
     for (const tab of tabs) {
@@ -34,7 +38,11 @@ export async function insertTabs(
         const base = params.length - 4;
         values.push(`(gen_random_uuid(), $${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, now())`);
     }
-    await client.query(`INSERT INTO tabs (id, company_id, module_id, tab_code, tab_name, updated_at) VALUES ${values.join(', ')}`, params);
+    const result = await client.query<{ id: string; tabCode: string }>(
+        `INSERT INTO tabs (id, company_id, module_id, tab_code, tab_name, updated_at) VALUES ${values.join(', ')} RETURNING id, tab_code AS "tabCode"`,
+        params,
+    );
+    return result.rows;
 }
 
 export async function createTab(input: { companyId: string; moduleId: string; tabCode: string; tabName: string }): Promise<TabRow> {
