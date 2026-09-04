@@ -17,6 +17,7 @@ export const createLoadSentSchema = z
         bwWeight: z.coerce.number().min(0).default(0).optional(),
         driverName: z.string().trim().min(1).max(100).optional(),
         vehicleNo: z.string().trim().min(1).max(20).optional(),
+        type: z.enum(['PRODUCTION', 'SAMPLE']).default('PRODUCTION'),
     })
     .strict();
 
@@ -41,6 +42,7 @@ export const listLoadSentQuerySchema = paginationSchema
         date_to: z.coerce.date().optional(),
         color_id: z.string().uuid().optional(),
         size_id: z.string().uuid().optional(),
+        type: z.enum(['PRODUCTION', 'SAMPLE']).optional(),
     })
     .strict();
 

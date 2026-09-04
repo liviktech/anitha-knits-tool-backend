@@ -7,6 +7,7 @@ import { formatDateOnly } from '../utils/dateOnly.js';
 export interface LoadSentRecordRow {
     id: string;
     stage: string;
+    type: string;
     productionDate: string;
     remarks: string | null;
     color: { id: string; name: string };
@@ -28,6 +29,7 @@ export interface LoadSentRecordRow {
 interface LoadSentQueryRow {
     id: string;
     stage: string;
+    type: string;
     productionDate: Date;
     remarks: string | null;
     colorId: string;
@@ -47,7 +49,7 @@ interface LoadSentQueryRow {
 }
 
 const LOAD_SENT_SELECT_SQL = `
-    SELECT pr.id, pr.stage, pr.production_date AS "productionDate", pr.remarks,
+    SELECT pr.id, pr.stage, pr.type, pr.production_date AS "productionDate", pr.remarks,
            c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName",
            ls.fabric_weight AS "fabricWeight", ls.fw_weight AS "fwWeight", ls.bw_weight AS "bwWeight",
            ls.total_wastage_weight AS "totalWastageWeight", ls.driver_name AS "driverName", ls.vehicle_no AS "vehicleNo",
@@ -62,6 +64,7 @@ function toLoadSentRow(row: LoadSentQueryRow): LoadSentRecordRow {
     return {
         id: row.id,
         stage: row.stage,
+        type: row.type,
         productionDate: formatDateOnly(row.productionDate),
         remarks: row.remarks,
         color: { id: row.colorId, name: row.colorName },
@@ -89,6 +92,7 @@ export interface CreateLoadSentInputRow {
     productionDate: Date;
     colorId: string;
     sizeId: string;
+    type: string;
     actor: string;
     fabricWeight?: number;
     driverName?: string | null;
@@ -98,15 +102,15 @@ export interface CreateLoadSentInputRow {
 export async function createLoadSent(input: CreateLoadSentInputRow): Promise<LoadSentRecordRow> {
     const row = await queryOne<LoadSentQueryRow>(
         `WITH pr AS (
-            INSERT INTO production_records (id, company_id, stage, production_date, color_id, size_id, created_by, updated_at)
-            VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, now())
-            RETURNING id, company_id, stage, production_date, color_id, size_id, remarks, created_at, created_by, updated_at, updated_by
+            INSERT INTO production_records (id, company_id, stage, production_date, color_id, size_id, type, created_by, updated_at)
+            VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $10, $6, now())
+            RETURNING id, company_id, stage, type, production_date, color_id, size_id, remarks, created_at, created_by, updated_at, updated_by
          ), ls AS (
             INSERT INTO load_sent (id, company_id, production_record_id, color_id, size_id, fabric_weight, driver_name, vehicle_no, created_by, updated_at)
             SELECT gen_random_uuid(), $1, pr.id, $4, $5, $7, $8, $9, $6, now() FROM pr
             RETURNING production_record_id, fabric_weight, fw_weight, bw_weight, total_wastage_weight, driver_name, vehicle_no
          )
-         SELECT pr.id, pr.stage, pr.production_date AS "productionDate", pr.remarks,
+         SELECT pr.id, pr.stage, pr.type, pr.production_date AS "productionDate", pr.remarks,
                 c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName",
                 ls.fabric_weight AS "fabricWeight", ls.fw_weight AS "fwWeight", ls.bw_weight AS "bwWeight",
                 ls.total_wastage_weight AS "totalWastageWeight", ls.driver_name AS "driverName", ls.vehicle_no AS "vehicleNo",
@@ -125,6 +129,7 @@ export async function createLoadSent(input: CreateLoadSentInputRow): Promise<Loa
             input.fabricWeight ?? 0,
             input.driverName ?? null,
             input.vehicleNo ?? null,
+            input.type,
         ],
     );
     if (!row) throw new Error('Insert into production_records/load_sent returned no row');

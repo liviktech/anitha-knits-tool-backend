@@ -16,6 +16,11 @@ import {
     verifyPasswordResetOtp,
     resetPassword,
 } from '../controllers/platformAdminController.js';
+import { listLivikEmployeesHandler } from '../controllers/livikEmployeeController.js';
+import platformRoleAccessRoutes from './platformRoleAccessRoutes.js';
+import platformModuleRoutes from './platformModuleRoutes.js';
+import platformTabRoutes from './platformTabRoutes.js';
+import platformRightRoutes from './platformRightRoutes.js';
 import { requirePlatformAdmin } from '../middlewares/platformAdminAuth.js';
 import { requirePlatformModuleAccess } from '../middlewares/requirePlatformModuleAccess.js';
 import { otpRequestLimiter } from '../middlewares/rateLimit.js';
@@ -349,6 +354,46 @@ router.patch('/companies/:id', requirePlatformAdmin, requirePlatformModuleAccess
  *         $ref: '#/components/responses/NotFound'
  */
 router.get('/companies/:id/users', requirePlatformAdmin, listCompanyUsersHandler);
+
+/**
+ * @openapi
+ * /api/v1/platform/admin/livik-employees:
+ *   get:
+ *     tags: [Platform Admin]
+ *     summary: List Livik's own employees (for platform role assignment)
+ *     description: >
+ *       Read-only, sourced from the Livik internal tool's own Employee table (a separate
+ *       database — see config/livikDb.ts), not this app's company/User data. Used to populate
+ *       the LK Space role-assignment UI.
+ *     parameters:
+ *       - name: search
+ *         in: query
+ *         schema: { type: string }
+ *       - name: page
+ *         in: query
+ *         schema: { type: integer, minimum: 1, default: 1 }
+ *       - name: limit
+ *         in: query
+ *         schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+ *     responses:
+ *       200:
+ *         description: OK.
+ *       401:
+ *         description: Missing, invalid, or expired platform-admin session (AUTH_REQUIRED / AUTH_TOKEN_EXPIRED / AUTH_TOKEN_INVALID).
+ */
+router.get('/livik-employees', requirePlatformAdmin, listLivikEmployeesHandler);
+
+// LK Space role management (create/get/update/delete/assign currently respond 501 — see
+// platformRoleAccessService.ts TODO — but list + employee-access are real and used to render
+// the Platform Roles tab, so this stays mounted rather than 404ing the whole sub-resource.
+router.use('/role-access', requirePlatformAdmin, platformRoleAccessRoutes);
+
+// Modules/tabs/rights CRUD currently respond 501 (platform_modules/platform_tabs/platform_rights
+// tables don't exist yet — see platformModuleService.ts TODO). Mounted anyway so "Roles and
+// Rights" gets a clear 501 explaining the gap instead of a bare 404.
+router.use('/modules', requirePlatformAdmin, platformModuleRoutes);
+router.use('/tabs', requirePlatformAdmin, platformTabRoutes);
+router.use('/rights', requirePlatformAdmin, platformRightRoutes);
 
 /**
  * @openapi

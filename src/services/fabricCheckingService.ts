@@ -126,6 +126,7 @@ export async function createFabricCheckingRecord(
             colorId: input.colorId,
             sizeId: input.sizeId,
             chemicalId: input.chemicalId,
+            type: input.type,
             remarks: input.remarks,
             actor,
             fabricInputKg: input.fabricInputKg,
