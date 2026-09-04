@@ -2,7 +2,7 @@ import { withTransaction } from '../db/transaction.js';
 import { ProductionStage, UserRole } from '../types/enums.js';
 import { ConflictError, NotFoundError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
-import { assertColorExists, assertSizeExists } from './masterDataService.js';
+import { assertChemicalExists, assertColorExists, assertSizeExists } from './masterDataService.js';
 import { buildWastageCreates } from './wastageService.js';
 import { WASTAGE_CODES } from '../constants/wastageCodes.js';
 import { assertCanCreateProductionRecord, assertCanDeleteProductionRecord, assertCanUpdateProductionRecord } from './productionCeilings.js';
@@ -47,23 +47,24 @@ async function assertYarnInputWithinAvailable(
     companyId: string,
     colorId: string,
     sizeId: string,
+    chemicalId: string,
     yarnInputKg: number,
     client?: import('pg').PoolClient,
     excludeRecordId?: string,
 ): Promise<void> {
-    const availableKg = await getAvailableYarnKgForVariant(companyId, colorId, sizeId, client, excludeRecordId);
+    const availableKg = await getAvailableYarnKgForVariant(companyId, colorId, sizeId, chemicalId, client, excludeRecordId);
     if (yarnInputKg > availableKg) {
         throw new ConflictError(
-            `Loom Production (${yarnInputKg} kg) exceeds the available Extruder yarn for this colour and size (${availableKg.toFixed(3)} kg available)`,
+            `Loom Production (${yarnInputKg} kg) exceeds the available Extruder yarn for this colour, size and chemical (${availableKg.toFixed(3)} kg available)`,
             'YARN_INPUT_EXCEEDS_AVAILABLE',
-            { colorId, sizeId, availableKg, requestedKg: yarnInputKg },
+            { colorId, sizeId, chemicalId, availableKg, requestedKg: yarnInputKg },
         );
     }
 }
 
 /** Backs GET /production/looms/available — lets the entry form show/validate against the same cumulative figure the create/update guard enforces. */
-export async function getAvailableYarnStockKg(companyId: string, colorId: string, sizeId: string): Promise<number> {
-    return getAvailableYarnKgForVariant(companyId, colorId, sizeId);
+export async function getAvailableYarnStockKg(companyId: string, colorId: string, sizeId: string, chemicalId: string): Promise<number> {
+    return getAvailableYarnKgForVariant(companyId, colorId, sizeId, chemicalId);
 }
 
 function mapLoomsRecord(record: LoomsRecordRow) {
@@ -73,7 +74,11 @@ function mapLoomsRecord(record: LoomsRecordRow) {
 export async function createLoomsProduction(input: CreateLoomsInput, companyId: string, actor: string, role: UserRole, callerId: string) {
     await assertCanCreateProductionRecord(role, callerId, companyId);
 
-    await Promise.all([assertColorExists(input.colorId, companyId), assertSizeExists(input.sizeId, companyId)]);
+    await Promise.all([
+        assertColorExists(input.colorId, companyId),
+        assertSizeExists(input.sizeId, companyId),
+        assertChemicalExists(input.chemicalId, companyId),
+    ]);
 
     // BW ("Bit Wastage") is colour-tracked (PRD "B White"/"B Blue"), so it's
     // stored against this record's own colour; FW ("Fabric Wastage") is not.
@@ -82,13 +87,14 @@ export async function createLoomsProduction(input: CreateLoomsInput, companyId: 
     ]);
 
     const record = await withTransaction(async (client) => {
-        await assertYarnInputWithinAvailable(companyId, input.colorId, input.sizeId, input.yarnInputKg, client);
+        await assertYarnInputWithinAvailable(companyId, input.colorId, input.sizeId, input.chemicalId, input.yarnInputKg, client);
 
         const productionRecordId = await insertLoomsProduction(client, {
             companyId,
             productionDate: input.productionDate,
             colorId: input.colorId,
             sizeId: input.sizeId,
+            chemicalId: input.chemicalId,
             remarks: input.remarks,
             actor,
             yarnInputKg: input.yarnInputKg,
@@ -130,14 +136,16 @@ export async function updateLoomsProduction(id: string, input: UpdateLoomsInput,
     await Promise.all([
         input.colorId ? assertColorExists(input.colorId, companyId) : undefined,
         input.sizeId ? assertSizeExists(input.sizeId, companyId) : undefined,
+        input.chemicalId ? assertChemicalExists(input.chemicalId, companyId) : undefined,
     ]);
 
     const updated = await withTransaction(async (client) => {
-        if (input.yarnInputKg !== undefined || input.colorId !== undefined || input.sizeId !== undefined) {
+        if (input.yarnInputKg !== undefined || input.colorId !== undefined || input.sizeId !== undefined || input.chemicalId !== undefined) {
             await assertYarnInputWithinAvailable(
                 companyId,
                 input.colorId ?? existing.colorId,
                 input.sizeId ?? existing.sizeId,
+                input.chemicalId ?? existing.chemicalId,
                 input.yarnInputKg ?? existing.yarnInputKg,
                 client,
                 id,
@@ -155,6 +163,7 @@ export async function updateLoomsProduction(id: string, input: UpdateLoomsInput,
         await updateLoomsDetail(client, id, {
             yarnInputKg: input.yarnInputKg,
             fabricOutputKg: input.fabricOutputKg,
+            chemicalId: input.chemicalId,
         });
 
         return findLoomsProductionByIdTx(client, id);

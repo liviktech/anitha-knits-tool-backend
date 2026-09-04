@@ -14,6 +14,7 @@ export interface FabricCheckingRecordRow {
     remarks: string | null;
     color: { id: string; name: string };
     size: { id: string; name: string };
+    chemical: { id: string; name: string } | null;
     fabricCheck: { fabricInputKg: number; outputKg: number | null } | null;
     wastages: WastageRow[];
     isApproved: boolean;
@@ -36,6 +37,8 @@ interface FabricCheckingQueryRow {
     sizeName: string;
     fabricInputKg: number | null;
     outputKg: number | null;
+    chemicalId: string | null;
+    chemicalName: string | null;
     isApproved: boolean;
     approvedAt: Date | null;
     approvedBy: string | null;
@@ -49,12 +52,14 @@ const FABRIC_CHECKING_SELECT_SQL = `
     SELECT pr.id, pr.stage, pr.production_date AS "productionDate", pr.remarks,
            c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName",
            fcd.fabric_input_kg AS "fabricInputKg", fcd.output_kg AS "outputKg",
+           fcd.chemical_id AS "chemicalId", ch.name AS "chemicalName",
            pr.is_approved AS "isApproved", pr.approved_at AS "approvedAt", pr.approved_by AS "approvedBy",
            pr.created_at AS "createdAt", pr.created_by AS "createdBy", pr.updated_at AS "updatedAt", pr.updated_by AS "updatedBy"
     FROM production_records pr
     JOIN colors c ON c.id = pr.color_id
     JOIN sizes s ON s.id = pr.size_id
     LEFT JOIN fabric_check_details fcd ON fcd.production_record_id = pr.id
+    LEFT JOIN chemicals ch ON ch.id = fcd.chemical_id
 `;
 
 function toFabricCheckingRow(row: FabricCheckingQueryRow, wastages: WastageRow[]): FabricCheckingRecordRow {
@@ -65,6 +70,7 @@ function toFabricCheckingRow(row: FabricCheckingQueryRow, wastages: WastageRow[]
         remarks: row.remarks,
         color: { id: row.colorId, name: row.colorName },
         size: { id: row.sizeId, name: row.sizeName },
+        chemical: row.chemicalId ? { id: row.chemicalId, name: row.chemicalName! } : null,
         fabricCheck: row.fabricInputKg !== null ? { fabricInputKg: row.fabricInputKg, outputKg: row.outputKg } : null,
         wastages,
         isApproved: row.isApproved,
@@ -82,6 +88,7 @@ export interface CreateFabricCheckingInputRow {
     productionDate: Date;
     colorId: string;
     sizeId: string;
+    chemicalId: string;
     remarks?: string | null;
     actor: string;
     fabricInputKg: number;
@@ -98,9 +105,9 @@ export async function insertFabricCheckingProduction(client: pg.PoolClient, inpu
     const productionRecordId = prResult.rows[0]!.id;
 
     await client.query(
-        `INSERT INTO fabric_check_details (id, production_record_id, fabric_input_kg, output_kg)
-         VALUES (gen_random_uuid(), $1, $2, $3)`,
-        [productionRecordId, input.fabricInputKg, input.outputKg ?? null],
+        `INSERT INTO fabric_check_details (id, production_record_id, fabric_input_kg, output_kg, chemical_id)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4)`,
+        [productionRecordId, input.fabricInputKg, input.outputKg ?? null, input.chemicalId],
     );
 
     return productionRecordId;
@@ -174,6 +181,7 @@ export interface FabricCheckingExistingRow {
     isApproved: boolean;
     colorId: string;
     sizeId: string;
+    chemicalId: string;
     productionDate: Date;
     fabricInputKg: number;
 }
@@ -181,7 +189,7 @@ export interface FabricCheckingExistingRow {
 export async function findFabricCheckingExisting(id: string, companyId: string): Promise<FabricCheckingExistingRow | null> {
     return queryOne<FabricCheckingExistingRow>(
         `SELECT pr.id, pr.is_approved AS "isApproved", pr.color_id AS "colorId", pr.size_id AS "sizeId",
-                pr.production_date AS "productionDate", fcd.fabric_input_kg AS "fabricInputKg"
+                fcd.chemical_id AS "chemicalId", pr.production_date AS "productionDate", fcd.fabric_input_kg AS "fabricInputKg"
          FROM production_records pr
          JOIN fabric_check_details fcd ON fcd.production_record_id = pr.id
          WHERE pr.id = $1 AND pr.company_id = $2 AND pr.stage = $3`,
@@ -190,21 +198,23 @@ export async function findFabricCheckingExisting(id: string, companyId: string):
 }
 
 /**
- * Fabric available to check for a colour+size variant on one specific production date —
+ * Fabric available to check for a colour+size+chemical variant on one specific production date —
  * that day's Looms fabricOutputKg (summed, in case of multiple Looms rows that day), minus
- * that same day's Fabric Checking fabricInputKg already recorded against it (also summed).
- * Deliberately scoped to a single day, not cumulative across all history — each day's Looms
- * batch is checked against that day's own output only. Backs GET /fabric-checking/available
- * and the create/update guard (FABRIC_INPUT_EXCEEDS_AVAILABLE), so the UI can't disagree with
- * the server about what's allowed. `excludeRecordId` omits a record's own existing
- * fabricInputKg from the "already consumed" side, so re-validating an update against its own
- * prior value isn't a false rejection. Runs on `client` when passed (inside the caller's
- * transaction, so it can see any just-created Loom row) or the shared pool otherwise.
+ * that same day's Fabric Checking fabricInputKg already recorded against it (also summed), both
+ * scoped to the same chemical (mirroring the colour+size scoping). Deliberately scoped to a
+ * single day, not cumulative across all history — each day's Looms batch is checked against
+ * that day's own output only. Backs GET /fabric-checking/available and the create/update guard
+ * (FABRIC_INPUT_EXCEEDS_AVAILABLE), so the UI can't disagree with the server about what's
+ * allowed. `excludeRecordId` omits a record's own existing fabricInputKg from the "already
+ * consumed" side, so re-validating an update against its own prior value isn't a false
+ * rejection. Runs on `client` when passed (inside the caller's transaction, so it can see any
+ * just-created Loom row) or the shared pool otherwise.
  */
 export async function getAvailableFabricKgForVariant(
     companyId: string,
     colorId: string,
     sizeId: string,
+    chemicalId: string,
     productionDate: Date,
     client?: pg.PoolClient,
     excludeRecordId?: string,
@@ -213,19 +223,19 @@ export async function getAvailableFabricKgForVariant(
         `SELECT SUM(ld.fabric_output_kg) AS total
          FROM production_records pr
          JOIN loom_details ld ON ld.production_record_id = pr.id
-         WHERE pr.company_id = $1 AND pr.stage = $2 AND pr.color_id = $3 AND pr.size_id = $4 AND pr.production_date = $5`,
-        [companyId, ProductionStage.LOOMS, colorId, sizeId, productionDate],
+         WHERE pr.company_id = $1 AND pr.stage = $2 AND pr.color_id = $3 AND pr.size_id = $4 AND pr.production_date = $5 AND ld.chemical_id = $6`,
+        [companyId, ProductionStage.LOOMS, colorId, sizeId, productionDate, chemicalId],
         client,
     );
     const checkResult = await query<{ total: number | null }>(
         `SELECT SUM(fcd.fabric_input_kg) AS total
          FROM production_records pr
          JOIN fabric_check_details fcd ON fcd.production_record_id = pr.id
-         WHERE pr.company_id = $1 AND pr.stage = $2 AND pr.color_id = $3 AND pr.size_id = $4 AND pr.production_date = $5
-         ${excludeRecordId ? 'AND pr.id <> $6' : ''}`,
+         WHERE pr.company_id = $1 AND pr.stage = $2 AND pr.color_id = $3 AND pr.size_id = $4 AND pr.production_date = $5 AND fcd.chemical_id = $6
+         ${excludeRecordId ? 'AND pr.id <> $7' : ''}`,
         excludeRecordId
-            ? [companyId, ProductionStage.FABRIC_CHECKING, colorId, sizeId, productionDate, excludeRecordId]
-            : [companyId, ProductionStage.FABRIC_CHECKING, colorId, sizeId, productionDate],
+            ? [companyId, ProductionStage.FABRIC_CHECKING, colorId, sizeId, productionDate, chemicalId, excludeRecordId]
+            : [companyId, ProductionStage.FABRIC_CHECKING, colorId, sizeId, productionDate, chemicalId],
         client,
     );
     const loomTotal = loomResult.rows[0]?.total ?? 0;
@@ -269,6 +279,7 @@ export async function updateFabricCheckingHeader(client: pg.PoolClient, id: stri
 export interface UpdateFabricCheckingDetailPatch {
     fabricInputKg?: number;
     outputKg?: number | null;
+    chemicalId?: string;
 }
 
 export async function updateFabricCheckingDetail(client: pg.PoolClient, productionRecordId: string, patch: UpdateFabricCheckingDetailPatch): Promise<void> {
@@ -281,6 +292,10 @@ export async function updateFabricCheckingDetail(client: pg.PoolClient, producti
     if (patch.outputKg !== undefined) {
         values.push(patch.outputKg);
         sets.push(`output_kg = $${values.length}`);
+    }
+    if (patch.chemicalId !== undefined) {
+        values.push(patch.chemicalId);
+        sets.push(`chemical_id = $${values.length}`);
     }
     if (sets.length === 0) return;
     values.push(productionRecordId);

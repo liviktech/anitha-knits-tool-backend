@@ -80,9 +80,9 @@ router.get('/', listLooms);
  * /api/v1/production/looms/available:
  *   get:
  *     tags: [Looms]
- *     summary: Get the yarn available for Looms to consume for a colour+size variant
+ *     summary: Get the yarn available for Looms to consume for a colour+size+chemical variant
  *     description: >
- *       Cumulative, all-time Extruder yarnOutputKg for this colour+size minus
+ *       Cumulative, all-time Extruder yarnOutputKg for this colour+size+chemical minus
  *       all-time Looms yarnInputKg already recorded against it — the same
  *       figure the create/update guard enforces (YARN_INPUT_EXCEEDS_AVAILABLE).
  *     parameters:
@@ -91,6 +91,10 @@ router.get('/', listLooms);
  *         required: true
  *         schema: { type: string, format: uuid }
  *       - name: sizeId
+ *         in: query
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: chemicalId
  *         in: query
  *         required: true
  *         schema: { type: string, format: uuid }

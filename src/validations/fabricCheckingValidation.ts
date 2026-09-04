@@ -14,6 +14,7 @@ export const createFabricCheckingSchema = z
         productionDate: z.coerce.date(),
         colorId: z.string().uuid(),
         sizeId: z.string().uuid(),
+        chemicalId: z.string().uuid(),
         fabricInputKg: z.coerce.number().positive('must be a positive number'),
         type: z.enum(['PRODUCTION', 'SAMPLE']).default('PRODUCTION'),
         // No longer collected via the entry UI (PRD terminology now favours a
@@ -36,6 +37,7 @@ export const updateFabricCheckingSchema = z
         productionDate: z.coerce.date().optional(),
         colorId: z.string().uuid().optional(),
         sizeId: z.string().uuid().optional(),
+        chemicalId: z.string().uuid().optional(),
         fabricInputKg: z.coerce.number().positive('must be a positive number').optional(),
         outputKg: z.coerce.number().nonnegative().optional(),
         remarks: z.string().trim().max(500).optional(),
@@ -49,6 +51,7 @@ export const availableFabricQuerySchema = z
     .object({
         colorId: z.string().uuid(),
         sizeId: z.string().uuid(),
+        chemicalId: z.string().uuid(),
         date: z.coerce.date(),
     })
     .strict();

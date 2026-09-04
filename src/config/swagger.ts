@@ -830,6 +830,10 @@ const definition: swaggerJsdoc.OAS3Definition = {
           remarks: { type: 'string', nullable: true },
           color: { $ref: '#/components/schemas/MasterDataRef' },
           size: { $ref: '#/components/schemas/MasterDataRef' },
+          chemical: {
+            allOf: [{ $ref: '#/components/schemas/MasterDataRef' }],
+            nullable: true,
+          },
           loom: { $ref: '#/components/schemas/LoomDetail' },
           wastages: {
             type: 'array',
@@ -847,6 +851,7 @@ const definition: swaggerJsdoc.OAS3Definition = {
           'productionDate',
           'colorId',
           'sizeId',
+          'chemicalId',
           'yarnInputKg',
           'fabricOutputKg',
         ],
@@ -859,6 +864,7 @@ const definition: swaggerJsdoc.OAS3Definition = {
           },
           colorId: { type: 'string', format: 'uuid' },
           sizeId: { type: 'string', format: 'uuid' },
+          chemicalId: { type: 'string', format: 'uuid' },
           yarnInputKg: { type: 'number', exclusiveMinimum: 0, example: 500 },
           fabricOutputKg: { type: 'number', exclusiveMinimum: 0, example: 470 },
           type: {
@@ -885,6 +891,7 @@ const definition: swaggerJsdoc.OAS3Definition = {
           productionDate: { type: 'string', format: 'date' },
           colorId: { type: 'string', format: 'uuid' },
           sizeId: { type: 'string', format: 'uuid' },
+          chemicalId: { type: 'string', format: 'uuid' },
           yarnInputKg: { type: 'number', exclusiveMinimum: 0 },
           fabricOutputKg: { type: 'number', exclusiveMinimum: 0 },
           remarks: { type: 'string', maxLength: 500 },
@@ -937,6 +944,10 @@ const definition: swaggerJsdoc.OAS3Definition = {
           remarks: { type: 'string', nullable: true },
           color: { $ref: '#/components/schemas/MasterDataRef' },
           size: { $ref: '#/components/schemas/MasterDataRef' },
+          chemical: {
+            allOf: [{ $ref: '#/components/schemas/MasterDataRef' }],
+            nullable: true,
+          },
           fabricCheck: { $ref: '#/components/schemas/FabricCheckDetail' },
           wastages: {
             type: 'array',
@@ -950,7 +961,13 @@ const definition: swaggerJsdoc.OAS3Definition = {
       },
       FabricCheckingCreateRequest: {
         type: 'object',
-        required: ['productionDate', 'colorId', 'sizeId', 'fabricInputKg'],
+        required: [
+          'productionDate',
+          'colorId',
+          'sizeId',
+          'chemicalId',
+          'fabricInputKg',
+        ],
         additionalProperties: false,
         properties: {
           productionDate: {
@@ -960,6 +977,7 @@ const definition: swaggerJsdoc.OAS3Definition = {
           },
           colorId: { type: 'string', format: 'uuid' },
           sizeId: { type: 'string', format: 'uuid' },
+          chemicalId: { type: 'string', format: 'uuid' },
           fabricInputKg: { type: 'number', exclusiveMinimum: 0, example: 192 },
           type: {
             type: 'string',
@@ -997,6 +1015,7 @@ const definition: swaggerJsdoc.OAS3Definition = {
           productionDate: { type: 'string', format: 'date' },
           colorId: { type: 'string', format: 'uuid' },
           sizeId: { type: 'string', format: 'uuid' },
+          chemicalId: { type: 'string', format: 'uuid' },
           fabricInputKg: { type: 'number', exclusiveMinimum: 0 },
           remarks: { type: 'string', maxLength: 500 },
         },

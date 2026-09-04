@@ -15,6 +15,7 @@ export const createLoomsSchema = z
         productionDate: z.coerce.date(),
         colorId: z.string().uuid(),
         sizeId: z.string().uuid(),
+        chemicalId: z.string().uuid(),
         yarnInputKg: kg,
         fabricOutputKg: kg,
         type: z.enum(['PRODUCTION', 'SAMPLE']).default('PRODUCTION'),
@@ -30,6 +31,7 @@ export const updateLoomsSchema = z
         productionDate: z.coerce.date(),
         colorId: z.string().uuid(),
         sizeId: z.string().uuid(),
+        chemicalId: z.string().uuid(),
         yarnInputKg: kg,
         fabricOutputKg: kg,
         loomsWasteKg: wastageKg,
@@ -43,6 +45,7 @@ export const availableYarnQuerySchema = z
     .object({
         colorId: z.string().uuid(),
         sizeId: z.string().uuid(),
+        chemicalId: z.string().uuid(),
     })
     .strict();
 

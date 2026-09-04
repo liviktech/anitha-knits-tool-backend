@@ -35,10 +35,10 @@ export const createFabricChecking = asyncHandler(async (req: Request, res: Respo
 });
 
 export const getAvailableFabric = asyncHandler(async (req: Request, res: Response) => {
-    const { colorId, sizeId, date } = parseOrThrow(availableFabricQuerySchema, req.query);
+    const { colorId, sizeId, chemicalId, date } = parseOrThrow(availableFabricQuerySchema, req.query);
     const { companyId } = getAuthContext(req);
-    const availableKg = await getAvailableFabricStockKg(companyId, colorId, sizeId, date);
-    sendSuccess(res, { colorId, sizeId, availableKg });
+    const availableKg = await getAvailableFabricStockKg(companyId, colorId, sizeId, chemicalId, date);
+    sendSuccess(res, { colorId, sizeId, chemicalId, availableKg });
 });
 
 export const listFabricChecking = asyncHandler(async (req: Request, res: Response) => {

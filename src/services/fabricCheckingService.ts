@@ -3,7 +3,7 @@ import { ProductionStage, UserRole } from '../types/enums.js';
 import { ConflictError, NotFoundError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import { roundKg } from '../utils/decimal.js';
-import { assertColorExists, assertSizeExists } from './masterDataService.js';
+import { assertChemicalExists, assertColorExists, assertSizeExists } from './masterDataService.js';
 import { applyWastageUpdates, buildWastageCreates } from './wastageService.js';
 import { WASTAGE_CODES } from '../constants/wastageCodes.js';
 import { updateKoraBalance, reverseKoraBalance, getCurrentKoraBalanceKg, getKoraBalanceExcludingRecord } from './koraBalanceService.js';
@@ -68,12 +68,13 @@ async function assertFabricInputWithinAvailable(
     companyId: string,
     colorId: string,
     sizeId: string,
+    chemicalId: string,
     fabricInputKg: number,
     productionDate: Date,
     client?: import('pg').PoolClient,
     excludeRecordId?: string,
 ): Promise<void> {
-    const productionAvailableKg = await getAvailableFabricKgForVariant(companyId, colorId, sizeId, productionDate, client, excludeRecordId);
+    const productionAvailableKg = await getAvailableFabricKgForVariant(companyId, colorId, sizeId, chemicalId, productionDate, client, excludeRecordId);
     const koraStockKg = excludeRecordId
         ? await getKoraBalanceExcludingRecord(companyId, colorId, sizeId, excludeRecordId, client)
         : await getCurrentKoraBalanceKg(companyId, colorId, sizeId, client);
@@ -81,17 +82,17 @@ async function assertFabricInputWithinAvailable(
 
     if (fabricInputKg > availableKg) {
         throw new ConflictError(
-            `Fabric input (${fabricInputKg} kg) exceeds the total available stock for this colour and size ` +
+            `Fabric input (${fabricInputKg} kg) exceeds the total available stock for this colour, size and chemical ` +
                 `(${availableKg.toFixed(3)} kg available: ${productionAvailableKg.toFixed(3)} kg Looms production + ${koraStockKg.toFixed(3)} kg Kora stock)`,
             'FABRIC_INPUT_EXCEEDS_AVAILABLE',
-            { colorId, sizeId, availableKg, productionAvailableKg, koraStockKg, requestedKg: fabricInputKg },
+            { colorId, sizeId, chemicalId, availableKg, productionAvailableKg, koraStockKg, requestedKg: fabricInputKg },
         );
     }
 }
 
 /** Backs GET /fabric-checking/available — lets the entry form show/validate against the same single-day figure the create/update guard enforces. */
-export async function getAvailableFabricStockKg(companyId: string, colorId: string, sizeId: string, productionDate: Date): Promise<number> {
-    return getAvailableFabricKgForVariant(companyId, colorId, sizeId, productionDate);
+export async function getAvailableFabricStockKg(companyId: string, colorId: string, sizeId: string, chemicalId: string, productionDate: Date): Promise<number> {
+    return getAvailableFabricKgForVariant(companyId, colorId, sizeId, chemicalId, productionDate);
 }
 
 export async function createFabricCheckingRecord(
@@ -103,7 +104,11 @@ export async function createFabricCheckingRecord(
 ) {
     await assertCanCreateProductionRecord(role, callerId, companyId);
 
-    await Promise.all([assertColorExists(input.colorId, companyId), assertSizeExists(input.sizeId, companyId)]);
+    await Promise.all([
+        assertColorExists(input.colorId, companyId),
+        assertSizeExists(input.sizeId, companyId),
+        assertChemicalExists(input.chemicalId, companyId),
+    ]);
 
     // BW ("Bit Wastage") is colour-tracked (PRD "B White"/"B Blue"), so it's
     // stored against this record's own colour; FW ("Fabric Wastage") is not.
@@ -113,13 +118,14 @@ export async function createFabricCheckingRecord(
     ]);
 
     const record = await withTransaction(async (client) => {
-        await assertFabricInputWithinAvailable(companyId, input.colorId, input.sizeId, input.fabricInputKg, input.productionDate, client);
+        await assertFabricInputWithinAvailable(companyId, input.colorId, input.sizeId, input.chemicalId, input.fabricInputKg, input.productionDate, client);
 
         const productionRecordId = await insertFabricCheckingProduction(client, {
             companyId,
             productionDate: input.productionDate,
             colorId: input.colorId,
             sizeId: input.sizeId,
+            chemicalId: input.chemicalId,
             remarks: input.remarks,
             actor,
             fabricInputKg: input.fabricInputKg,
@@ -182,24 +188,30 @@ export async function updateFabricCheckingRecord(
     await Promise.all([
         input.colorId ? assertColorExists(input.colorId, companyId) : undefined,
         input.sizeId ? assertSizeExists(input.sizeId, companyId) : undefined,
+        input.chemicalId ? assertChemicalExists(input.chemicalId, companyId) : undefined,
     ]);
 
-    // Any of these three changing invalidates the kora ledger entry this record created
+    // Any of these four changing invalidates the kora ledger entry this record created
     // back in createFabricCheckingRecord — net = latest Loom batch's fabric output minus
-    // this record's fabricInputKg, keyed by colour+size. productionDate also affects the
-    // Looms-availability guard now that it's scoped to a single day (see
-    // getAvailableFabricKgForVariant) rather than cumulative across all history.
+    // this record's fabricInputKg, keyed by colour+size. productionDate/chemicalId also
+    // affect the Looms-availability guard now that it's scoped to a single day and chemical
+    // (see getAvailableFabricKgForVariant) rather than cumulative across all history.
     const koraAffectingFieldsChanged =
-        input.fabricInputKg !== undefined || input.colorId !== undefined || input.sizeId !== undefined || input.productionDate !== undefined;
+        input.fabricInputKg !== undefined ||
+        input.colorId !== undefined ||
+        input.sizeId !== undefined ||
+        input.chemicalId !== undefined ||
+        input.productionDate !== undefined;
 
     const updated = await withTransaction(async (client) => {
         const finalFabricInputKg = koraAffectingFieldsChanged ? input.fabricInputKg ?? existing.fabricInputKg : undefined;
         const finalColorId = input.colorId ?? existing.colorId;
         const finalSizeId = input.sizeId ?? existing.sizeId;
+        const finalChemicalId = input.chemicalId ?? existing.chemicalId;
         const finalProductionDate = input.productionDate ?? existing.productionDate;
 
         if (koraAffectingFieldsChanged) {
-            await assertFabricInputWithinAvailable(companyId, finalColorId, finalSizeId, finalFabricInputKg!, finalProductionDate, client, id);
+            await assertFabricInputWithinAvailable(companyId, finalColorId, finalSizeId, finalChemicalId, finalFabricInputKg!, finalProductionDate, client, id);
         }
 
         await updateFabricCheckingHeader(client, id, {
@@ -213,6 +225,7 @@ export async function updateFabricCheckingRecord(
         await updateFabricCheckingDetail(client, id, {
             fabricInputKg: input.fabricInputKg,
             outputKg: input.outputKg,
+            chemicalId: input.chemicalId,
         });
 
         // Reverse this record's prior effect on the kora ledger (using its own ledger entry,
