@@ -3,15 +3,18 @@ import { ApiError } from '../utils/ApiError.js';
 import {
     deletePayrollRecords,
     findActiveEmployeesWithSalary,
+    findAllMarketValueDeductions,
     findAllSalaryAdvances,
     findAttendancesForRange,
     findMarketValueAllocationsForRange,
     findSalaryAdvancesWithEmployee,
     findSavedPayrollRecords as findSavedPayrollRecordsRepo,
     insertMarketValueAllocations,
+    insertMarketValueDeduction,
     insertMarketValueDistribution,
     insertPayrollRecords,
     insertSalaryAdvance,
+    upsertPayrollRecord,
 } from '../repositories/payroll.repository.js';
 
 export const distributeMarketValue = async (
@@ -39,6 +42,20 @@ export const distributeMarketValue = async (
         }
 
         return distribution;
+    });
+};
+
+export const grantMarketValueDeduction = async (
+    companyId: string,
+    userId: string,
+    data: { employeeId: string; amount: number; effectiveDate: string }
+) => {
+    return insertMarketValueDeduction({
+        companyId,
+        employeeId: data.employeeId,
+        amount: data.amount,
+        effectiveDate: new Date(data.effectiveDate),
+        actor: userId,
     });
 };
 
@@ -146,6 +163,11 @@ export const getPayrollSummary = async (companyId: string, month: number, year: 
     // 4. Fetch Market Value Allocations for the month
     const marketValues = await findMarketValueAllocationsForRange(companyId, startDate, endDate);
 
+    // 4b. Fetch every market value deduction for the company — single-payment only
+    // (no EMI), so like a single-payment salary advance it only ever deducts in its
+    // own effective month; needs the full history to resolve against the query month.
+    const allMarketValueDeductions = await findAllMarketValueDeductions(companyId);
+
     // Grouping Helpers
     const attendanceByEmployee = attendances.reduce((acc: any, curr: any) => {
         if (!acc[curr.employeeId]) acc[curr.employeeId] = [];
@@ -170,6 +192,14 @@ export const getPayrollSummary = async (companyId: string, month: number, year: 
 
     const marketValueByEmployee = marketValues.reduce((acc: any, curr: any) => {
         acc[curr.employeeId] = (acc[curr.employeeId] || 0) + Number(curr.amount);
+        return acc;
+    }, {} as Record<string, number>);
+
+    const marketValueDeductionByEmployee = allMarketValueDeductions.reduce((acc: any, ded: any) => {
+        const offset = monthOffset(ded.effectiveDate, month, year);
+        if (offset === 0) {
+            acc[ded.employeeId] = (acc[ded.employeeId] || 0) + Number(ded.amount);
+        }
         return acc;
     }, {} as Record<string, number>);
 
@@ -212,9 +242,10 @@ export const getPayrollSummary = async (companyId: string, month: number, year: 
 
         const advanceDeduction = advanceByEmployee[emp.id] || 0;
         const marketValueBonus = marketValueByEmployee[emp.id] || 0;
+        const marketValueDeduction = marketValueDeductionByEmployee[emp.id] || 0;
 
         const grossSalary = baseSalary - absentDeductions + sundayBonuses;
-        const netSalary = grossSalary + marketValueBonus - advanceDeduction;
+        const netSalary = grossSalary + marketValueBonus - advanceDeduction - marketValueDeduction;
 
         return {
             id: emp.id,
@@ -229,6 +260,7 @@ export const getPayrollSummary = async (companyId: string, month: number, year: 
             grossSalary: Math.round(grossSalary),
             advanceDeduction: Math.round(advanceDeduction),
             marketValueBonus: Math.round(marketValueBonus),
+            marketValueDeduction: Math.round(marketValueDeduction),
             netSalary: Math.round(netSalary),
         };
     });
@@ -261,6 +293,7 @@ export const savePayrollRecords = async (
                     advanceDeduction: r.advanceDeduction,
                     sundayBonuses: r.sundayBonusAmount || 0,
                     marketValueBonus: r.marketValueBonus,
+                    marketValueDeduction: r.marketValueDeduction,
                     grossSalary: r.grossSalary,
                     netSalary: r.netSalary,
                 })),
@@ -277,6 +310,35 @@ export const getSavedPayrollRecords = async (
     year: number
 ) => {
     return findSavedPayrollRecordsRepo(companyId, month, year);
+};
+
+/**
+ * Manual single-employee edit from the Payroll tab's Actions > Edit button.
+ * Trusts only the four editable inputs from the client — base salary, days
+ * worked, advance deduction, machine value — and recomputes gross/net itself
+ * rather than accepting client-sent totals (same principle as savePayrollRecords).
+ */
+export const updatePayrollRecord = async (
+    companyId: string,
+    data: { employeeId: string; month: number; year: number; baseSalary: number; daysWorked: number; advanceDeduction: number; marketValueBonus: number }
+) => {
+    const totalDaysInMonth = new Date(data.year, data.month, 0).getDate();
+    const grossSalary = roundMoney((data.baseSalary * data.daysWorked) / totalDaysInMonth);
+    const netSalary = roundMoney(grossSalary - data.advanceDeduction + data.marketValueBonus);
+
+    return upsertPayrollRecord({
+        companyId,
+        employeeId: data.employeeId,
+        month: data.month,
+        year: data.year,
+        baseSalary: data.baseSalary,
+        totalDaysInMonth,
+        daysWorked: data.daysWorked,
+        advanceDeduction: data.advanceDeduction,
+        marketValueBonus: data.marketValueBonus,
+        grossSalary,
+        netSalary,
+    });
 };
 
 export const getMarketValueAllocations = async (companyId: string, month: number, year: number) => {

@@ -3,8 +3,8 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 import { getAuthContext } from '../utils/actor.js';
 import { parseOrThrow } from '../utils/validate.js';
-import { distributeMarketValueSchema, grantSalaryAdvanceSchema, getPayrollSummarySchema, savePayrollRecordsSchema } from '../validations/payrollValidation.js';
-import { distributeMarketValue, grantSalaryAdvance, getPayrollSummary, savePayrollRecords, getSavedPayrollRecords, getMarketValueAllocations, getSalaryAdvances } from '../services/payrollService.js';
+import { distributeMarketValueSchema, grantSalaryAdvanceSchema, grantMarketValueDeductionSchema, getPayrollSummarySchema, savePayrollRecordsSchema, updatePayrollRecordSchema, payrollRecordEmployeeIdParamsSchema } from '../validations/payrollValidation.js';
+import { distributeMarketValue, grantSalaryAdvance, grantMarketValueDeduction, getPayrollSummary, savePayrollRecords, updatePayrollRecord, getSavedPayrollRecords, getMarketValueAllocations, getSalaryAdvances } from '../services/payrollService.js';
 
 export const distributeMarketValueHandler = asyncHandler(async (req: Request, res: Response) => {
     const input = parseOrThrow(distributeMarketValueSchema, req.body);
@@ -20,6 +20,14 @@ export const grantSalaryAdvanceHandler = asyncHandler(async (req: Request, res: 
     
     const result = await grantSalaryAdvance(companyId, userId, input);
     sendSuccess(res, result, { message: 'Salary advance granted successfully' }, 201);
+});
+
+export const grantMarketValueDeductionHandler = asyncHandler(async (req: Request, res: Response) => {
+    const input = parseOrThrow(grantMarketValueDeductionSchema, req.body);
+    const { companyId, userId } = getAuthContext(req);
+
+    const result = await grantMarketValueDeduction(companyId, userId, input);
+    sendSuccess(res, result, { message: 'Market value deduction granted successfully' }, 201);
 });
 
 export const getPayrollSummaryHandler = asyncHandler(async (req: Request, res: Response) => {
@@ -43,6 +51,15 @@ export const savePayrollRecordsHandler = asyncHandler(async (req: Request, res: 
     
     const result = await savePayrollRecords(companyId, input);
     sendSuccess(res, result, { message: 'Payroll records saved successfully' }, 201);
+});
+
+export const updatePayrollRecordHandler = asyncHandler(async (req: Request, res: Response) => {
+    const input = parseOrThrow(updatePayrollRecordSchema, req.body);
+    const { employeeId } = parseOrThrow(payrollRecordEmployeeIdParamsSchema, req.params);
+    const { companyId } = getAuthContext(req);
+
+    const result = await updatePayrollRecord(companyId, { employeeId, ...input });
+    sendSuccess(res, result, { message: 'Payroll record updated successfully' }, 200);
 });
 
 export const getSavedPayrollRecordsHandler = asyncHandler(async (req: Request, res: Response) => {
