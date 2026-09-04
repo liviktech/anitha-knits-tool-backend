@@ -17,6 +17,12 @@ export const grantSalaryAdvanceSchema = z.object({
   { message: 'totalMonths is required when repaymentMethod is emi', path: ['totalMonths'] }
 );
 
+export const grantMarketValueDeductionSchema = z.object({
+  employeeId: z.string().uuid(),
+  amount: z.number().positive(),
+  effectiveDate: z.string(),
+});
+
 export const getPayrollSummarySchema = z.object({
   month: z.coerce.number().min(1).max(12),
   year: z.coerce.number().min(2000).max(2100)
@@ -25,4 +31,17 @@ export const getPayrollSummarySchema = z.object({
 export const savePayrollRecordsSchema = z.object({
   month: z.number().min(1).max(12),
   year: z.number().min(2000).max(2100)
+});
+
+export const payrollRecordEmployeeIdParamsSchema = z.object({
+  employeeId: z.string().uuid(),
+});
+
+export const updatePayrollRecordSchema = z.object({
+  month: z.number().min(1).max(12),
+  year: z.number().min(2000).max(2100),
+  baseSalary: z.number().nonnegative(),
+  daysWorked: z.number().nonnegative(),
+  advanceDeduction: z.number().nonnegative(),
+  marketValueBonus: z.number().nonnegative(),
 });
