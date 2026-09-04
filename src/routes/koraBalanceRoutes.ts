@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { listBalances, getLedger } from '../controllers/koraBalanceController.js';
+import { listBalances, getLedger, getBalanceExcludingRecord } from '../controllers/koraBalanceController.js';
 
 const router = Router();
 
@@ -68,5 +68,39 @@ router.get('/', listBalances);
  *         $ref: '#/components/responses/ValidationError'
  */
 router.get('/:colorId/:sizeId/ledger', getLedger);
+
+/**
+ * @openapi
+ * /api/v1/kora-balance/{colorId}/{sizeId}/excluding/{recordId}:
+ *   get:
+ *     tags: [Kora Balance]
+ *     summary: Get kora balance for a color+size variant, excluding one production record's own effect
+ *     description: >
+ *       Returns the current balance with the given production record's own ledger entry (if
+ *       it has one, for this variant) subtracted back out — 0 if the variant has no balance
+ *       row yet. Unlike GET /kora-balance and the ledger endpoint's `balance` field (both
+ *       always the full current balance), this is what the balance would be without that one
+ *       record's contribution — e.g. a Fabric Checking record's own effect when editing it,
+ *       without also hiding any other movement dated the same day.
+ *     parameters:
+ *       - name: colorId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: sizeId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *       - name: recordId
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200:
+ *         description: OK.
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ */
+router.get('/:colorId/:sizeId/excluding/:recordId', getBalanceExcludingRecord);
 
 export default router;

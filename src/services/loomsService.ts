@@ -35,8 +35,9 @@ import type { CreateLoomsInput, UpdateLoomsInput, ListLoomsQuery } from '../vali
 /**
  * Looms consumes yarn produced at the Extruder stage, so a colour+size variant can't
  * take in more yarn than Extruder has ever produced for it, net of what Looms has
- * already consumed. Cumulative across all history — mirrors
- * fabricCheckingService.getAvailableFabricStockKg for the Looms→Fabric Checking stage.
+ * already consumed. Cumulative across all history — unlike
+ * fabricCheckingService.getAvailableFabricStockKg for the Looms→Fabric Checking stage,
+ * which is scoped to a single production date instead.
  *
  * `excludeRecordId` omits a record's own existing yarnInputKg from the "already
  * consumed" side, so re-validating an update against its own prior value isn't a

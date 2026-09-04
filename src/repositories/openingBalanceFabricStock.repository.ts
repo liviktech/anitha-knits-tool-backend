@@ -1,4 +1,5 @@
-import { query, queryOne } from '../db/query.js';
+import type pg from 'pg';
+import { query, queryOne, type Queryable } from '../db/query.js';
 import { withReadClient } from '../db/transaction.js';
 
 export interface OpeningBalanceFabricStockRow {
@@ -63,7 +64,7 @@ export interface InsertFabricStockInput {
     actor: string;
 }
 
-async function insertOne(input: InsertFabricStockInput): Promise<OpeningBalanceFabricStockRow> {
+async function insertOne(input: InsertFabricStockInput, executor?: Queryable): Promise<OpeningBalanceFabricStockRow> {
     const row = await queryOne<QueryRow>(
         `WITH inserted AS (
             INSERT INTO opening_balance_fabric_stock (id, company_id, date, color_id, size_id, kora_balance_kg, fabric_stock_kg, created_by, updated_at)
@@ -77,20 +78,22 @@ async function insertOne(input: InsertFabricStockInput): Promise<OpeningBalanceF
          LEFT JOIN colors c ON c.id = f.color_id
          LEFT JOIN sizes s ON s.id = f.size_id`,
         [input.companyId, input.date, input.colorId ?? null, input.sizeId ?? null, input.koraBalanceKg, input.fabricStockKg, input.actor],
+        executor,
     );
     if (!row) throw new Error('Insert into opening_balance_fabric_stock returned no row');
     return toRow(row);
 }
 
-export async function createFabricStock(input: InsertFabricStockInput): Promise<OpeningBalanceFabricStockRow> {
-    return insertOne(input);
+/** Runs on `client` so the kora_balances effect applied alongside it (see openingBalanceFabricStockService) is atomic with the insert. */
+export async function createFabricStock(input: InsertFabricStockInput, client: pg.PoolClient): Promise<OpeningBalanceFabricStockRow> {
+    return insertOne(input, client);
 }
 
-/** Inserts N rows in one round trip (the modal's "Add Row" multi-row create). */
-export async function createFabricStockBatch(items: InsertFabricStockInput[]): Promise<OpeningBalanceFabricStockRow[]> {
+/** Inserts N rows in one round trip (the modal's "Add Row" multi-row create), on `client` for the same reason as createFabricStock. */
+export async function createFabricStockBatch(items: InsertFabricStockInput[], client: pg.PoolClient): Promise<OpeningBalanceFabricStockRow[]> {
     const rows: OpeningBalanceFabricStockRow[] = [];
     for (const item of items) {
-        rows.push(await insertOne(item));
+        rows.push(await insertOne(item, client));
     }
     return rows;
 }
@@ -140,8 +143,8 @@ export async function listFabricStock(
     });
 }
 
-export async function findFabricStockById(id: string, companyId: string): Promise<OpeningBalanceFabricStockRow | null> {
-    const result = await query<QueryRow>(`${SELECT_SQL} WHERE f.id = $1 AND f.company_id = $2`, [id, companyId]);
+export async function findFabricStockById(id: string, companyId: string, executor?: Queryable): Promise<OpeningBalanceFabricStockRow | null> {
+    const result = await query<QueryRow>(`${SELECT_SQL} WHERE f.id = $1 AND f.company_id = $2`, [id, companyId], executor);
     const row = result.rows[0];
     return row ? toRow(row) : null;
 }
@@ -154,7 +157,8 @@ export interface UpdateFabricStockPatch {
     fabricStockKg?: number;
 }
 
-export async function updateFabricStock(id: string, companyId: string, patch: UpdateFabricStockPatch, actor: string): Promise<OpeningBalanceFabricStockRow> {
+/** Runs on `client` so the kora_balances reversal/reapply alongside it (see openingBalanceFabricStockService) is atomic with the update. */
+export async function updateFabricStock(id: string, companyId: string, patch: UpdateFabricStockPatch, actor: string, client: pg.PoolClient): Promise<OpeningBalanceFabricStockRow> {
     const columns: Record<keyof UpdateFabricStockPatch, string> = {
         date: 'date',
         colorId: 'color_id',
@@ -176,9 +180,10 @@ export async function updateFabricStock(id: string, companyId: string, patch: Up
     await query(
         `UPDATE opening_balance_fabric_stock SET ${sets.join(', ')}, updated_at = now() WHERE id = $${values.length - 1} AND company_id = $${values.length}`,
         values,
+        client,
     );
 
-    const row = await findFabricStockById(id, companyId);
+    const row = await findFabricStockById(id, companyId, client);
     if (!row) throw new Error(`Update on opening_balance_fabric_stock returned no row for id ${id}`);
     return row;
 }
@@ -191,6 +196,7 @@ export async function existsFabricStock(id: string, companyId: string): Promise<
     return row?.exists ?? false;
 }
 
-export async function deleteFabricStock(id: string, companyId: string): Promise<void> {
-    await query('DELETE FROM opening_balance_fabric_stock WHERE id = $1 AND company_id = $2', [id, companyId]);
+/** Runs on `client` so the kora_balances reversal alongside it (see openingBalanceFabricStockService) is atomic with the delete. */
+export async function deleteFabricStock(id: string, companyId: string, client: pg.PoolClient): Promise<void> {
+    await query('DELETE FROM opening_balance_fabric_stock WHERE id = $1 AND company_id = $2', [id, companyId], client);
 }

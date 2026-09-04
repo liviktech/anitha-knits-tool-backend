@@ -16,3 +16,11 @@ export const listKoraLedgerQuerySchema = paginationSchema
     .strict();
 
 export type ListKoraLedgerQuery = z.infer<typeof listKoraLedgerQuerySchema>;
+
+export const koraBalanceExcludingRecordParamsSchema = z
+    .object({
+        colorId: z.string().uuid('colorId must be a valid UUID'),
+        sizeId: z.string().uuid('sizeId must be a valid UUID'),
+        recordId: z.string().uuid('recordId must be a valid UUID'),
+    })
+    .strict();

@@ -94,13 +94,13 @@ router.get('/', listFabricChecking);
  * /api/v1/fabric-checking/available:
  *   get:
  *     tags: [Fabric Checking]
- *     summary: Get the fabric available to check for a colour+size variant
+ *     summary: Get the fabric available to check for a colour+size variant on a given date
  *     description: >
- *       Cumulative, all-time Looms fabricOutputKg for this colour+size minus
- *       all-time Fabric Checking fabricInputKg already recorded against it —
- *       the same figure the create/update guard enforces
- *       (FABRIC_INPUT_EXCEEDS_AVAILABLE). Independent of the Kora Balance
- *       ledger, which tracks a different running total.
+ *       That single day's Looms fabricOutputKg for this colour+size minus that same day's
+ *       Fabric Checking fabricInputKg already recorded against it — the same figure the
+ *       create/update guard enforces (FABRIC_INPUT_EXCEEDS_AVAILABLE). Scoped to `date` only,
+ *       not cumulative across history. Independent of the Kora Balance ledger, which tracks a
+ *       different running total.
  *     parameters:
  *       - name: colorId
  *         in: query
@@ -110,6 +110,10 @@ router.get('/', listFabricChecking);
  *         in: query
  *         required: true
  *         schema: { type: string, format: uuid }
+ *       - name: date
+ *         in: query
+ *         required: true
+ *         schema: { type: string, format: date }
  *     responses:
  *       200:
  *         description: OK.
