@@ -6,7 +6,7 @@ import { roundKg } from '../utils/decimal.js';
 import { assertColorExists, assertSizeExists } from './masterDataService.js';
 import { applyWastageUpdates, buildWastageCreates } from './wastageService.js';
 import { WASTAGE_CODES } from '../constants/wastageCodes.js';
-import { updateKoraBalance, reverseKoraBalance } from './koraBalanceService.js';
+import { updateKoraBalance, reverseKoraBalance, getCurrentKoraBalanceKg, getKoraBalanceExcludingRecord } from './koraBalanceService.js';
 import { assertCanCreateProductionRecord, assertCanDeleteProductionRecord, assertCanUpdateProductionRecord } from './productionCeilings.js';
 import {
     approveProductionRecord,
@@ -51,37 +51,47 @@ function mapFabricCheckingRecord(record: FabricCheckingRecordRow) {
 }
 
 /**
- * Fabric Checking consumes fabric produced at the Looms stage, so a colour+size variant
- * can't be checked in past what Looms has ever produced for it, net of what's already
- * been checked. Cumulative across all history (not just the latest Loom batch or this
- * production date) — independent of the Kora Balance ledger, which tracks a different,
- * looser running total.
+ * Fabric Checking can draw on two pools: that same day's Looms production for this colour+size
+ * (net of what's already been checked against that same day, not cumulative across history —
+ * see getAvailableFabricKgForVariant), plus whatever Kora Stock is sitting in the ledger for
+ * it. This mirrors the Fabric Checking form's own "Total Available" figure (Production
+ * Available + Kora Stock) exactly, so a save the form allowed never gets rejected here.
  *
- * `excludeRecordId` omits a record's own existing fabricInputKg from the "already
- * consumed" side, so re-validating an update against its own prior value isn't a
- * false rejection.
+ * `excludeRecordId` (an update) omits the record's own existing fabricInputKg from the Looms
+ * side's "already consumed" figure, and on the Kora side subtracts this same record's own
+ * ledger effect back out of the current balance (see getKoraBalanceExcludingRecord) instead
+ * of using it as-is — same reasoning as the form's own useKoraBalanceExcludingRecord for
+ * editing. A create (no excludeRecordId) instead uses the current balance directly, matching
+ * what the form showed when adding this record.
  */
 async function assertFabricInputWithinAvailable(
     companyId: string,
     colorId: string,
     sizeId: string,
     fabricInputKg: number,
+    productionDate: Date,
     client?: import('pg').PoolClient,
     excludeRecordId?: string,
 ): Promise<void> {
-    const availableKg = await getAvailableFabricKgForVariant(companyId, colorId, sizeId, client, excludeRecordId);
+    const productionAvailableKg = await getAvailableFabricKgForVariant(companyId, colorId, sizeId, productionDate, client, excludeRecordId);
+    const koraStockKg = excludeRecordId
+        ? await getKoraBalanceExcludingRecord(companyId, colorId, sizeId, excludeRecordId, client)
+        : await getCurrentKoraBalanceKg(companyId, colorId, sizeId, client);
+    const availableKg = productionAvailableKg + koraStockKg;
+
     if (fabricInputKg > availableKg) {
         throw new ConflictError(
-            `Fabric input (${fabricInputKg} kg) exceeds the available Looms production for this colour and size (${availableKg.toFixed(3)} kg available)`,
+            `Fabric input (${fabricInputKg} kg) exceeds the total available stock for this colour and size ` +
+                `(${availableKg.toFixed(3)} kg available: ${productionAvailableKg.toFixed(3)} kg Looms production + ${koraStockKg.toFixed(3)} kg Kora stock)`,
             'FABRIC_INPUT_EXCEEDS_AVAILABLE',
-            { colorId, sizeId, availableKg, requestedKg: fabricInputKg },
+            { colorId, sizeId, availableKg, productionAvailableKg, koraStockKg, requestedKg: fabricInputKg },
         );
     }
 }
 
-/** Backs GET /fabric-checking/available — lets the entry form show/validate against the same cumulative figure the create/update guard enforces. */
-export async function getAvailableFabricStockKg(companyId: string, colorId: string, sizeId: string): Promise<number> {
-    return getAvailableFabricKgForVariant(companyId, colorId, sizeId);
+/** Backs GET /fabric-checking/available — lets the entry form show/validate against the same single-day figure the create/update guard enforces. */
+export async function getAvailableFabricStockKg(companyId: string, colorId: string, sizeId: string, productionDate: Date): Promise<number> {
+    return getAvailableFabricKgForVariant(companyId, colorId, sizeId, productionDate);
 }
 
 export async function createFabricCheckingRecord(
@@ -103,7 +113,7 @@ export async function createFabricCheckingRecord(
     ]);
 
     const record = await withTransaction(async (client) => {
-        await assertFabricInputWithinAvailable(companyId, input.colorId, input.sizeId, input.fabricInputKg, client);
+        await assertFabricInputWithinAvailable(companyId, input.colorId, input.sizeId, input.fabricInputKg, input.productionDate, client);
 
         const productionRecordId = await insertFabricCheckingProduction(client, {
             companyId,
@@ -176,22 +186,20 @@ export async function updateFabricCheckingRecord(
 
     // Any of these three changing invalidates the kora ledger entry this record created
     // back in createFabricCheckingRecord — net = latest Loom batch's fabric output minus
-    // this record's fabricInputKg, keyed by colour+size.
+    // this record's fabricInputKg, keyed by colour+size. productionDate also affects the
+    // Looms-availability guard now that it's scoped to a single day (see
+    // getAvailableFabricKgForVariant) rather than cumulative across all history.
     const koraAffectingFieldsChanged =
-        input.fabricInputKg !== undefined || input.colorId !== undefined || input.sizeId !== undefined;
+        input.fabricInputKg !== undefined || input.colorId !== undefined || input.sizeId !== undefined || input.productionDate !== undefined;
 
     const updated = await withTransaction(async (client) => {
         const finalFabricInputKg = koraAffectingFieldsChanged ? input.fabricInputKg ?? existing.fabricInputKg : undefined;
+        const finalColorId = input.colorId ?? existing.colorId;
+        const finalSizeId = input.sizeId ?? existing.sizeId;
+        const finalProductionDate = input.productionDate ?? existing.productionDate;
 
         if (koraAffectingFieldsChanged) {
-            await assertFabricInputWithinAvailable(
-                companyId,
-                input.colorId ?? existing.colorId,
-                input.sizeId ?? existing.sizeId,
-                finalFabricInputKg!,
-                client,
-                id,
-            );
+            await assertFabricInputWithinAvailable(companyId, finalColorId, finalSizeId, finalFabricInputKg!, finalProductionDate, client, id);
         }
 
         await updateFabricCheckingHeader(client, id, {
@@ -211,10 +219,6 @@ export async function updateFabricCheckingRecord(
         // so the reversal is exact even if the variant is changing) and recompute against the
         // now-current values and variant — mirroring create's own logic exactly.
         if (koraAffectingFieldsChanged) {
-            const finalColorId = input.colorId ?? existing.colorId;
-            const finalSizeId = input.sizeId ?? existing.sizeId;
-            const finalProductionDate = input.productionDate ?? existing.productionDate;
-
             await reverseKoraBalance(id, client);
 
             const latestLoomFabricOutputKg = await findLatestLoomFabricOutput(client, companyId, finalColorId, finalSizeId);

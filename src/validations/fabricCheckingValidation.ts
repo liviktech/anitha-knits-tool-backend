@@ -49,6 +49,7 @@ export const availableFabricQuerySchema = z
     .object({
         colorId: z.string().uuid(),
         sizeId: z.string().uuid(),
+        date: z.coerce.date(),
     })
     .strict();
 
