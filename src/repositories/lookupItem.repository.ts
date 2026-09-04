@@ -8,13 +8,14 @@ import { withTransaction } from '../db/transaction.js';
  * One generic repository backs all four (and their sequence-counter helpers) instead of
  * four near-identical copies.
  */
-export type LookupTable = 'brands' | 'chemicals' | 'colors' | 'sizes';
+export type LookupTable = 'brands' | 'chemicals' | 'colors' | 'sizes' | 'expense_names';
 
 const SEQ_COLUMN: Record<LookupTable, string> = {
     brands: 'brand_seq',
     chemicals: 'chemical_seq',
     colors: 'color_seq',
     sizes: 'size_seq',
+    expense_names: 'expense_name_seq',
 };
 
 const ITEM_CODE_PREFIX: Record<LookupTable, string> = {
@@ -22,6 +23,7 @@ const ITEM_CODE_PREFIX: Record<LookupTable, string> = {
     chemicals: 'CL',
     colors: 'CR',
     sizes: 'SE',
+    expense_names: 'EN',
 };
 
 export interface LookupItemRow {

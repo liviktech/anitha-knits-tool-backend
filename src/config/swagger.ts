@@ -1059,6 +1059,10 @@ const definition: swaggerJsdoc.OAS3Definition = {
             type: 'array',
             items: { $ref: '#/components/schemas/LookupItem' },
           },
+          expenseNames: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/LookupItem' },
+          },
         },
       },
       DashboardStageDaily: {

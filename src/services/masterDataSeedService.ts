@@ -18,10 +18,11 @@ const BRANDS = ['Ghail','Opel','Haldia', 'Reliance' ];
 const CHEMICALS = ['DN+MB', 'ACM'];
 const SIZES = ['150cm', '160cm', '170cm', '180cm', '190cm'];
 const COLORS = ['White', 'Blue', 'Green'];
+const EXPENSE_NAMES = ['Electricity Charges', 'Water Charges', 'Machine Maintenance', 'Transportation', 'Office Supplies'];
 
 async function seedLookupTable(
   client: pg.PoolClient,
-  table: 'brands' | 'chemicals' | 'sizes' | 'colors',
+  table: 'brands' | 'chemicals' | 'sizes' | 'colors' | 'expense_names',
   itemCodePrefix: string,
   seqColumn: string,
   names: string[],
@@ -51,6 +52,7 @@ export async function seedCompanyMasterData(client: pg.PoolClient, companyId: st
   await seedLookupTable(client, 'chemicals', 'CL', 'chemical_seq', CHEMICALS, companyId, actor);
   await seedLookupTable(client, 'sizes', 'SE', 'size_seq', SIZES, companyId, actor);
   await seedLookupTable(client, 'colors', 'CR', 'color_seq', COLORS, companyId, actor);
+  await seedLookupTable(client, 'expense_names', 'EN', 'expense_name_seq', EXPENSE_NAMES, companyId, actor);
 
   // One record covers every colour, not one row per colour. PRD §5, confirmed:
   // White 150 g, Blue 100 g, Green 200 g per 25 KG — stored in kg, not grams;
