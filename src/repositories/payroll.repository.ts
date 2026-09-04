@@ -114,6 +114,47 @@ export async function findAllSalaryAdvances(companyId: string): Promise<SalaryAd
     return result.rows;
 }
 
+export interface MarketValueDeductionRow {
+    id: string;
+    companyId: string;
+    employeeId: string;
+    amount: number;
+    effectiveDate: Date;
+    createdAt: Date;
+    createdBy: string;
+    updatedAt: Date;
+    updatedBy: string | null;
+}
+
+export async function insertMarketValueDeduction(input: {
+    companyId: string;
+    employeeId: string;
+    amount: number;
+    effectiveDate: Date;
+    actor: string;
+}): Promise<MarketValueDeductionRow> {
+    const result = await query<MarketValueDeductionRow>(
+        `INSERT INTO market_value_deductions (id, company_id, employee_id, amount, effective_date, created_by, updated_at)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, now())
+         RETURNING id, company_id AS "companyId", employee_id AS "employeeId", amount, effective_date AS "effectiveDate",
+                   created_at AS "createdAt", created_by AS "createdBy", updated_at AS "updatedAt", updated_by AS "updatedBy"`,
+        [input.companyId, input.employeeId, input.amount, input.effectiveDate, input.actor],
+    );
+    const row = result.rows[0];
+    if (!row) throw new Error('Insert into market_value_deductions returned no row');
+    return row;
+}
+
+export async function findAllMarketValueDeductions(companyId: string): Promise<MarketValueDeductionRow[]> {
+    const result = await query<MarketValueDeductionRow>(
+        `SELECT id, company_id AS "companyId", employee_id AS "employeeId", amount, effective_date AS "effectiveDate",
+                created_at AS "createdAt", created_by AS "createdBy", updated_at AS "updatedAt", updated_by AS "updatedBy"
+         FROM market_value_deductions WHERE company_id = $1`,
+        [companyId],
+    );
+    return result.rows;
+}
+
 export interface ActiveEmployeeWithSalaryRow {
     id: string;
     name: string | null;
@@ -178,6 +219,7 @@ export interface PayrollRecordInput {
     advanceDeduction: number;
     sundayBonuses: number;
     marketValueBonus: number;
+    marketValueDeduction: number;
     grossSalary: number;
     netSalary: number;
 }
@@ -199,21 +241,83 @@ export async function insertPayrollRecords(client: pg.PoolClient, records: Payro
             r.advanceDeduction,
             r.sundayBonuses,
             r.marketValueBonus,
+            r.marketValueDeduction,
             r.grossSalary,
             r.netSalary,
         );
-        const base = params.length - 13;
+        const base = params.length - 14;
         values.push(
-            `(gen_random_uuid(), $${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13}, 'PENDING', now())`,
+            `(gen_random_uuid(), $${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13}, $${base + 14}, 'PENDING', now())`,
         );
     }
     await client.query(
         `INSERT INTO payroll_records (
             id, company_id, employee_id, month, year, base_salary, total_days_in_month, days_worked,
-            lop_deduction, advance_deduction, sunday_bonuses, market_value_bonus, gross_salary, net_salary, status, updated_at
+            lop_deduction, advance_deduction, sunday_bonuses, market_value_bonus, market_value_deduction, gross_salary, net_salary, status, updated_at
          ) VALUES ${values.join(', ')}`,
         params,
     );
+}
+
+export interface UpsertPayrollRecordInput {
+    companyId: string;
+    employeeId: string;
+    month: number;
+    year: number;
+    baseSalary: number;
+    totalDaysInMonth: number;
+    daysWorked: number;
+    advanceDeduction: number;
+    marketValueBonus: number;
+    grossSalary: number;
+    netSalary: number;
+}
+
+/**
+ * Manual single-employee edit from the Payroll tab's Actions > Edit. Upserts on
+ * (employee_id, month, year) — if no row exists yet for this month (payroll not
+ * generated), inserts one with lop_deduction/sunday_bonuses/market_value_deduction
+ * defaulted to 0 (this quick edit only knows base salary, days worked, advance,
+ * and machine value); if a generated row already exists, those three untouched
+ * columns keep whatever savePayrollRecords last computed for them.
+ */
+export async function upsertPayrollRecord(input: UpsertPayrollRecordInput): Promise<PayrollRecordRow> {
+    const result = await query<PayrollRecordRow>(
+        `INSERT INTO payroll_records (
+            id, company_id, employee_id, month, year, base_salary, total_days_in_month, days_worked,
+            lop_deduction, advance_deduction, sunday_bonuses, market_value_bonus, market_value_deduction,
+            gross_salary, net_salary, status, updated_at
+         ) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, 0, $8, 0, $9, 0, $10, $11, 'PENDING', now())
+         ON CONFLICT (employee_id, month, year) DO UPDATE SET
+            base_salary = EXCLUDED.base_salary,
+            days_worked = EXCLUDED.days_worked,
+            advance_deduction = EXCLUDED.advance_deduction,
+            market_value_bonus = EXCLUDED.market_value_bonus,
+            gross_salary = EXCLUDED.gross_salary,
+            net_salary = EXCLUDED.net_salary,
+            updated_at = now()
+         RETURNING id, company_id AS "companyId", employee_id AS "employeeId", month, year, base_salary AS "baseSalary",
+                   total_days_in_month AS "totalDaysInMonth", days_worked AS "daysWorked", lop_deduction AS "lopDeduction",
+                   advance_deduction AS "advanceDeduction", sunday_bonuses AS "sundayBonuses", market_value_bonus AS "marketValueBonus",
+                   market_value_deduction AS "marketValueDeduction",
+                   gross_salary AS "grossSalary", net_salary AS "netSalary", status, created_at AS "createdAt", updated_at AS "updatedAt"`,
+        [
+            input.companyId,
+            input.employeeId,
+            input.month,
+            input.year,
+            input.baseSalary,
+            input.totalDaysInMonth,
+            input.daysWorked,
+            input.advanceDeduction,
+            input.marketValueBonus,
+            input.grossSalary,
+            input.netSalary,
+        ],
+    );
+    const row = result.rows[0];
+    if (!row) throw new Error('Upsert into payroll_records returned no row');
+    return row;
 }
 
 export interface PayrollRecordRow {
@@ -229,6 +333,7 @@ export interface PayrollRecordRow {
     advanceDeduction: number;
     sundayBonuses: number;
     marketValueBonus: number;
+    marketValueDeduction: number;
     grossSalary: number;
     netSalary: number;
     status: string;
@@ -241,6 +346,7 @@ export async function findSavedPayrollRecords(companyId: string, month: number, 
         `SELECT id, company_id AS "companyId", employee_id AS "employeeId", month, year, base_salary AS "baseSalary",
                 total_days_in_month AS "totalDaysInMonth", days_worked AS "daysWorked", lop_deduction AS "lopDeduction",
                 advance_deduction AS "advanceDeduction", sunday_bonuses AS "sundayBonuses", market_value_bonus AS "marketValueBonus",
+                market_value_deduction AS "marketValueDeduction",
                 gross_salary AS "grossSalary", net_salary AS "netSalary", status, created_at AS "createdAt", updated_at AS "updatedAt"
          FROM payroll_records WHERE company_id = $1 AND month = $2 AND year = $3`,
         [companyId, month, year],

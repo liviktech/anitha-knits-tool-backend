@@ -2,9 +2,10 @@ import { withTransaction } from '../db/transaction.js';
 import { ProductionStage, UserRole } from '../types/enums.js';
 import { ConflictError, NotFoundError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
-import { assertColorExists, assertSizeExists } from './masterDataService.js';
+import { assertChemicalExists, assertColorExists, assertSizeExists } from './masterDataService.js';
 import { buildWastageCreates } from './wastageService.js';
 import { WASTAGE_CODES } from '../constants/wastageCodes.js';
+import { roundKg } from '../utils/decimal.js';
 import { assertCanCreateProductionRecord, assertCanDeleteProductionRecord, assertCanUpdateProductionRecord } from './productionCeilings.js';
 import {
     approveProductionRecord,
@@ -19,6 +20,7 @@ import {
     listLoomsProductions as listLoomsProductionsRepo,
     updateLoomsDetail,
     updateLoomsHeader,
+    findLoomsWastagesForSummary,
     type LoomsRecordRow,
 } from '../repositories/looms.repository.js';
 import { insertWastageRecord } from '../repositories/wastage.repository.js';
@@ -35,8 +37,9 @@ import type { CreateLoomsInput, UpdateLoomsInput, ListLoomsQuery } from '../vali
 /**
  * Looms consumes yarn produced at the Extruder stage, so a colour+size variant can't
  * take in more yarn than Extruder has ever produced for it, net of what Looms has
- * already consumed. Cumulative across all history — mirrors
- * fabricCheckingService.getAvailableFabricStockKg for the Looms→Fabric Checking stage.
+ * already consumed. Cumulative across all history — unlike
+ * fabricCheckingService.getAvailableFabricStockKg for the Looms→Fabric Checking stage,
+ * which is scoped to a single production date instead.
  *
  * `excludeRecordId` omits a record's own existing yarnInputKg from the "already
  * consumed" side, so re-validating an update against its own prior value isn't a
@@ -46,23 +49,24 @@ async function assertYarnInputWithinAvailable(
     companyId: string,
     colorId: string,
     sizeId: string,
+    chemicalId: string,
     yarnInputKg: number,
     client?: import('pg').PoolClient,
     excludeRecordId?: string,
 ): Promise<void> {
-    const availableKg = await getAvailableYarnKgForVariant(companyId, colorId, sizeId, client, excludeRecordId);
+    const availableKg = await getAvailableYarnKgForVariant(companyId, colorId, sizeId, chemicalId, client, excludeRecordId);
     if (yarnInputKg > availableKg) {
         throw new ConflictError(
-            `Loom Production (${yarnInputKg} kg) exceeds the available Extruder yarn for this colour and size (${availableKg.toFixed(3)} kg available)`,
+            `Loom Production (${yarnInputKg} kg) exceeds the available Extruder yarn for this colour, size and chemical (${availableKg.toFixed(3)} kg available)`,
             'YARN_INPUT_EXCEEDS_AVAILABLE',
-            { colorId, sizeId, availableKg, requestedKg: yarnInputKg },
+            { colorId, sizeId, chemicalId, availableKg, requestedKg: yarnInputKg },
         );
     }
 }
 
 /** Backs GET /production/looms/available — lets the entry form show/validate against the same cumulative figure the create/update guard enforces. */
-export async function getAvailableYarnStockKg(companyId: string, colorId: string, sizeId: string): Promise<number> {
-    return getAvailableYarnKgForVariant(companyId, colorId, sizeId);
+export async function getAvailableYarnStockKg(companyId: string, colorId: string, sizeId: string, chemicalId: string): Promise<number> {
+    return getAvailableYarnKgForVariant(companyId, colorId, sizeId, chemicalId);
 }
 
 function mapLoomsRecord(record: LoomsRecordRow) {
@@ -72,7 +76,11 @@ function mapLoomsRecord(record: LoomsRecordRow) {
 export async function createLoomsProduction(input: CreateLoomsInput, companyId: string, actor: string, role: UserRole, callerId: string) {
     await assertCanCreateProductionRecord(role, callerId, companyId);
 
-    await Promise.all([assertColorExists(input.colorId, companyId), assertSizeExists(input.sizeId, companyId)]);
+    await Promise.all([
+        assertColorExists(input.colorId, companyId),
+        assertSizeExists(input.sizeId, companyId),
+        assertChemicalExists(input.chemicalId, companyId),
+    ]);
 
     // BW ("Bit Wastage") is colour-tracked (PRD "B White"/"B Blue"), so it's
     // stored against this record's own colour; FW ("Fabric Wastage") is not.
@@ -81,13 +89,15 @@ export async function createLoomsProduction(input: CreateLoomsInput, companyId: 
     ]);
 
     const record = await withTransaction(async (client) => {
-        await assertYarnInputWithinAvailable(companyId, input.colorId, input.sizeId, input.yarnInputKg, client);
+        await assertYarnInputWithinAvailable(companyId, input.colorId, input.sizeId, input.chemicalId, input.yarnInputKg, client);
 
         const productionRecordId = await insertLoomsProduction(client, {
             companyId,
             productionDate: input.productionDate,
             colorId: input.colorId,
             sizeId: input.sizeId,
+            chemicalId: input.chemicalId,
+            type: input.type,
             remarks: input.remarks,
             actor,
             yarnInputKg: input.yarnInputKg,
@@ -129,14 +139,16 @@ export async function updateLoomsProduction(id: string, input: UpdateLoomsInput,
     await Promise.all([
         input.colorId ? assertColorExists(input.colorId, companyId) : undefined,
         input.sizeId ? assertSizeExists(input.sizeId, companyId) : undefined,
+        input.chemicalId ? assertChemicalExists(input.chemicalId, companyId) : undefined,
     ]);
 
     const updated = await withTransaction(async (client) => {
-        if (input.yarnInputKg !== undefined || input.colorId !== undefined || input.sizeId !== undefined) {
+        if (input.yarnInputKg !== undefined || input.colorId !== undefined || input.sizeId !== undefined || input.chemicalId !== undefined) {
             await assertYarnInputWithinAvailable(
                 companyId,
                 input.colorId ?? existing.colorId,
                 input.sizeId ?? existing.sizeId,
+                input.chemicalId ?? existing.chemicalId,
                 input.yarnInputKg ?? existing.yarnInputKg,
                 client,
                 id,
@@ -154,6 +166,7 @@ export async function updateLoomsProduction(id: string, input: UpdateLoomsInput,
         await updateLoomsDetail(client, id, {
             yarnInputKg: input.yarnInputKg,
             fabricOutputKg: input.fabricOutputKg,
+            chemicalId: input.chemicalId,
         });
 
         return findLoomsProductionByIdTx(client, id);
@@ -186,27 +199,85 @@ export async function approveLoomsProduction(id: string, companyId: string, acto
     return mapLoomsRecord(record!);
 }
 
-export async function getLoomsProductionSummaryByDateRange(companyId: string, dateFrom: Date, dateTo: Date) {
-    const rows = await findLoomsRowsForSummary(companyId, dateFrom, dateTo);
+export type LoomsProductionVariantSummary = {
+    color: { id: string; name: string };
+    size: { id: string; name: string };
+    production: number;
+    waste: number;
+    total: number;
+};
 
-    const byColorMap = new Map<string, { color: { id: string; name: string }; production: number; waste: number }>();
+export type LoomsProductionColorSummary = {
+    color: { id: string; name: string };
+    production: number;
+    waste: number;
+    total: number;
+};
 
-    for (const row of rows) {
-        const colorKey = row.colorId ?? 'UNSPECIFIED';
-        let entry = byColorMap.get(colorKey);
-        if (!entry) {
-            entry = { color: row.colorId ? { id: row.colorId, name: row.colorName! } : { id: 'UNSPECIFIED', name: 'Unspecified' }, production: 0, waste: 0 };
-            byColorMap.set(colorKey, entry);
+export type LoomsProductionSummary = {
+    byVariant: LoomsProductionVariantSummary[];
+    byColor: LoomsProductionColorSummary[];
+    overall: { production: number };
+};
+
+export async function getLoomsProductionSummaryByDateRange(companyId: string, dateFrom: Date, dateTo: Date): Promise<LoomsProductionSummary> {
+    const [rows, wastageRows] = await Promise.all([
+        findLoomsRowsForSummary(companyId, dateFrom, dateTo),
+        findLoomsWastagesForSummary(companyId, dateFrom, dateTo),
+    ]);
+
+    const wastagesByProductionRecordId = new Map<string, number>();
+    for (const w of wastageRows) {
+        if (w.wastageTypeCode === WASTAGE_CODES.LOOMS_WASTE) {
+            const current = wastagesByProductionRecordId.get(w.productionRecordId) ?? 0;
+            wastagesByProductionRecordId.set(w.productionRecordId, current + w.quantityKg);
         }
-        entry.production += row.fabricOutputKg ?? 0;
     }
 
-    const roundKg = (val: number) => Math.round(val * 1000) / 1000;
+    const byVariantMap = new Map<string, LoomsProductionVariantSummary>();
+    const byColorMap = new Map<string, LoomsProductionColorSummary>();
+    const overall = { production: 0 };
 
-    return Array.from(byColorMap.values()).map((e) => ({
-        ...e,
-        production: roundKg(e.production),
-        waste: roundKg(e.waste),
-        total: roundKg(e.production + e.waste),
-    }));
+    for (const row of rows) {
+        const production = row.fabricOutputKg ?? 0;
+        overall.production += production;
+
+        const color = row.colorId ? { id: row.colorId, name: row.colorName! } : { id: 'UNSPECIFIED', name: 'Unspecified' };
+        const size = row.sizeId ? { id: row.sizeId, name: row.sizeName! } : { id: 'UNSPECIFIED', name: 'Unspecified' };
+
+        const waste = wastagesByProductionRecordId.get(row.id) ?? 0;
+
+        const variantKey = `${color.id}_${size.id}`;
+        let variantEntry = byVariantMap.get(variantKey);
+        if (!variantEntry) {
+            variantEntry = { color, size, production: 0, waste: 0, total: 0 };
+            byVariantMap.set(variantKey, variantEntry);
+        }
+        variantEntry.production += production;
+        variantEntry.waste += waste;
+
+        let colorEntry = byColorMap.get(color.id);
+        if (!colorEntry) {
+            colorEntry = { color, production: 0, waste: 0, total: 0 };
+            byColorMap.set(color.id, colorEntry);
+        }
+        colorEntry.production += production;
+        colorEntry.waste += waste;
+    }
+
+    return {
+        byVariant: Array.from(byVariantMap.values()).map((entry) => ({
+            ...entry,
+            production: roundKg(entry.production),
+            waste: roundKg(entry.waste),
+            total: roundKg(entry.production + entry.waste),
+        })),
+        byColor: Array.from(byColorMap.values()).map((entry) => ({
+            ...entry,
+            production: roundKg(entry.production),
+            waste: roundKg(entry.waste),
+            total: roundKg(entry.production + entry.waste),
+        })),
+        overall: { production: roundKg(overall.production) },
+    };
 }

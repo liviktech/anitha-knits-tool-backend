@@ -11,22 +11,25 @@ import type {
   CreateBrandInput,
   CreateChemicalInput,
   CreateColorInput,
+  CreateExpenseNameInput,
   CreateSizeInput,
   UpdateBrandInput,
   UpdateChemicalInput,
   UpdateColorInput,
+  UpdateExpenseNameInput,
   UpdateSizeInput,
 } from '../validations/lookupValidation.js';
 
 export async function getLookups(companyId: string) {
-  const [brands, colors, chemicals, sizes] = await Promise.all([
+  const [brands, colors, chemicals, sizes, expenseNames] = await Promise.all([
     listLookupItems('brands', companyId),
     listLookupItems('colors', companyId),
     listLookupItems('chemicals', companyId),
     listLookupItems('sizes', companyId),
+    listLookupItems('expense_names', companyId),
   ]);
 
-  return { brands, colors, chemicals, sizes };
+  return { brands, colors, chemicals, sizes, expenseNames };
 }
 
 /** Maps a unique-constraint violation on [companyId, name] to a stable conflict error. */
@@ -165,4 +168,37 @@ export async function updateBrand(id: string, input: UpdateBrandInput, companyId
 export async function deleteBrand(id: string, companyId: string): Promise<void> {
   await assertBrandExists(id, companyId);
   await deleteLookupItem('brands', id);
+}
+
+// ---------------------------------------------------------------------------
+// Expense names
+// ---------------------------------------------------------------------------
+
+export async function createExpenseName(input: CreateExpenseNameInput, companyId: string, actor: string) {
+  try {
+    return await createLookupItem('expense_names', companyId, input.name, actor);
+  } catch (err) {
+    mapNameConflict(err, 'expense name', 'EXPENSE_NAME_EXISTS');
+    throw err;
+  }
+}
+
+async function assertExpenseNameExists(id: string, companyId: string): Promise<void> {
+  const found = await existsLookupItem('expense_names', id, companyId);
+  if (!found) throw new NotFoundError('Expense name not found', 'EXPENSE_NAME_NOT_FOUND', { id });
+}
+
+export async function updateExpenseName(id: string, input: UpdateExpenseNameInput, companyId: string, actor: string) {
+  await assertExpenseNameExists(id, companyId);
+  try {
+    return await updateLookupItem('expense_names', id, input.name, actor);
+  } catch (err) {
+    mapNameConflict(err, 'expense name', 'EXPENSE_NAME_EXISTS');
+    throw err;
+  }
+}
+
+export async function deleteExpenseName(id: string, companyId: string): Promise<void> {
+  await assertExpenseNameExists(id, companyId);
+  await deleteLookupItem('expense_names', id);
 }

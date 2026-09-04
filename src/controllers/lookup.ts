@@ -8,11 +8,13 @@ import {
   createBrandSchema,
   createChemicalSchema,
   createColorSchema,
+  createExpenseNameSchema,
   createSizeSchema,
   lookupIdParamsSchema,
   updateBrandSchema,
   updateChemicalSchema,
   updateColorSchema,
+  updateExpenseNameSchema,
   updateSizeSchema,
 } from '../validations/lookupValidation.js';
 
@@ -123,5 +125,31 @@ export const deleteBrand = asyncHandler(async (req: Request, res: Response) => {
   const { id } = parseOrThrow(lookupIdParamsSchema, req.params);
   const { companyId } = getAuthContext(req);
   await lookupService.deleteBrand(id, companyId);
+  res.status(204).send();
+});
+
+// ---------------------------------------------------------------------------
+// Expense names
+// ---------------------------------------------------------------------------
+
+export const createExpenseName = asyncHandler(async (req: Request, res: Response) => {
+  const input = parseOrThrow(createExpenseNameSchema, req.body);
+  const { companyId, actor } = getAuthContext(req);
+  const record = await lookupService.createExpenseName(input, companyId, actor);
+  sendSuccess(res, record, undefined, 201);
+});
+
+export const updateExpenseName = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = parseOrThrow(lookupIdParamsSchema, req.params);
+  const input = parseOrThrow(updateExpenseNameSchema, req.body);
+  const { companyId, actor } = getAuthContext(req);
+  const record = await lookupService.updateExpenseName(id, input, companyId, actor);
+  sendSuccess(res, record);
+});
+
+export const deleteExpenseName = asyncHandler(async (req: Request, res: Response) => {
+  const { id } = parseOrThrow(lookupIdParamsSchema, req.params);
+  const { companyId } = getAuthContext(req);
+  await lookupService.deleteExpenseName(id, companyId);
   res.status(204).send();
 });

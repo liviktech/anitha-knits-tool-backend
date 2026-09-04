@@ -1,5 +1,5 @@
 import type pg from 'pg';
-import { query, queryOne } from '../db/query.js';
+import { query, queryOne, type Queryable } from '../db/query.js';
 import type { KoraEntryType } from '../types/enums.js';
 
 export interface KoraBalanceRow {
@@ -57,12 +57,42 @@ export interface KoraLedgerEntryForReversalRow {
 }
 
 export async function findKoraLedgerEntryByProductionRecord(
-    client: pg.PoolClient,
     productionRecordId: string,
+    executor?: Queryable,
 ): Promise<KoraLedgerEntryForReversalRow | null> {
-    const result = await client.query<KoraLedgerEntryForReversalRow>(
+    return queryOne<KoraLedgerEntryForReversalRow>(
         'SELECT id, kora_balance_id AS "koraBalanceId", entry_type AS "entryType", quantity_kg AS "quantityKg" FROM kora_ledger_entries WHERE production_record_id = $1',
         [productionRecordId],
+        executor,
+    );
+}
+
+export async function insertOpeningBalanceKoraLedgerEntry(
+    client: pg.PoolClient,
+    input: {
+        koraBalanceId: string;
+        entryType: KoraEntryType;
+        stockDate: Date;
+        openingBalanceId: string;
+        quantityKg: number;
+        balanceAfterKg: number;
+        actor: string;
+    },
+): Promise<void> {
+    await client.query(
+        `INSERT INTO kora_ledger_entries (id, kora_balance_id, entry_type, stock_date, opening_balance_id, quantity_kg, balance_after_kg, created_by)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7)`,
+        [input.koraBalanceId, input.entryType, input.stockDate, input.openingBalanceId, input.quantityKg, input.balanceAfterKg, input.actor],
+    );
+}
+
+export async function findKoraLedgerEntryByOpeningBalanceRecord(
+    client: pg.PoolClient,
+    openingBalanceId: string,
+): Promise<KoraLedgerEntryForReversalRow | null> {
+    const result = await client.query<KoraLedgerEntryForReversalRow>(
+        'SELECT id, kora_balance_id AS "koraBalanceId", entry_type AS "entryType", quantity_kg AS "quantityKg" FROM kora_ledger_entries WHERE opening_balance_id = $1',
+        [openingBalanceId],
     );
     return result.rows[0] ?? null;
 }
@@ -111,12 +141,12 @@ export async function listKoraBalances(companyId: string): Promise<KoraBalanceLi
     }));
 }
 
-export async function findKoraBalanceByVariant(companyId: string, colorId: string, sizeId: string): Promise<KoraBalanceRow | null> {
-    return queryOne<KoraBalanceRow>('SELECT id, balance_kg AS "balanceKg" FROM kora_balances WHERE company_id = $1 AND color_id = $2 AND size_id = $3', [
-        companyId,
-        colorId,
-        sizeId,
-    ]);
+export async function findKoraBalanceByVariant(companyId: string, colorId: string, sizeId: string, executor?: Queryable): Promise<KoraBalanceRow | null> {
+    return queryOne<KoraBalanceRow>(
+        'SELECT id, balance_kg AS "balanceKg" FROM kora_balances WHERE company_id = $1 AND color_id = $2 AND size_id = $3',
+        [companyId, colorId, sizeId],
+        executor,
+    );
 }
 
 export interface KoraLedgerRow {

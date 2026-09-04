@@ -10,10 +10,12 @@ import { formatDateOnly } from '../utils/dateOnly.js';
 export interface LoomsRecordRow {
     id: string;
     stage: string;
+    type: string;
     productionDate: string;
     remarks: string | null;
     color: { id: string; name: string };
     size: { id: string; name: string };
+    chemical: { id: string; name: string } | null;
     loom: { yarnInputKg: number; fabricOutputKg: number } | null;
     wastages: WastageRow[];
     isApproved: boolean;
@@ -28,6 +30,7 @@ export interface LoomsRecordRow {
 interface LoomsQueryRow {
     id: string;
     stage: string;
+    type: string;
     productionDate: Date;
     remarks: string | null;
     colorId: string;
@@ -36,6 +39,8 @@ interface LoomsQueryRow {
     sizeName: string;
     yarnInputKg: number | null;
     fabricOutputKg: number | null;
+    chemicalId: string | null;
+    chemicalName: string | null;
     isApproved: boolean;
     approvedAt: Date | null;
     approvedBy: string | null;
@@ -46,25 +51,29 @@ interface LoomsQueryRow {
 }
 
 const LOOMS_SELECT_SQL = `
-    SELECT pr.id, pr.stage, pr.production_date AS "productionDate", pr.remarks,
+    SELECT pr.id, pr.stage, pr.type, pr.production_date AS "productionDate", pr.remarks,
            c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName",
            ld.yarn_input_kg AS "yarnInputKg", ld.fabric_output_kg AS "fabricOutputKg",
+           ld.chemical_id AS "chemicalId", ch.name AS "chemicalName",
            pr.is_approved AS "isApproved", pr.approved_at AS "approvedAt", pr.approved_by AS "approvedBy",
            pr.created_at AS "createdAt", pr.created_by AS "createdBy", pr.updated_at AS "updatedAt", pr.updated_by AS "updatedBy"
     FROM production_records pr
     JOIN colors c ON c.id = pr.color_id
     JOIN sizes s ON s.id = pr.size_id
     LEFT JOIN loom_details ld ON ld.production_record_id = pr.id
+    LEFT JOIN chemicals ch ON ch.id = ld.chemical_id
 `;
 
 function toLoomsRow(row: LoomsQueryRow, wastages: WastageRow[]): LoomsRecordRow {
     return {
         id: row.id,
         stage: row.stage,
+        type: row.type,
         productionDate: formatDateOnly(row.productionDate),
         remarks: row.remarks,
         color: { id: row.colorId, name: row.colorName },
         size: { id: row.sizeId, name: row.sizeName },
+        chemical: row.chemicalId ? { id: row.chemicalId, name: row.chemicalName! } : null,
         loom: row.yarnInputKg !== null ? { yarnInputKg: row.yarnInputKg, fabricOutputKg: row.fabricOutputKg! } : null,
         wastages,
         isApproved: row.isApproved,
@@ -82,6 +91,8 @@ export interface CreateLoomsInputRow {
     productionDate: Date;
     colorId: string;
     sizeId: string;
+    chemicalId: string;
+    type: string;
     remarks?: string | null;
     actor: string;
     yarnInputKg: number;
@@ -90,17 +101,17 @@ export interface CreateLoomsInputRow {
 
 export async function insertLoomsProduction(client: pg.PoolClient, input: CreateLoomsInputRow): Promise<string> {
     const prResult = await client.query<{ id: string }>(
-        `INSERT INTO production_records (id, company_id, stage, production_date, color_id, size_id, remarks, created_by, updated_at)
-         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, now())
+        `INSERT INTO production_records (id, company_id, stage, production_date, color_id, size_id, type, remarks, created_by, updated_at)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, now())
          RETURNING id`,
-        [input.companyId, ProductionStage.LOOMS, input.productionDate, input.colorId, input.sizeId, input.remarks ?? null, input.actor],
+        [input.companyId, ProductionStage.LOOMS, input.productionDate, input.colorId, input.sizeId, input.type, input.remarks ?? null, input.actor],
     );
     const productionRecordId = prResult.rows[0]!.id;
 
     await client.query(
-        `INSERT INTO loom_details (id, production_record_id, yarn_input_kg, fabric_output_kg)
-         VALUES (gen_random_uuid(), $1, $2, $3)`,
-        [productionRecordId, input.yarnInputKg, input.fabricOutputKg],
+        `INSERT INTO loom_details (id, production_record_id, yarn_input_kg, fabric_output_kg, chemical_id)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4)`,
+        [productionRecordId, input.yarnInputKg, input.fabricOutputKg, input.chemicalId],
     );
 
     return productionRecordId;
@@ -157,12 +168,14 @@ export interface LoomsExistingRow {
     isApproved: boolean;
     colorId: string;
     sizeId: string;
+    chemicalId: string;
     yarnInputKg: number;
 }
 
 export async function findLoomsExisting(id: string, companyId: string): Promise<LoomsExistingRow | null> {
     return queryOne<LoomsExistingRow>(
-        `SELECT pr.id, pr.is_approved AS "isApproved", pr.color_id AS "colorId", pr.size_id AS "sizeId", ld.yarn_input_kg AS "yarnInputKg"
+        `SELECT pr.id, pr.is_approved AS "isApproved", pr.color_id AS "colorId", pr.size_id AS "sizeId",
+                ld.chemical_id AS "chemicalId", ld.yarn_input_kg AS "yarnInputKg"
          FROM production_records pr
          JOIN loom_details ld ON ld.production_record_id = pr.id
          WHERE pr.id = $1 AND pr.company_id = $2 AND pr.stage = $3`,
@@ -171,8 +184,10 @@ export async function findLoomsExisting(id: string, companyId: string): Promise<
 }
 
 /**
- * Cumulative, all-time yarn available for Looms to consume for a colour+size variant — total
- * Extruder yarnOutputKg ever recorded for it, minus total Looms yarnInputKg already consumed.
+ * Cumulative, all-time yarn available for Looms to consume for a colour+size+chemical variant —
+ * total Extruder yarnOutputKg ever recorded for it, minus total Looms yarnInputKg already
+ * consumed, both scoped to the same chemical (mirroring the colour+size scoping) so Looms can
+ * only draw on yarn produced with the chemical it's declaring.
  * Backs GET /production/looms/available and the create/update guard (YARN_INPUT_EXCEEDS_AVAILABLE).
  * `excludeRecordId` omits a record's own existing yarnInputKg from the "already consumed" side.
  * Runs on `client` when passed (inside the caller's transaction) or the shared pool otherwise.
@@ -181,6 +196,7 @@ export async function getAvailableYarnKgForVariant(
     companyId: string,
     colorId: string,
     sizeId: string,
+    chemicalId: string,
     client?: pg.PoolClient,
     excludeRecordId?: string,
 ): Promise<number> {
@@ -188,17 +204,19 @@ export async function getAvailableYarnKgForVariant(
         `SELECT SUM(ed.yarn_output_kg) AS total
          FROM production_records pr
          JOIN extruder_details ed ON ed.production_record_id = pr.id
-         WHERE pr.company_id = $1 AND pr.stage = $2 AND pr.color_id = $3 AND pr.size_id = $4`,
-        [companyId, ProductionStage.EXTRUDER, colorId, sizeId],
+         WHERE pr.company_id = $1 AND pr.stage = $2 AND pr.color_id = $3 AND pr.size_id = $4 AND ed.chemical_id = $5`,
+        [companyId, ProductionStage.EXTRUDER, colorId, sizeId, chemicalId],
         client,
     );
     const loomResult = await query<{ total: number | null }>(
         `SELECT SUM(ld.yarn_input_kg) AS total
          FROM production_records pr
          JOIN loom_details ld ON ld.production_record_id = pr.id
-         WHERE pr.company_id = $1 AND pr.stage = $2 AND pr.color_id = $3 AND pr.size_id = $4
-         ${excludeRecordId ? 'AND pr.id <> $5' : ''}`,
-        excludeRecordId ? [companyId, ProductionStage.LOOMS, colorId, sizeId, excludeRecordId] : [companyId, ProductionStage.LOOMS, colorId, sizeId],
+         WHERE pr.company_id = $1 AND pr.stage = $2 AND pr.color_id = $3 AND pr.size_id = $4 AND ld.chemical_id = $5
+         ${excludeRecordId ? 'AND pr.id <> $6' : ''}`,
+        excludeRecordId
+            ? [companyId, ProductionStage.LOOMS, colorId, sizeId, chemicalId, excludeRecordId]
+            : [companyId, ProductionStage.LOOMS, colorId, sizeId, chemicalId],
         client,
     );
     const extruderTotal = extruderResult.rows[0]?.total ?? 0;
@@ -242,6 +260,7 @@ export async function updateLoomsHeader(client: pg.PoolClient, id: string, patch
 export interface UpdateLoomsDetailPatch {
     yarnInputKg?: number;
     fabricOutputKg?: number;
+    chemicalId?: string;
 }
 
 export async function updateLoomsDetail(client: pg.PoolClient, productionRecordId: string, patch: UpdateLoomsDetailPatch): Promise<void> {
@@ -254,6 +273,10 @@ export async function updateLoomsDetail(client: pg.PoolClient, productionRecordI
     if (patch.fabricOutputKg !== undefined) {
         values.push(patch.fabricOutputKg);
         sets.push(`fabric_output_kg = $${values.length}`);
+    }
+    if (patch.chemicalId !== undefined) {
+        values.push(patch.chemicalId);
+        sets.push(`chemical_id = $${values.length}`);
     }
     if (sets.length === 0) return;
     values.push(productionRecordId);
@@ -273,19 +296,41 @@ export async function approveProductionRecord(id: string, actor: string): Promis
 }
 
 export interface LoomsSummaryRow {
+    id: string;
     colorId: string | null;
     colorName: string | null;
+    sizeId: string | null;
+    sizeName: string | null;
     fabricOutputKg: number | null;
 }
 
 export async function findLoomsRowsForSummary(companyId: string, dateFrom: Date, dateTo: Date): Promise<LoomsSummaryRow[]> {
     const result = await query<LoomsSummaryRow>(
-        `SELECT c.id AS "colorId", c.name AS "colorName", ld.fabric_output_kg AS "fabricOutputKg"
+        `SELECT pr.id, c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName", ld.fabric_output_kg AS "fabricOutputKg"
          FROM production_records pr
          LEFT JOIN colors c ON c.id = pr.color_id
+         LEFT JOIN sizes s ON s.id = pr.size_id
          LEFT JOIN loom_details ld ON ld.production_record_id = pr.id
          WHERE pr.company_id = $1 AND pr.stage = $2 AND pr.production_date >= $3 AND pr.production_date <= $4`,
         [companyId, ProductionStage.LOOMS, dateFrom, dateTo],
+    );
+    return result.rows;
+}
+
+export interface LoomsWastageRow {
+    productionRecordId: string;
+    quantityKg: number;
+    wastageTypeCode: string;
+}
+
+export async function findLoomsWastagesForSummary(companyId: string, dateFrom: Date, dateTo: Date): Promise<LoomsWastageRow[]> {
+    const result = await query<LoomsWastageRow>(
+        `SELECT wr.production_record_id AS "productionRecordId", wr.quantity_kg AS "quantityKg", wt.code AS "wastageTypeCode"
+         FROM wastage_records wr
+         JOIN wastage_types wt ON wt.id = wr.wastage_type_id
+         JOIN production_records pr ON pr.id = wr.production_record_id
+         WHERE wr.company_id = $1 AND pr.production_date >= $2 AND pr.production_date <= $3 AND pr.stage = $4`,
+        [companyId, dateFrom, dateTo, ProductionStage.LOOMS],
     );
     return result.rows;
 }

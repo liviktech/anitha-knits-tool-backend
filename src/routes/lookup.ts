@@ -3,15 +3,18 @@ import {
   createBrand,
   createChemical,
   createColor,
+  createExpenseName,
   createSize,
   deleteBrand,
   deleteChemical,
   deleteColor,
+  deleteExpenseName,
   deleteSize,
   getLookups,
   updateBrand,
   updateChemical,
   updateColor,
+  updateExpenseName,
   updateSize,
 } from '../controllers/lookup.js';
 import { requireAuth } from '../middlewares/auth.js';
@@ -25,9 +28,10 @@ const router = Router();
  *     tags: [Lookups]
  *     summary: Master data for dropdowns
  *     description: >
- *       Returns brands, colours, chemicals, and sizes in one call, each sorted
- *       by name. Used to populate the dropdowns on the production entry forms
- *       (Extruder, Looms, Fabric Checking) and the Raw Materials admin screen.
+ *       Returns brands, colours, chemicals, sizes, and expense names in one
+ *       call, each sorted by name. Used to populate the dropdowns on the
+ *       production entry forms (Extruder, Looms, Fabric Checking), the Employee
+ *       Expenses screen, and the Raw Materials admin screen.
  *     responses:
  *       200:
  *         description: OK.
@@ -365,5 +369,87 @@ router.post('/brands', requireAuth('ADMIN'), createBrand);
  */
 router.patch('/brands/:id', requireAuth('ADMIN'), updateBrand);
 router.delete('/brands/:id', requireAuth('ADMIN'), deleteBrand);
+
+/**
+ * @openapi
+ * /api/v1/lookups/expense-names:
+ *   post:
+ *     tags: [Lookups]
+ *     summary: Create an expense name
+ *     description: >
+ *       itemCode is always server-generated ("EN" + a zero-padded per-company
+ *       sequence, e.g. EN001) — never accepted from the client. Requires the ADMIN role.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name: { type: string, maxLength: 150, example: Electricity Charges }
+ *     responses:
+ *       201:
+ *         description: Created.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/LookupItemResponse'
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ *       409:
+ *         description: An expense name with this name already exists (EXPENSE_NAME_EXISTS).
+ */
+router.post('/expense-names', requireAuth('ADMIN'), createExpenseName);
+
+/**
+ * @openapi
+ * /api/v1/lookups/expense-names/{id}:
+ *   patch:
+ *     tags: [Lookups]
+ *     summary: Rename an expense name
+ *     description: itemCode never changes. Requires the ADMIN role.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name]
+ *             properties:
+ *               name: { type: string, maxLength: 150 }
+ *     responses:
+ *       200:
+ *         description: OK.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/LookupItemResponse'
+ *       404:
+ *         description: No expense name exists with this id (EXPENSE_NAME_NOT_FOUND).
+ *       409:
+ *         description: An expense name with this name already exists (EXPENSE_NAME_EXISTS).
+ *   delete:
+ *     tags: [Lookups]
+ *     summary: Delete an expense name
+ *     description: Requires the ADMIN role.
+ *     parameters:
+ *       - name: id
+ *         in: path
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       204:
+ *         description: Deleted.
+ *       404:
+ *         description: No expense name exists with this id (EXPENSE_NAME_NOT_FOUND).
+ */
+router.patch('/expense-names/:id', requireAuth('ADMIN'), updateExpenseName);
+router.delete('/expense-names/:id', requireAuth('ADMIN'), deleteExpenseName);
 
 export default router;

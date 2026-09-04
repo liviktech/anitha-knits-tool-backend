@@ -35,10 +35,10 @@ export const createLooms = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const getAvailableYarn = asyncHandler(async (req: Request, res: Response) => {
-    const { colorId, sizeId } = parseOrThrow(availableYarnQuerySchema, req.query);
+    const { colorId, sizeId, chemicalId } = parseOrThrow(availableYarnQuerySchema, req.query);
     const { companyId } = getAuthContext(req);
-    const availableKg = await getAvailableYarnStockKg(companyId, colorId, sizeId);
-    sendSuccess(res, { colorId, sizeId, availableKg });
+    const availableKg = await getAvailableYarnStockKg(companyId, colorId, sizeId, chemicalId);
+    sendSuccess(res, { colorId, sizeId, chemicalId, availableKg });
 });
 
 export const listLooms = asyncHandler(async (req: Request, res: Response) => {

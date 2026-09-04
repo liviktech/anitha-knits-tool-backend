@@ -22,12 +22,17 @@ const ACTION_LABELS: Record<RightAction, string> = {
     DELETE: 'Delete',
 };
 
-/** Stable, server-derived identifier — never admin-typed. See the schema comment on Right.rightName for why this (not a raw composite key) is what enforces uniqueness. */
-function deriveRightName(moduleCode: string, tabCode: string | null, action: RightAction): string {
+/**
+ * Stable, server-derived identifier — never admin-typed. See the schema comment on
+ * Right.rightName for why this (not a raw composite key) is what enforces uniqueness.
+ * Exported for masterDataSeedService's default-catalog seeding, which must derive the
+ * same names the admin-facing create/update flow below would.
+ */
+export function deriveRightName(moduleCode: string, tabCode: string | null, action: RightAction): string {
     return `${moduleCode}_${tabCode ?? 'all'}_${action}`.toLowerCase();
 }
 
-function deriveDisplayName(moduleName: string, tabName: string | null, action: RightAction): string {
+export function deriveDisplayName(moduleName: string, tabName: string | null, action: RightAction): string {
     return `${moduleName}${tabName ? ` – ${tabName}` : ''} – ${ACTION_LABELS[action]}`;
 }
 
