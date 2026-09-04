@@ -20,6 +20,7 @@ import {
     listExtruderProductions as listExtruderProductionsRepo,
     updateExtruderDetail,
     updateExtruderHeader,
+    findExtruderWastagesForSummary,
     type ExtruderRecordRow,
 } from '../repositories/extruder.repository.js';
 import { insertWastageRecord } from '../repositories/wastage.repository.js';
@@ -269,27 +270,98 @@ export async function approveExtruderProduction(id: string, companyId: string, a
     return mapExtruderRecord(record!);
 }
 
-export async function getExtruderProductionSummaryByDateRange(companyId: string, dateFrom: Date, dateTo: Date) {
-    const rows = await findExtruderRowsForSummary(companyId, dateFrom, dateTo);
+export type ExtruderProductionVariantSummary = {
+    color: { id: string; name: string };
+    size: { id: string; name: string };
+    production: number;
+    lumsKg: number;
+    yarnWasteKg: number;
+    total: number;
+};
 
-    const byColorMap = new Map<string, { color: { id: string; name: string }; production: number; lumsKg: number; yarnWasteKg: number }>();
+export type ExtruderProductionColorSummary = {
+    color: { id: string; name: string };
+    production: number;
+    lumsKg: number;
+    yarnWasteKg: number;
+    waste: number;
+    total: number;
+};
 
-    for (const row of rows) {
-        const colorKey = row.colorId ?? 'UNSPECIFIED';
-        let entry = byColorMap.get(colorKey);
+export type ExtruderProductionSummary = {
+    byVariant: ExtruderProductionVariantSummary[];
+    byColor: ExtruderProductionColorSummary[];
+    overall: { production: number };
+};
+
+export async function getExtruderProductionSummaryByDateRange(companyId: string, dateFrom: Date, dateTo: Date): Promise<ExtruderProductionSummary> {
+    const [rows, wastageRows] = await Promise.all([
+        findExtruderRowsForSummary(companyId, dateFrom, dateTo),
+        findExtruderWastagesForSummary(companyId, dateFrom, dateTo),
+    ]);
+
+    const wastagesByProductionRecordId = new Map<string, { lums: number; yarnWaste: number }>();
+    for (const w of wastageRows) {
+        let entry = wastagesByProductionRecordId.get(w.productionRecordId);
         if (!entry) {
-            entry = { color: row.colorId ? { id: row.colorId, name: row.colorName! } : { id: 'UNSPECIFIED', name: 'Unspecified' }, production: 0, lumsKg: 0, yarnWasteKg: 0 };
-            byColorMap.set(colorKey, entry);
+            entry = { lums: 0, yarnWaste: 0 };
+            wastagesByProductionRecordId.set(w.productionRecordId, entry);
         }
-        entry.production += row.yarnOutputKg ?? 0;
+        if (w.wastageTypeCode === WASTAGE_CODES.LUMPS) entry.lums += w.quantityKg;
+        else if (w.wastageTypeCode === WASTAGE_CODES.YARN_WASTE) entry.yarnWaste += w.quantityKg;
     }
 
-    return Array.from(byColorMap.values()).map((e) => ({
-        ...e,
-        production: roundKg(e.production),
-        lumsKg: roundKg(e.lumsKg),
-        yarnWasteKg: roundKg(e.yarnWasteKg),
-        waste: roundKg(e.lumsKg + e.yarnWasteKg),
-        total: roundKg(e.production + e.lumsKg + e.yarnWasteKg),
-    }));
+    const byVariantMap = new Map<string, ExtruderProductionVariantSummary>();
+    const byColorMap = new Map<string, ExtruderProductionColorSummary>();
+    const overall = { production: 0 };
+
+    for (const row of rows) {
+        const production = row.yarnOutputKg ?? 0;
+        overall.production += production;
+
+        const color = row.colorId ? { id: row.colorId, name: row.colorName! } : { id: 'UNSPECIFIED', name: 'Unspecified' };
+        const size = row.sizeId ? { id: row.sizeId, name: row.sizeName! } : { id: 'UNSPECIFIED', name: 'Unspecified' };
+
+        const wastageForRow = wastagesByProductionRecordId.get(row.id);
+        const lumsKg = wastageForRow?.lums ?? 0;
+        const yarnWasteKg = wastageForRow?.yarnWaste ?? 0;
+
+        const variantKey = `${color.id}_${size.id}`;
+        let variantEntry = byVariantMap.get(variantKey);
+        if (!variantEntry) {
+            variantEntry = { color, size, production: 0, lumsKg: 0, yarnWasteKg: 0, total: 0 };
+            byVariantMap.set(variantKey, variantEntry);
+        }
+        variantEntry.production += production;
+        variantEntry.lumsKg += lumsKg;
+        variantEntry.yarnWasteKg += yarnWasteKg;
+
+        let colorEntry = byColorMap.get(color.id);
+        if (!colorEntry) {
+            colorEntry = { color, production: 0, lumsKg: 0, yarnWasteKg: 0, waste: 0, total: 0 };
+            byColorMap.set(color.id, colorEntry);
+        }
+        colorEntry.production += production;
+        colorEntry.lumsKg += lumsKg;
+        colorEntry.yarnWasteKg += yarnWasteKg;
+    }
+
+    return {
+        byVariant: Array.from(byVariantMap.values()).map((entry) => ({
+            ...entry,
+            production: roundKg(entry.production),
+            lumsKg: roundKg(entry.lumsKg),
+            yarnWasteKg: roundKg(entry.yarnWasteKg),
+            total: roundKg(entry.production + entry.lumsKg + entry.yarnWasteKg),
+        })),
+        byColor: Array.from(byColorMap.values()).map((entry) => ({
+            ...entry,
+            production: roundKg(entry.production),
+            lumsKg: roundKg(entry.lumsKg),
+            yarnWasteKg: roundKg(entry.yarnWasteKg),
+            waste: roundKg(entry.lumsKg + entry.yarnWasteKg),
+            total: roundKg(entry.production + entry.lumsKg + entry.yarnWasteKg),
+        })),
+        overall: { production: roundKg(overall.production) },
+    };
 }

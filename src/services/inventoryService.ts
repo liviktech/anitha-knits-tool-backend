@@ -188,6 +188,7 @@ export async function getInventorySummaryByDateRange(companyId: string, dateFrom
         const existing = aggregated.get(key);
         if (existing) {
             existing.weightKg += row.weightKg;
+            existing.bagCount = (existing.bagCount || 0) + (row.bagCount || 0);
             // Keep the most recent date
             if (row.date > existing.date) existing.date = row.date;
         } else {

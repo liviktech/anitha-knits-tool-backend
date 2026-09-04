@@ -269,6 +269,9 @@ export type FabricProductionVariantSummary = {
     size: { id: string; name: string };
     fabricInputKg: number;
     outputKg: number;
+    fwWasteKg: number;
+    bwWasteKg: number;
+    total: number;
 };
 
 export type FabricProductionColorSummary = {
@@ -324,14 +327,20 @@ export async function getFabricProductionSummaryByDateRange(companyId: string, d
         const color = row.colorId ? { id: row.colorId, name: row.colorName! } : { id: 'UNSPECIFIED', name: 'Unspecified' };
         const size = row.sizeId ? { id: row.sizeId, name: row.sizeName! } : { id: 'UNSPECIFIED', name: 'Unspecified' };
 
+        const wastageForRow = wastagesByProductionRecordId.get(row.id);
+        const fw = wastageForRow?.fw ?? 0;
+        const bw = wastageForRow?.bw ?? 0;
+
         const variantKey = `${color.id}_${size.id}`;
         let variantEntry = byVariantMap.get(variantKey);
         if (!variantEntry) {
-            variantEntry = { color, size, fabricInputKg: 0, outputKg: 0 };
+            variantEntry = { color, size, fabricInputKg: 0, outputKg: 0, fwWasteKg: 0, bwWasteKg: 0, total: 0 };
             byVariantMap.set(variantKey, variantEntry);
         }
         variantEntry.fabricInputKg += inputKg;
         variantEntry.outputKg += outputKg;
+        variantEntry.fwWasteKg += fw;
+        variantEntry.bwWasteKg += bw;
 
         let colorEntry = byColorMap.get(color.id);
         if (!colorEntry) {
@@ -339,11 +348,8 @@ export async function getFabricProductionSummaryByDateRange(companyId: string, d
             byColorMap.set(color.id, colorEntry);
         }
         colorEntry.production += outputKg;
-        const wastageForRow = wastagesByProductionRecordId.get(row.id);
-        if (wastageForRow) {
-            colorEntry.fwWasteKg += wastageForRow.fw;
-            colorEntry.bwWasteKg += wastageForRow.bw;
-        }
+        colorEntry.fwWasteKg += fw;
+        colorEntry.bwWasteKg += bw;
     }
 
     return {
@@ -351,6 +357,9 @@ export async function getFabricProductionSummaryByDateRange(companyId: string, d
             ...entry,
             fabricInputKg: roundKg(entry.fabricInputKg),
             outputKg: roundKg(entry.outputKg),
+            fwWasteKg: roundKg(entry.fwWasteKg),
+            bwWasteKg: roundKg(entry.bwWasteKg),
+            total: roundKg(entry.outputKg + entry.fwWasteKg + entry.bwWasteKg),
         })),
         byColor: Array.from(byColorMap.values()).map((entry) => ({
             ...entry,
