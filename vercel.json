@@ -10,7 +10,7 @@
                 },
                 {
                     "key": "Access-Control-Allow-Origin",
-                    "value": "https://anitha-knits-tool-frontend.vercel.app"
+                    "value": "https://knits-erp-tool-frontend.vercel.app"
                 },
                 {
                     "key": "Access-Control-Allow-Methods",

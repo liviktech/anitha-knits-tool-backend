@@ -30,6 +30,7 @@ export async function createLoadSent(input: CreateLoadSentInput, companyId: stri
         productionDate: input.date ?? new Date(),
         colorId: input.colorId,
         sizeId: input.sizeId,
+        type: input.type,
         actor,
         fabricWeight: input.fabricWeight,
         driverName: input.driverName,
@@ -42,7 +43,7 @@ export async function createLoadSent(input: CreateLoadSentInput, companyId: stri
 export async function listLoadSent(query: ListLoadSentQuery, companyId: string) {
     const { skip, take } = toSkipTake(query);
     const { rows, total } = await listLoadSentRepo(
-        { date_from: query.date_from, date_to: query.date_to, color_id: query.color_id, size: query.size_id },
+        { date_from: query.date_from, date_to: query.date_to, color_id: query.color_id, size: query.size_id, type: query.type },
         companyId,
         skip,
         take,

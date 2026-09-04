@@ -10,6 +10,7 @@ import { formatDateOnly } from '../utils/dateOnly.js';
 export interface ExtruderRecordRow {
     id: string;
     stage: string;
+    type: string;
     productionDate: string;
     remarks: string | null;
     color: { id: string; name: string };
@@ -41,6 +42,7 @@ export interface ExtruderRecordRow {
 interface ExtruderQueryRow {
     id: string;
     stage: string;
+    type: string;
     productionDate: Date;
     remarks: string | null;
     colorId: string;
@@ -71,7 +73,7 @@ interface ExtruderQueryRow {
 }
 
 const EXTRUDER_SELECT_SQL = `
-    SELECT pr.id, pr.stage, pr.production_date AS "productionDate", pr.remarks,
+    SELECT pr.id, pr.stage, pr.type, pr.production_date AS "productionDate", pr.remarks,
            c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName",
            b.id AS "brandId", b.name AS "brandName", ed.raw_material_kg AS "rawMaterialKg",
            ch.id AS "chemicalId", ch.name AS "chemicalName", ed.chemical_kg AS "chemicalKg",
@@ -93,6 +95,7 @@ function toExtruderRow(row: ExtruderQueryRow, wastages: WastageRow[]): ExtruderR
     return {
         id: row.id,
         stage: row.stage,
+        type: row.type,
         productionDate: formatDateOnly(row.productionDate),
         remarks: row.remarks,
         color: { id: row.colorId, name: row.colorName },

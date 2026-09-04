@@ -97,6 +97,7 @@ export async function createLoomsProduction(input: CreateLoomsInput, companyId: 
             colorId: input.colorId,
             sizeId: input.sizeId,
             chemicalId: input.chemicalId,
+            type: input.type,
             remarks: input.remarks,
             actor,
             yarnInputKg: input.yarnInputKg,

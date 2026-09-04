@@ -10,6 +10,7 @@ import { formatDateOnly } from '../utils/dateOnly.js';
 export interface FabricCheckingRecordRow {
     id: string;
     stage: string;
+    type: string;
     productionDate: string;
     remarks: string | null;
     color: { id: string; name: string };
@@ -29,6 +30,7 @@ export interface FabricCheckingRecordRow {
 interface FabricCheckingQueryRow {
     id: string;
     stage: string;
+    type: string;
     productionDate: Date;
     remarks: string | null;
     colorId: string;
@@ -49,7 +51,7 @@ interface FabricCheckingQueryRow {
 }
 
 const FABRIC_CHECKING_SELECT_SQL = `
-    SELECT pr.id, pr.stage, pr.production_date AS "productionDate", pr.remarks,
+    SELECT pr.id, pr.stage, pr.type, pr.production_date AS "productionDate", pr.remarks,
            c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName",
            fcd.fabric_input_kg AS "fabricInputKg", fcd.output_kg AS "outputKg",
            fcd.chemical_id AS "chemicalId", ch.name AS "chemicalName",
@@ -66,6 +68,7 @@ function toFabricCheckingRow(row: FabricCheckingQueryRow, wastages: WastageRow[]
     return {
         id: row.id,
         stage: row.stage,
+        type: row.type,
         productionDate: formatDateOnly(row.productionDate),
         remarks: row.remarks,
         color: { id: row.colorId, name: row.colorName },
@@ -87,8 +90,9 @@ export interface CreateFabricCheckingInputRow {
     companyId: string;
     productionDate: Date;
     colorId: string;
-    sizeId: string;
     chemicalId: string;
+    sizeId: string;
+    type: string;
     remarks?: string | null;
     actor: string;
     fabricInputKg: number;
@@ -97,10 +101,10 @@ export interface CreateFabricCheckingInputRow {
 
 export async function insertFabricCheckingProduction(client: pg.PoolClient, input: CreateFabricCheckingInputRow): Promise<string> {
     const prResult = await client.query<{ id: string }>(
-        `INSERT INTO production_records (id, company_id, stage, production_date, color_id, size_id, remarks, created_by, updated_at)
-         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, now())
+        `INSERT INTO production_records (id, company_id, stage, production_date, color_id, size_id, type, remarks, created_by, updated_at)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, now())
          RETURNING id`,
-        [input.companyId, ProductionStage.FABRIC_CHECKING, input.productionDate, input.colorId, input.sizeId, input.remarks ?? null, input.actor],
+        [input.companyId, ProductionStage.FABRIC_CHECKING, input.productionDate, input.colorId, input.sizeId, input.type, input.remarks ?? null, input.actor],
     );
     const productionRecordId = prResult.rows[0]!.id;
 

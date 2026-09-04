@@ -55,6 +55,7 @@ export const listLoomsQuerySchema = paginationSchema
         date_to: z.coerce.date().optional(),
         color_id: z.string().uuid().optional(),
         size: z.string().uuid().optional(),
+        type: z.enum(['PRODUCTION', 'SAMPLE']).optional(),
     })
     .strict();
 
