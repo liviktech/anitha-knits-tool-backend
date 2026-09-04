@@ -296,19 +296,41 @@ export async function approveProductionRecord(id: string, actor: string): Promis
 }
 
 export interface LoomsSummaryRow {
+    id: string;
     colorId: string | null;
     colorName: string | null;
+    sizeId: string | null;
+    sizeName: string | null;
     fabricOutputKg: number | null;
 }
 
 export async function findLoomsRowsForSummary(companyId: string, dateFrom: Date, dateTo: Date): Promise<LoomsSummaryRow[]> {
     const result = await query<LoomsSummaryRow>(
-        `SELECT c.id AS "colorId", c.name AS "colorName", ld.fabric_output_kg AS "fabricOutputKg"
+        `SELECT pr.id, c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName", ld.fabric_output_kg AS "fabricOutputKg"
          FROM production_records pr
          LEFT JOIN colors c ON c.id = pr.color_id
+         LEFT JOIN sizes s ON s.id = pr.size_id
          LEFT JOIN loom_details ld ON ld.production_record_id = pr.id
          WHERE pr.company_id = $1 AND pr.stage = $2 AND pr.production_date >= $3 AND pr.production_date <= $4`,
         [companyId, ProductionStage.LOOMS, dateFrom, dateTo],
+    );
+    return result.rows;
+}
+
+export interface LoomsWastageRow {
+    productionRecordId: string;
+    quantityKg: number;
+    wastageTypeCode: string;
+}
+
+export async function findLoomsWastagesForSummary(companyId: string, dateFrom: Date, dateTo: Date): Promise<LoomsWastageRow[]> {
+    const result = await query<LoomsWastageRow>(
+        `SELECT wr.production_record_id AS "productionRecordId", wr.quantity_kg AS "quantityKg", wt.code AS "wastageTypeCode"
+         FROM wastage_records wr
+         JOIN wastage_types wt ON wt.id = wr.wastage_type_id
+         JOIN production_records pr ON pr.id = wr.production_record_id
+         WHERE wr.company_id = $1 AND pr.production_date >= $2 AND pr.production_date <= $3 AND pr.stage = $4`,
+        [companyId, dateFrom, dateTo, ProductionStage.LOOMS],
     );
     return result.rows;
 }
