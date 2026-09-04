@@ -134,13 +134,6 @@ export async function applyWastageUpdates(
 
 export type WastageCategorySummary = { code: string; name: string; stage: ProductionStage; quantityKg: number };
 
-export type WastageVariantSummary = {
-    code: string;
-    color: { id: string; name: string };
-    size: { id: string; name: string };
-    quantityKg: number;
-};
-
 /**
  * Wastage totals for a date range, one entry per configured WastageType
  * (the 5 client-terminology categories: YARN_WASTE, LUMPS, LOOMS_WASTE, FW,
@@ -149,18 +142,13 @@ export type WastageVariantSummary = {
  * (see WASTAGE_CODES). A category with no activity this month still appears,
  * at 0, rather than being silently omitted.
  *
- * Also returns `byVariant`: the same records broken down by (code, colour,
- * size) — colour/size come from the linked production record, since only BW
- * ever sets wastage_records.color_id itself (and always to the same value)
- * and wastage_records carries no size at all.
- *
  * Time: O(n) — n = WastageRecord rows in the range (two queries, one pass).
  */
 export async function getWastageSummaryByDateRange(
     companyId: string,
     dateFrom: Date,
     dateTo: Date,
-): Promise<{ byType: WastageCategorySummary[]; totalKg: number; byVariant: WastageVariantSummary[] }> {
+): Promise<{ byType: WastageCategorySummary[]; totalKg: number }> {
     const codes: string[] = Object.values(WASTAGE_CODES);
 
     const [types, rows] = await Promise.all([
@@ -169,19 +157,8 @@ export async function getWastageSummaryByDateRange(
     ]);
 
     const quantityByCode = new Map<string, number>();
-    const variantMap = new Map<string, WastageVariantSummary>();
     for (const row of rows) {
         quantityByCode.set(row.code, (quantityByCode.get(row.code) ?? 0) + row.quantityKg);
-
-        const color = row.colorId ? { id: row.colorId, name: row.colorName! } : { id: 'UNSPECIFIED', name: 'Unspecified' };
-        const size = row.sizeId ? { id: row.sizeId, name: row.sizeName! } : { id: 'UNSPECIFIED', name: 'Unspecified' };
-        const variantKey = `${row.code}_${color.id}_${size.id}`;
-        let variantEntry = variantMap.get(variantKey);
-        if (!variantEntry) {
-            variantEntry = { code: row.code, color, size, quantityKg: 0 };
-            variantMap.set(variantKey, variantEntry);
-        }
-        variantEntry.quantityKg += row.quantityKg;
     }
 
     const byType = types.map((type) => ({
@@ -192,7 +169,5 @@ export async function getWastageSummaryByDateRange(
     }));
 
     const totalKg = roundKg(byType.reduce((sum, type) => sum + type.quantityKg, 0));
-    const byVariant = Array.from(variantMap.values()).map((entry) => ({ ...entry, quantityKg: roundKg(entry.quantityKg) }));
-
-    return { byType, totalKg, byVariant };
+    return { byType, totalKg };
 }
