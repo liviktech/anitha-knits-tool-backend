@@ -5,6 +5,7 @@ import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import { assertChemicalExists, assertColorExists, assertSizeExists } from './masterDataService.js';
 import { buildWastageCreates } from './wastageService.js';
 import { WASTAGE_CODES } from '../constants/wastageCodes.js';
+import { roundKg } from '../utils/decimal.js';
 import { assertCanCreateProductionRecord, assertCanDeleteProductionRecord, assertCanUpdateProductionRecord } from './productionCeilings.js';
 import {
     approveProductionRecord,
@@ -19,6 +20,7 @@ import {
     listLoomsProductions as listLoomsProductionsRepo,
     updateLoomsDetail,
     updateLoomsHeader,
+    findLoomsWastagesForSummary,
     type LoomsRecordRow,
 } from '../repositories/looms.repository.js';
 import { insertWastageRecord } from '../repositories/wastage.repository.js';
@@ -196,27 +198,85 @@ export async function approveLoomsProduction(id: string, companyId: string, acto
     return mapLoomsRecord(record!);
 }
 
-export async function getLoomsProductionSummaryByDateRange(companyId: string, dateFrom: Date, dateTo: Date) {
-    const rows = await findLoomsRowsForSummary(companyId, dateFrom, dateTo);
+export type LoomsProductionVariantSummary = {
+    color: { id: string; name: string };
+    size: { id: string; name: string };
+    production: number;
+    waste: number;
+    total: number;
+};
 
-    const byColorMap = new Map<string, { color: { id: string; name: string }; production: number; waste: number }>();
+export type LoomsProductionColorSummary = {
+    color: { id: string; name: string };
+    production: number;
+    waste: number;
+    total: number;
+};
 
-    for (const row of rows) {
-        const colorKey = row.colorId ?? 'UNSPECIFIED';
-        let entry = byColorMap.get(colorKey);
-        if (!entry) {
-            entry = { color: row.colorId ? { id: row.colorId, name: row.colorName! } : { id: 'UNSPECIFIED', name: 'Unspecified' }, production: 0, waste: 0 };
-            byColorMap.set(colorKey, entry);
+export type LoomsProductionSummary = {
+    byVariant: LoomsProductionVariantSummary[];
+    byColor: LoomsProductionColorSummary[];
+    overall: { production: number };
+};
+
+export async function getLoomsProductionSummaryByDateRange(companyId: string, dateFrom: Date, dateTo: Date): Promise<LoomsProductionSummary> {
+    const [rows, wastageRows] = await Promise.all([
+        findLoomsRowsForSummary(companyId, dateFrom, dateTo),
+        findLoomsWastagesForSummary(companyId, dateFrom, dateTo),
+    ]);
+
+    const wastagesByProductionRecordId = new Map<string, number>();
+    for (const w of wastageRows) {
+        if (w.wastageTypeCode === WASTAGE_CODES.LOOMS_WASTE) {
+            const current = wastagesByProductionRecordId.get(w.productionRecordId) ?? 0;
+            wastagesByProductionRecordId.set(w.productionRecordId, current + w.quantityKg);
         }
-        entry.production += row.fabricOutputKg ?? 0;
     }
 
-    const roundKg = (val: number) => Math.round(val * 1000) / 1000;
+    const byVariantMap = new Map<string, LoomsProductionVariantSummary>();
+    const byColorMap = new Map<string, LoomsProductionColorSummary>();
+    const overall = { production: 0 };
 
-    return Array.from(byColorMap.values()).map((e) => ({
-        ...e,
-        production: roundKg(e.production),
-        waste: roundKg(e.waste),
-        total: roundKg(e.production + e.waste),
-    }));
+    for (const row of rows) {
+        const production = row.fabricOutputKg ?? 0;
+        overall.production += production;
+
+        const color = row.colorId ? { id: row.colorId, name: row.colorName! } : { id: 'UNSPECIFIED', name: 'Unspecified' };
+        const size = row.sizeId ? { id: row.sizeId, name: row.sizeName! } : { id: 'UNSPECIFIED', name: 'Unspecified' };
+
+        const waste = wastagesByProductionRecordId.get(row.id) ?? 0;
+
+        const variantKey = `${color.id}_${size.id}`;
+        let variantEntry = byVariantMap.get(variantKey);
+        if (!variantEntry) {
+            variantEntry = { color, size, production: 0, waste: 0, total: 0 };
+            byVariantMap.set(variantKey, variantEntry);
+        }
+        variantEntry.production += production;
+        variantEntry.waste += waste;
+
+        let colorEntry = byColorMap.get(color.id);
+        if (!colorEntry) {
+            colorEntry = { color, production: 0, waste: 0, total: 0 };
+            byColorMap.set(color.id, colorEntry);
+        }
+        colorEntry.production += production;
+        colorEntry.waste += waste;
+    }
+
+    return {
+        byVariant: Array.from(byVariantMap.values()).map((entry) => ({
+            ...entry,
+            production: roundKg(entry.production),
+            waste: roundKg(entry.waste),
+            total: roundKg(entry.production + entry.waste),
+        })),
+        byColor: Array.from(byColorMap.values()).map((entry) => ({
+            ...entry,
+            production: roundKg(entry.production),
+            waste: roundKg(entry.waste),
+            total: roundKg(entry.production + entry.waste),
+        })),
+        overall: { production: roundKg(overall.production) },
+    };
 }

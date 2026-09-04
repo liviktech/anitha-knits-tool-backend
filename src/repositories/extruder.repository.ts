@@ -343,19 +343,41 @@ export async function approveProductionRecord(id: string, actor: string): Promis
 }
 
 export interface ExtruderSummaryRow {
+    id: string;
     colorId: string | null;
     colorName: string | null;
+    sizeId: string | null;
+    sizeName: string | null;
     yarnOutputKg: number | null;
 }
 
 export async function findExtruderRowsForSummary(companyId: string, dateFrom: Date, dateTo: Date): Promise<ExtruderSummaryRow[]> {
     const result = await query<ExtruderSummaryRow>(
-        `SELECT c.id AS "colorId", c.name AS "colorName", ed.yarn_output_kg AS "yarnOutputKg"
+        `SELECT pr.id, c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName", ed.yarn_output_kg AS "yarnOutputKg"
          FROM production_records pr
          LEFT JOIN colors c ON c.id = pr.color_id
+         LEFT JOIN sizes s ON s.id = pr.size_id
          LEFT JOIN extruder_details ed ON ed.production_record_id = pr.id
          WHERE pr.company_id = $1 AND pr.stage = $2 AND pr.production_date >= $3 AND pr.production_date <= $4`,
         [companyId, ProductionStage.EXTRUDER, dateFrom, dateTo],
+    );
+    return result.rows;
+}
+
+export interface ExtruderWastageRow {
+    productionRecordId: string;
+    quantityKg: number;
+    wastageTypeCode: string;
+}
+
+export async function findExtruderWastagesForSummary(companyId: string, dateFrom: Date, dateTo: Date): Promise<ExtruderWastageRow[]> {
+    const result = await query<ExtruderWastageRow>(
+        `SELECT wr.production_record_id AS "productionRecordId", wr.quantity_kg AS "quantityKg", wt.code AS "wastageTypeCode"
+         FROM wastage_records wr
+         JOIN wastage_types wt ON wt.id = wr.wastage_type_id
+         JOIN production_records pr ON pr.id = wr.production_record_id
+         WHERE wr.company_id = $1 AND pr.production_date >= $2 AND pr.production_date <= $3 AND pr.stage = $4`,
+        [companyId, dateFrom, dateTo, ProductionStage.EXTRUDER],
     );
     return result.rows;
 }

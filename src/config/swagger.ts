@@ -1241,6 +1241,17 @@ const definition: swaggerJsdoc.OAS3Definition = {
           quantityKg: { type: 'number', example: 12 },
         },
       },
+      DashboardWastageVariantSummary: {
+        type: 'object',
+        description:
+          'Wastage of one category, broken down by the colour+size of its linked production record.',
+        properties: {
+          code: { type: 'string', example: 'YARN_WASTE' },
+          color: { $ref: '#/components/schemas/MasterDataRef' },
+          size: { $ref: '#/components/schemas/MasterDataRef' },
+          quantityKg: { type: 'number', example: 5 },
+        },
+      },
       DashboardWastageSummary: {
         type: 'object',
         properties: {
@@ -1248,6 +1259,12 @@ const definition: swaggerJsdoc.OAS3Definition = {
             type: 'array',
             items: {
               $ref: '#/components/schemas/DashboardWastageCategorySummary',
+            },
+          },
+          byVariant: {
+            type: 'array',
+            items: {
+              $ref: '#/components/schemas/DashboardWastageVariantSummary',
             },
           },
           totalKg: { type: 'number', example: 45 },
