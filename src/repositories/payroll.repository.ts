@@ -269,6 +269,7 @@ export interface UpsertPayrollRecordInput {
     daysWorked: number;
     advanceDeduction: number;
     marketValueBonus: number;
+    marketValueDeduction: number;
     grossSalary: number;
     netSalary: number;
 }
@@ -276,10 +277,10 @@ export interface UpsertPayrollRecordInput {
 /**
  * Manual single-employee edit from the Payroll tab's Actions > Edit. Upserts on
  * (employee_id, month, year) — if no row exists yet for this month (payroll not
- * generated), inserts one with lop_deduction/sunday_bonuses/market_value_deduction
- * defaulted to 0 (this quick edit only knows base salary, days worked, advance,
- * and machine value); if a generated row already exists, those three untouched
- * columns keep whatever savePayrollRecords last computed for them.
+ * generated), inserts one with lop_deduction/sunday_bonuses defaulted to 0 (this
+ * quick edit only knows base salary, days worked, advance, machine value and market
+ * value); if a generated row already exists, those two untouched columns keep
+ * whatever savePayrollRecords last computed for them.
  */
 export async function upsertPayrollRecord(input: UpsertPayrollRecordInput): Promise<PayrollRecordRow> {
     const result = await query<PayrollRecordRow>(
@@ -287,12 +288,13 @@ export async function upsertPayrollRecord(input: UpsertPayrollRecordInput): Prom
             id, company_id, employee_id, month, year, base_salary, total_days_in_month, days_worked,
             lop_deduction, advance_deduction, sunday_bonuses, market_value_bonus, market_value_deduction,
             gross_salary, net_salary, status, updated_at
-         ) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, 0, $8, 0, $9, 0, $10, $11, 'PENDING', now())
+         ) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, 0, $8, 0, $9, $10, $11, $12, 'PENDING', now())
          ON CONFLICT (employee_id, month, year) DO UPDATE SET
             base_salary = EXCLUDED.base_salary,
             days_worked = EXCLUDED.days_worked,
             advance_deduction = EXCLUDED.advance_deduction,
             market_value_bonus = EXCLUDED.market_value_bonus,
+            market_value_deduction = EXCLUDED.market_value_deduction,
             gross_salary = EXCLUDED.gross_salary,
             net_salary = EXCLUDED.net_salary,
             updated_at = now()
@@ -311,6 +313,7 @@ export async function upsertPayrollRecord(input: UpsertPayrollRecordInput): Prom
             input.daysWorked,
             input.advanceDeduction,
             input.marketValueBonus,
+            input.marketValueDeduction,
             input.grossSalary,
             input.netSalary,
         ],
@@ -318,6 +321,16 @@ export async function upsertPayrollRecord(input: UpsertPayrollRecordInput): Prom
     const row = result.rows[0];
     if (!row) throw new Error('Upsert into payroll_records returned no row');
     return row;
+}
+
+/** Clears one employee's payroll record for one month — backs the Payroll tab's Actions > Delete. */
+export async function deleteSinglePayrollRecord(companyId: string, employeeId: string, month: number, year: number): Promise<void> {
+    await query('DELETE FROM payroll_records WHERE company_id = $1 AND employee_id = $2 AND month = $3 AND year = $4', [
+        companyId,
+        employeeId,
+        month,
+        year,
+    ]);
 }
 
 export interface PayrollRecordRow {

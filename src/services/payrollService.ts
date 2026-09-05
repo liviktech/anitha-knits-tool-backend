@@ -2,6 +2,7 @@ import { withTransaction } from '../db/transaction.js';
 import { ApiError } from '../utils/ApiError.js';
 import {
     deletePayrollRecords,
+    deleteSinglePayrollRecord,
     findActiveEmployeesWithSalary,
     findAllMarketValueDeductions,
     findAllSalaryAdvances,
@@ -314,17 +315,27 @@ export const getSavedPayrollRecords = async (
 
 /**
  * Manual single-employee edit from the Payroll tab's Actions > Edit button.
- * Trusts only the four editable inputs from the client — base salary, days
- * worked, advance deduction, machine value — and recomputes gross/net itself
- * rather than accepting client-sent totals (same principle as savePayrollRecords).
+ * Trusts only the five editable inputs from the client — base salary, days
+ * worked, advance deduction, machine value, market value — and recomputes
+ * gross/net itself rather than accepting client-sent totals (same principle
+ * as savePayrollRecords).
  */
 export const updatePayrollRecord = async (
     companyId: string,
-    data: { employeeId: string; month: number; year: number; baseSalary: number; daysWorked: number; advanceDeduction: number; marketValueBonus: number }
+    data: {
+        employeeId: string;
+        month: number;
+        year: number;
+        baseSalary: number;
+        daysWorked: number;
+        advanceDeduction: number;
+        marketValueBonus: number;
+        marketValueDeduction: number;
+    }
 ) => {
     const totalDaysInMonth = new Date(data.year, data.month, 0).getDate();
     const grossSalary = roundMoney((data.baseSalary * data.daysWorked) / totalDaysInMonth);
-    const netSalary = roundMoney(grossSalary - data.advanceDeduction + data.marketValueBonus);
+    const netSalary = roundMoney(grossSalary - data.advanceDeduction + data.marketValueBonus - data.marketValueDeduction);
 
     return upsertPayrollRecord({
         companyId,
@@ -336,9 +347,16 @@ export const updatePayrollRecord = async (
         daysWorked: data.daysWorked,
         advanceDeduction: data.advanceDeduction,
         marketValueBonus: data.marketValueBonus,
+        marketValueDeduction: data.marketValueDeduction,
         grossSalary,
         netSalary,
     });
+};
+
+/** Clears one employee's payroll record for one month — backs the Payroll tab's Actions > Delete. */
+export const deletePayrollRecord = async (companyId: string, employeeId: string, month: number, year: number) => {
+    await deleteSinglePayrollRecord(companyId, employeeId, month, year);
+    return { message: 'Payroll record deleted successfully' };
 };
 
 export const getMarketValueAllocations = async (companyId: string, month: number, year: number) => {

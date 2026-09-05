@@ -44,4 +44,10 @@ export const updatePayrollRecordSchema = z.object({
   daysWorked: z.number().nonnegative(),
   advanceDeduction: z.number().nonnegative(),
   marketValueBonus: z.number().nonnegative(),
+  marketValueDeduction: z.number().nonnegative(),
+});
+
+export const deletePayrollRecordQuerySchema = z.object({
+  month: z.coerce.number().min(1).max(12),
+  year: z.coerce.number().min(2000).max(2100),
 });

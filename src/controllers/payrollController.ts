@@ -3,8 +3,8 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 import { getAuthContext } from '../utils/actor.js';
 import { parseOrThrow } from '../utils/validate.js';
-import { distributeMarketValueSchema, grantSalaryAdvanceSchema, grantMarketValueDeductionSchema, getPayrollSummarySchema, savePayrollRecordsSchema, updatePayrollRecordSchema, payrollRecordEmployeeIdParamsSchema } from '../validations/payrollValidation.js';
-import { distributeMarketValue, grantSalaryAdvance, grantMarketValueDeduction, getPayrollSummary, savePayrollRecords, updatePayrollRecord, getSavedPayrollRecords, getMarketValueAllocations, getSalaryAdvances } from '../services/payrollService.js';
+import { distributeMarketValueSchema, grantSalaryAdvanceSchema, grantMarketValueDeductionSchema, getPayrollSummarySchema, savePayrollRecordsSchema, updatePayrollRecordSchema, payrollRecordEmployeeIdParamsSchema, deletePayrollRecordQuerySchema } from '../validations/payrollValidation.js';
+import { distributeMarketValue, grantSalaryAdvance, grantMarketValueDeduction, getPayrollSummary, savePayrollRecords, updatePayrollRecord, deletePayrollRecord, getSavedPayrollRecords, getMarketValueAllocations, getSalaryAdvances } from '../services/payrollService.js';
 
 export const distributeMarketValueHandler = asyncHandler(async (req: Request, res: Response) => {
     const input = parseOrThrow(distributeMarketValueSchema, req.body);
@@ -60,6 +60,15 @@ export const updatePayrollRecordHandler = asyncHandler(async (req: Request, res:
 
     const result = await updatePayrollRecord(companyId, { employeeId, ...input });
     sendSuccess(res, result, { message: 'Payroll record updated successfully' }, 200);
+});
+
+export const deletePayrollRecordHandler = asyncHandler(async (req: Request, res: Response) => {
+    const { employeeId } = parseOrThrow(payrollRecordEmployeeIdParamsSchema, req.params);
+    const { month, year } = parseOrThrow(deletePayrollRecordQuerySchema, req.query);
+    const { companyId } = getAuthContext(req);
+
+    const result = await deletePayrollRecord(companyId, employeeId, month, year);
+    sendSuccess(res, result, { message: 'Payroll record deleted successfully' }, 200);
 });
 
 export const getSavedPayrollRecordsHandler = asyncHandler(async (req: Request, res: Response) => {
