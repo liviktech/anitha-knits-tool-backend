@@ -1,5 +1,5 @@
 import { withTransaction } from '../db/transaction.js';
-import { ProductionStage, UserRole } from '../types/enums.js';
+import { ProductionStage, ProductionType, UserRole } from '../types/enums.js';
 import { ConflictError, NotFoundError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import { roundKg } from '../utils/decimal.js';
@@ -295,10 +295,15 @@ export type FabricProductionSummary = {
  *
  * Time: O(n) — n = Fabric Checking records in the range (two queries, one pass).
  */
-export async function getFabricProductionSummaryByDateRange(companyId: string, dateFrom: Date, dateTo: Date): Promise<FabricProductionSummary> {
+export async function getFabricProductionSummaryByDateRange(
+    companyId: string,
+    dateFrom: Date,
+    dateTo: Date,
+    type: ProductionType = ProductionType.PRODUCTION,
+): Promise<FabricProductionSummary> {
     const [rows, wastageRows] = await Promise.all([
-        findFabricCheckingRowsForSummary(companyId, dateFrom, dateTo),
-        findFabricCheckingWastagesForSummary(companyId, dateFrom, dateTo),
+        findFabricCheckingRowsForSummary(companyId, dateFrom, dateTo, type),
+        findFabricCheckingWastagesForSummary(companyId, dateFrom, dateTo, type),
     ]);
 
     const wastagesByProductionRecordId = new Map<string, { fw: number; bw: number }>();

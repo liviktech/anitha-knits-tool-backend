@@ -4,7 +4,7 @@ import { withReadClient } from '../db/transaction.js';
 import { findWastagesByProductionRecordId, findWastagesByProductionRecordIds, type WastageRow } from './wastage.repository.js';
 import type { ProductionListFilters } from '../utils/productionFilters.js';
 import { buildProductionWhere } from '../utils/productionFilters.js';
-import { ProductionStage } from '../types/enums.js';
+import { ProductionStage, ProductionType } from '../types/enums.js';
 import { formatDateOnly } from '../utils/dateOnly.js';
 
 export interface FabricCheckingRecordRow {
@@ -328,7 +328,12 @@ export interface FabricCheckingSummaryRow {
     outputKg: number | null;
 }
 
-export async function findFabricCheckingRowsForSummary(companyId: string, dateFrom: Date, dateTo: Date): Promise<FabricCheckingSummaryRow[]> {
+export async function findFabricCheckingRowsForSummary(
+    companyId: string,
+    dateFrom: Date,
+    dateTo: Date,
+    type: ProductionType = ProductionType.PRODUCTION,
+): Promise<FabricCheckingSummaryRow[]> {
     const result = await query<FabricCheckingSummaryRow>(
         `SELECT pr.id, c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName",
                 fcd.fabric_input_kg AS "fabricInputKg", fcd.output_kg AS "outputKg"
@@ -336,8 +341,8 @@ export async function findFabricCheckingRowsForSummary(companyId: string, dateFr
          LEFT JOIN colors c ON c.id = pr.color_id
          LEFT JOIN sizes s ON s.id = pr.size_id
          LEFT JOIN fabric_check_details fcd ON fcd.production_record_id = pr.id
-         WHERE pr.company_id = $1 AND pr.stage = $2 AND pr.production_date >= $3 AND pr.production_date <= $4`,
-        [companyId, ProductionStage.FABRIC_CHECKING, dateFrom, dateTo],
+         WHERE pr.company_id = $1 AND pr.stage = $2 AND pr.production_date >= $3 AND pr.production_date <= $4 AND pr.type = $5`,
+        [companyId, ProductionStage.FABRIC_CHECKING, dateFrom, dateTo, type],
     );
     return result.rows;
 }
@@ -348,14 +353,19 @@ export interface FabricCheckingWastageRow {
     wastageTypeCode: string;
 }
 
-export async function findFabricCheckingWastagesForSummary(companyId: string, dateFrom: Date, dateTo: Date): Promise<FabricCheckingWastageRow[]> {
+export async function findFabricCheckingWastagesForSummary(
+    companyId: string,
+    dateFrom: Date,
+    dateTo: Date,
+    type: ProductionType = ProductionType.PRODUCTION,
+): Promise<FabricCheckingWastageRow[]> {
     const result = await query<FabricCheckingWastageRow>(
         `SELECT wr.production_record_id AS "productionRecordId", wr.quantity_kg AS "quantityKg", wt.code AS "wastageTypeCode"
          FROM wastage_records wr
          JOIN wastage_types wt ON wt.id = wr.wastage_type_id
          JOIN production_records pr ON pr.id = wr.production_record_id
-         WHERE pr.company_id = $1 AND pr.stage = $2 AND pr.production_date >= $3 AND pr.production_date <= $4`,
-        [companyId, ProductionStage.FABRIC_CHECKING, dateFrom, dateTo],
+         WHERE pr.company_id = $1 AND pr.stage = $2 AND pr.production_date >= $3 AND pr.production_date <= $4 AND pr.type = $5`,
+        [companyId, ProductionStage.FABRIC_CHECKING, dateFrom, dateTo, type],
     );
     return result.rows;
 }

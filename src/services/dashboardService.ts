@@ -1,4 +1,4 @@
-import { ProductionStage } from '../types/enums.js';
+import { ProductionStage, ProductionType } from '../types/enums.js';
 import { ValidationError } from '../utils/errors.js';
 import { getInventorySummaryByDateRange } from './inventoryService.js';
 import { getLoadSentSummaryByDateRange } from './loadSentService.js';
@@ -228,16 +228,17 @@ function resolveMonthRange(query: DashboardMonthlyQuery): { month: number; year:
  */
 export async function getMonthlyDashboard(query: DashboardMonthlyQuery, companyId: string) {
     const { month, year, dateFrom, dateTo } = resolveMonthRange(query);
+    const type = query.type ?? ProductionType.PRODUCTION;
 
     const [inventory, loadSent, fabricProduction, wastage, production, extruderProduction, loomsProduction, stockBalance] = await Promise.all([
         getInventorySummaryByDateRange(companyId, dateFrom, dateTo),
-        getLoadSentSummaryByDateRange(companyId, dateFrom, dateTo),
-        getFabricProductionSummaryByDateRange(companyId, dateFrom, dateTo),
-        getWastageSummaryByDateRange(companyId, dateFrom, dateTo),
+        getLoadSentSummaryByDateRange(companyId, dateFrom, dateTo, type),
+        getFabricProductionSummaryByDateRange(companyId, dateFrom, dateTo, type),
+        getWastageSummaryByDateRange(companyId, dateFrom, dateTo, type),
         getStageProductionSummaryByDateRange(companyId, dateFrom, dateTo),
-        import('./extruderService.js').then((m) => m.getExtruderProductionSummaryByDateRange(companyId, dateFrom, dateTo)),
-        import('./loomsService.js').then((m) => m.getLoomsProductionSummaryByDateRange(companyId, dateFrom, dateTo)),
-        import('./loadSentService.js').then((m) => m.getStockBalance(companyId)),
+        import('./extruderService.js').then((m) => m.getExtruderProductionSummaryByDateRange(companyId, dateFrom, dateTo, type)),
+        import('./loomsService.js').then((m) => m.getLoomsProductionSummaryByDateRange(companyId, dateFrom, dateTo, type)),
+        import('./loadSentService.js').then((m) => m.getStockBalance(companyId, type)),
     ]);
 
     return {

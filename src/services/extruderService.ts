@@ -1,5 +1,5 @@
 import { withTransaction } from '../db/transaction.js';
-import { ProductionStage, UserRole } from '../types/enums.js';
+import { ProductionStage, ProductionType, UserRole } from '../types/enums.js';
 import { NotFoundError, ValidationError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import { assertBrandExists, assertChemicalExists, assertColorExists, assertSizeExists } from './masterDataService.js';
@@ -294,10 +294,15 @@ export type ExtruderProductionSummary = {
     overall: { production: number };
 };
 
-export async function getExtruderProductionSummaryByDateRange(companyId: string, dateFrom: Date, dateTo: Date): Promise<ExtruderProductionSummary> {
+export async function getExtruderProductionSummaryByDateRange(
+    companyId: string,
+    dateFrom: Date,
+    dateTo: Date,
+    type: ProductionType = ProductionType.PRODUCTION,
+): Promise<ExtruderProductionSummary> {
     const [rows, wastageRows] = await Promise.all([
-        findExtruderRowsForSummary(companyId, dateFrom, dateTo),
-        findExtruderWastagesForSummary(companyId, dateFrom, dateTo),
+        findExtruderRowsForSummary(companyId, dateFrom, dateTo, type),
+        findExtruderWastagesForSummary(companyId, dateFrom, dateTo, type),
     ]);
 
     const wastagesByProductionRecordId = new Map<string, { lums: number; yarnWaste: number }>();
