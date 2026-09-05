@@ -7,6 +7,7 @@ export interface OpeningBalanceFabricStockRow {
     date: Date;
     color: { id: string; name: string } | null;
     size: { id: string; name: string } | null;
+    chemical: { id: string; name: string } | null;
     koraBalanceKg: number;
     fabricStockKg: number;
     createdAt: Date;
@@ -22,6 +23,8 @@ interface QueryRow {
     colorName: string | null;
     sizeId: string | null;
     sizeName: string | null;
+    chemicalId: string | null;
+    chemicalName: string | null;
     koraBalanceKg: number;
     fabricStockKg: number;
     createdAt: Date;
@@ -32,11 +35,13 @@ interface QueryRow {
 
 const SELECT_SQL = `
     SELECT f.id, f.date, c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName",
+           ch.id AS "chemicalId", ch.name AS "chemicalName",
            f.kora_balance_kg AS "koraBalanceKg", f.fabric_stock_kg AS "fabricStockKg",
            f.created_at AS "createdAt", f.created_by AS "createdBy", f.updated_at AS "updatedAt", f.updated_by AS "updatedBy"
     FROM opening_balance_fabric_stock f
     LEFT JOIN colors c ON c.id = f.color_id
     LEFT JOIN sizes s ON s.id = f.size_id
+    LEFT JOIN chemicals ch ON ch.id = f.chemical_id
 `;
 
 function toRow(row: QueryRow): OpeningBalanceFabricStockRow {
@@ -45,6 +50,7 @@ function toRow(row: QueryRow): OpeningBalanceFabricStockRow {
         date: row.date,
         color: row.colorId ? { id: row.colorId, name: row.colorName! } : null,
         size: row.sizeId ? { id: row.sizeId, name: row.sizeName! } : null,
+        chemical: row.chemicalId ? { id: row.chemicalId, name: row.chemicalName! } : null,
         koraBalanceKg: row.koraBalanceKg,
         fabricStockKg: row.fabricStockKg,
         createdAt: row.createdAt,
@@ -59,6 +65,7 @@ export interface InsertFabricStockInput {
     date: Date;
     colorId?: string | null;
     sizeId?: string | null;
+    chemicalId?: string | null;
     koraBalanceKg: number;
     fabricStockKg: number;
     actor: string;
@@ -67,17 +74,19 @@ export interface InsertFabricStockInput {
 async function insertOne(input: InsertFabricStockInput, executor?: Queryable): Promise<OpeningBalanceFabricStockRow> {
     const row = await queryOne<QueryRow>(
         `WITH inserted AS (
-            INSERT INTO opening_balance_fabric_stock (id, company_id, date, color_id, size_id, kora_balance_kg, fabric_stock_kg, created_by, updated_at)
-            VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, now())
+            INSERT INTO opening_balance_fabric_stock (id, company_id, date, color_id, size_id, chemical_id, kora_balance_kg, fabric_stock_kg, created_by, updated_at)
+            VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, now())
             RETURNING *
          )
          SELECT f.id, f.date, c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName",
+                ch.id AS "chemicalId", ch.name AS "chemicalName",
                 f.kora_balance_kg AS "koraBalanceKg", f.fabric_stock_kg AS "fabricStockKg",
                 f.created_at AS "createdAt", f.created_by AS "createdBy", f.updated_at AS "updatedAt", f.updated_by AS "updatedBy"
          FROM inserted f
          LEFT JOIN colors c ON c.id = f.color_id
-         LEFT JOIN sizes s ON s.id = f.size_id`,
-        [input.companyId, input.date, input.colorId ?? null, input.sizeId ?? null, input.koraBalanceKg, input.fabricStockKg, input.actor],
+         LEFT JOIN sizes s ON s.id = f.size_id
+         LEFT JOIN chemicals ch ON ch.id = f.chemical_id`,
+        [input.companyId, input.date, input.colorId ?? null, input.sizeId ?? null, input.chemicalId ?? null, input.koraBalanceKg, input.fabricStockKg, input.actor],
         executor,
     );
     if (!row) throw new Error('Insert into opening_balance_fabric_stock returned no row');
@@ -153,6 +162,7 @@ export interface UpdateFabricStockPatch {
     date?: Date;
     colorId?: string | null;
     sizeId?: string | null;
+    chemicalId?: string | null;
     koraBalanceKg?: number;
     fabricStockKg?: number;
 }
@@ -163,6 +173,7 @@ export async function updateFabricStock(id: string, companyId: string, patch: Up
         date: 'date',
         colorId: 'color_id',
         sizeId: 'size_id',
+        chemicalId: 'chemical_id',
         koraBalanceKg: 'kora_balance_kg',
         fabricStockKg: 'fabric_stock_kg',
     };

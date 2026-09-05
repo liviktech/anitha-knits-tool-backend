@@ -6,6 +6,7 @@ export interface OpeningBalanceWastageRow {
     date: Date;
     color: { id: string; name: string } | null;
     size: { id: string; name: string } | null;
+    chemical: { id: string; name: string } | null;
     extruderLumpsKg: number;
     extruderLoomsWasteKg: number;
     loomsYarnWasteKg: number;
@@ -24,6 +25,8 @@ interface QueryRow {
     colorName: string | null;
     sizeId: string | null;
     sizeName: string | null;
+    chemicalId: string | null;
+    chemicalName: string | null;
     extruderLumpsKg: number;
     extruderLoomsWasteKg: number;
     loomsYarnWasteKg: number;
@@ -37,12 +40,14 @@ interface QueryRow {
 
 const SELECT_SQL = `
     SELECT w.id, w.date, c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName",
+           ch.id AS "chemicalId", ch.name AS "chemicalName",
            w.extruder_lumps_kg AS "extruderLumpsKg", w.extruder_looms_waste_kg AS "extruderLoomsWasteKg",
            w.looms_yarn_waste_kg AS "loomsYarnWasteKg", w.fabric_waste_kg AS "fabricWasteKg", w.fabric_bitwaste_kg AS "fabricBitwasteKg",
            w.created_at AS "createdAt", w.created_by AS "createdBy", w.updated_at AS "updatedAt", w.updated_by AS "updatedBy"
     FROM opening_balance_wastage w
     LEFT JOIN colors c ON c.id = w.color_id
     LEFT JOIN sizes s ON s.id = w.size_id
+    LEFT JOIN chemicals ch ON ch.id = w.chemical_id
 `;
 
 function toRow(row: QueryRow): OpeningBalanceWastageRow {
@@ -51,6 +56,7 @@ function toRow(row: QueryRow): OpeningBalanceWastageRow {
         date: row.date,
         color: row.colorId ? { id: row.colorId, name: row.colorName! } : null,
         size: row.sizeId ? { id: row.sizeId, name: row.sizeName! } : null,
+        chemical: row.chemicalId ? { id: row.chemicalId, name: row.chemicalName! } : null,
         extruderLumpsKg: row.extruderLumpsKg,
         extruderLoomsWasteKg: row.extruderLoomsWasteKg,
         loomsYarnWasteKg: row.loomsYarnWasteKg,
@@ -68,6 +74,7 @@ export interface InsertWastageInput {
     date: Date;
     colorId?: string | null;
     sizeId?: string | null;
+    chemicalId?: string | null;
     extruderLumpsKg: number;
     extruderLoomsWasteKg: number;
     loomsYarnWasteKg: number;
@@ -80,22 +87,25 @@ async function insertOne(input: InsertWastageInput): Promise<OpeningBalanceWasta
     const row = await queryOne<QueryRow>(
         `WITH inserted AS (
             INSERT INTO opening_balance_wastage
-                (id, company_id, date, color_id, size_id, extruder_lumps_kg, extruder_looms_waste_kg, looms_yarn_waste_kg, fabric_waste_kg, fabric_bitwaste_kg, created_by, updated_at)
-            VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, now())
+                (id, company_id, date, color_id, size_id, chemical_id, extruder_lumps_kg, extruder_looms_waste_kg, looms_yarn_waste_kg, fabric_waste_kg, fabric_bitwaste_kg, created_by, updated_at)
+            VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, now())
             RETURNING *
          )
          SELECT w.id, w.date, c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName",
+                ch.id AS "chemicalId", ch.name AS "chemicalName",
                 w.extruder_lumps_kg AS "extruderLumpsKg", w.extruder_looms_waste_kg AS "extruderLoomsWasteKg",
                 w.looms_yarn_waste_kg AS "loomsYarnWasteKg", w.fabric_waste_kg AS "fabricWasteKg", w.fabric_bitwaste_kg AS "fabricBitwasteKg",
                 w.created_at AS "createdAt", w.created_by AS "createdBy", w.updated_at AS "updatedAt", w.updated_by AS "updatedBy"
          FROM inserted w
          LEFT JOIN colors c ON c.id = w.color_id
-         LEFT JOIN sizes s ON s.id = w.size_id`,
+         LEFT JOIN sizes s ON s.id = w.size_id
+         LEFT JOIN chemicals ch ON ch.id = w.chemical_id`,
         [
             input.companyId,
             input.date,
             input.colorId ?? null,
             input.sizeId ?? null,
+            input.chemicalId ?? null,
             input.extruderLumpsKg,
             input.extruderLoomsWasteKg,
             input.loomsYarnWasteKg,
@@ -176,6 +186,7 @@ export interface UpdateWastagePatch {
     date?: Date;
     colorId?: string | null;
     sizeId?: string | null;
+    chemicalId?: string | null;
     extruderLumpsKg?: number;
     extruderLoomsWasteKg?: number;
     loomsYarnWasteKg?: number;
@@ -188,6 +199,7 @@ export async function updateWastage(id: string, companyId: string, patch: Update
         date: 'date',
         colorId: 'color_id',
         sizeId: 'size_id',
+        chemicalId: 'chemical_id',
         extruderLumpsKg: 'extruder_lumps_kg',
         extruderLoomsWasteKg: 'extruder_looms_waste_kg',
         loomsYarnWasteKg: 'looms_yarn_waste_kg',

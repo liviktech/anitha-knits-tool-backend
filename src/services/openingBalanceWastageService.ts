@@ -1,6 +1,6 @@
 import { NotFoundError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
-import { assertColorExists, assertSizeExists } from './masterDataService.js';
+import { assertChemicalExists, assertColorExists, assertSizeExists } from './masterDataService.js';
 import {
     createWastage as createWastageRepo,
     createWastageBatch as createWastageBatchRepo,
@@ -18,8 +18,12 @@ import type {
     UpdateOpeningBalanceWastageInput,
 } from '../validations/openingBalanceWastageValidation.js';
 
-async function assertVariantExists(colorId: string | undefined, sizeId: string | undefined, companyId: string) {
-    await Promise.all([colorId ? assertColorExists(colorId, companyId) : undefined, sizeId ? assertSizeExists(sizeId, companyId) : undefined]);
+async function assertVariantExists(colorId: string | undefined, sizeId: string | undefined, chemicalId: string | undefined, companyId: string) {
+    await Promise.all([
+        colorId ? assertColorExists(colorId, companyId) : undefined,
+        sizeId ? assertSizeExists(sizeId, companyId) : undefined,
+        chemicalId ? assertChemicalExists(chemicalId, companyId) : undefined,
+    ]);
 }
 
 function toInsertInput(input: CreateOpeningBalanceWastageInput, companyId: string, actor: string): InsertWastageInput {
@@ -28,6 +32,7 @@ function toInsertInput(input: CreateOpeningBalanceWastageInput, companyId: strin
         date: input.date,
         colorId: input.colorId,
         sizeId: input.sizeId,
+        chemicalId: input.chemicalId,
         extruderLumpsKg: input.extruderLumpsKg,
         extruderLoomsWasteKg: input.extruderLoomsWasteKg,
         loomsYarnWasteKg: input.loomsYarnWasteKg,
@@ -38,13 +43,13 @@ function toInsertInput(input: CreateOpeningBalanceWastageInput, companyId: strin
 }
 
 export async function createOpeningBalanceWastage(input: CreateOpeningBalanceWastageInput, companyId: string, actor: string) {
-    await assertVariantExists(input.colorId, input.sizeId, companyId);
+    await assertVariantExists(input.colorId, input.sizeId, input.chemicalId, companyId);
     return createWastageRepo(toInsertInput(input, companyId, actor));
 }
 
-/** Creates every row from the "Add Row" modal in one call — each row may reference a different colour/size. */
+/** Creates every row from the "Add Row" modal in one call — each row may reference a different colour/size/chemical. */
 export async function createOpeningBalanceWastageBatch(input: BatchCreateOpeningBalanceWastageInput, companyId: string, actor: string) {
-    await Promise.all(input.items.map((item) => assertVariantExists(item.colorId, item.sizeId, companyId)));
+    await Promise.all(input.items.map((item) => assertVariantExists(item.colorId, item.sizeId, item.chemicalId, companyId)));
     return createWastageBatchRepo(input.items.map((item) => toInsertInput(item, companyId, actor)));
 }
 
@@ -69,7 +74,7 @@ export async function updateOpeningBalanceWastage(id: string, input: UpdateOpeni
     const existing = await existsWastage(id, companyId);
     if (!existing) throw new NotFoundError('Opening balance wastage record not found', 'OPENING_BALANCE_WASTAGE_NOT_FOUND', { id });
 
-    await assertVariantExists(input.colorId ?? undefined, input.sizeId ?? undefined, companyId);
+    await assertVariantExists(input.colorId ?? undefined, input.sizeId ?? undefined, input.chemicalId ?? undefined, companyId);
 
     return updateWastageRepo(id, companyId, input, actor);
 }
