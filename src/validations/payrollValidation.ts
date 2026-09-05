@@ -23,6 +23,13 @@ export const grantMarketValueDeductionSchema = z.object({
   effectiveDate: z.string(),
 });
 
+export const grantOtherDeductionSchema = z.object({
+  employeeId: z.string().uuid(),
+  amount: z.number().positive(),
+  name: z.string().trim().min(1).max(200),
+  effectiveDate: z.string(),
+});
+
 export const getPayrollSummarySchema = z.object({
   month: z.coerce.number().min(1).max(12),
   year: z.coerce.number().min(2000).max(2100)

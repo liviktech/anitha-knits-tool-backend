@@ -3,8 +3,8 @@ import { asyncHandler } from '../utils/asyncHandler.js';
 import { sendSuccess } from '../utils/apiResponse.js';
 import { getAuthContext } from '../utils/actor.js';
 import { parseOrThrow } from '../utils/validate.js';
-import { distributeMarketValueSchema, grantSalaryAdvanceSchema, grantMarketValueDeductionSchema, getPayrollSummarySchema, savePayrollRecordsSchema, updatePayrollRecordSchema, payrollRecordEmployeeIdParamsSchema, deletePayrollRecordQuerySchema } from '../validations/payrollValidation.js';
-import { distributeMarketValue, grantSalaryAdvance, grantMarketValueDeduction, getPayrollSummary, savePayrollRecords, updatePayrollRecord, deletePayrollRecord, getSavedPayrollRecords, getMarketValueAllocations, getSalaryAdvances } from '../services/payrollService.js';
+import { distributeMarketValueSchema, grantSalaryAdvanceSchema, grantMarketValueDeductionSchema, grantOtherDeductionSchema, getPayrollSummarySchema, savePayrollRecordsSchema, updatePayrollRecordSchema, payrollRecordEmployeeIdParamsSchema, deletePayrollRecordQuerySchema } from '../validations/payrollValidation.js';
+import { distributeMarketValue, grantSalaryAdvance, grantMarketValueDeduction, grantOtherDeduction, getPayrollSummary, savePayrollRecords, updatePayrollRecord, deletePayrollRecord, getSavedPayrollRecords, getMarketValueAllocations, getSalaryAdvances } from '../services/payrollService.js';
 
 export const distributeMarketValueHandler = asyncHandler(async (req: Request, res: Response) => {
     const input = parseOrThrow(distributeMarketValueSchema, req.body);
@@ -28,6 +28,14 @@ export const grantMarketValueDeductionHandler = asyncHandler(async (req: Request
 
     const result = await grantMarketValueDeduction(companyId, userId, input);
     sendSuccess(res, result, { message: 'Market value deduction granted successfully' }, 201);
+});
+
+export const grantOtherDeductionHandler = asyncHandler(async (req: Request, res: Response) => {
+    const input = parseOrThrow(grantOtherDeductionSchema, req.body);
+    const { companyId, userId } = getAuthContext(req);
+
+    const result = await grantOtherDeduction(companyId, userId, input);
+    sendSuccess(res, result, { message: 'Other deduction granted successfully' }, 201);
 });
 
 export const getPayrollSummaryHandler = asyncHandler(async (req: Request, res: Response) => {

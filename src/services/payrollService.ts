@@ -5,6 +5,7 @@ import {
     deleteSinglePayrollRecord,
     findActiveEmployeesWithSalary,
     findAllMarketValueDeductions,
+    findAllOtherDeductions,
     findAllSalaryAdvances,
     findAttendancesForRange,
     findMarketValueAllocationsForRange,
@@ -13,6 +14,7 @@ import {
     insertMarketValueAllocations,
     insertMarketValueDeduction,
     insertMarketValueDistribution,
+    insertOtherDeduction,
     insertPayrollRecords,
     insertSalaryAdvance,
     upsertPayrollRecord,
@@ -55,6 +57,22 @@ export const grantMarketValueDeduction = async (
         companyId,
         employeeId: data.employeeId,
         amount: data.amount,
+        effectiveDate: new Date(data.effectiveDate),
+        actor: userId,
+    });
+};
+
+/** Ad-hoc deduction with a free-text reason/label — same single-payment shape as grantMarketValueDeduction. */
+export const grantOtherDeduction = async (
+    companyId: string,
+    userId: string,
+    data: { employeeId: string; amount: number; name: string; effectiveDate: string }
+) => {
+    return insertOtherDeduction({
+        companyId,
+        employeeId: data.employeeId,
+        amount: data.amount,
+        name: data.name,
         effectiveDate: new Date(data.effectiveDate),
         actor: userId,
     });
@@ -169,6 +187,10 @@ export const getPayrollSummary = async (companyId: string, month: number, year: 
     // own effective month; needs the full history to resolve against the query month.
     const allMarketValueDeductions = await findAllMarketValueDeductions(companyId);
 
+    // 4c. Ad-hoc "other" deductions — same single-payment-in-effective-month shape as
+    // market value deductions, just with a free-text reason instead of a fixed category.
+    const allOtherDeductions = await findAllOtherDeductions(companyId);
+
     // Grouping Helpers
     const attendanceByEmployee = attendances.reduce((acc: any, curr: any) => {
         if (!acc[curr.employeeId]) acc[curr.employeeId] = [];
@@ -197,6 +219,14 @@ export const getPayrollSummary = async (companyId: string, month: number, year: 
     }, {} as Record<string, number>);
 
     const marketValueDeductionByEmployee = allMarketValueDeductions.reduce((acc: any, ded: any) => {
+        const offset = monthOffset(ded.effectiveDate, month, year);
+        if (offset === 0) {
+            acc[ded.employeeId] = (acc[ded.employeeId] || 0) + Number(ded.amount);
+        }
+        return acc;
+    }, {} as Record<string, number>);
+
+    const otherDeductionByEmployee = allOtherDeductions.reduce((acc: any, ded: any) => {
         const offset = monthOffset(ded.effectiveDate, month, year);
         if (offset === 0) {
             acc[ded.employeeId] = (acc[ded.employeeId] || 0) + Number(ded.amount);
@@ -244,9 +274,10 @@ export const getPayrollSummary = async (companyId: string, month: number, year: 
         const advanceDeduction = advanceByEmployee[emp.id] || 0;
         const marketValueBonus = marketValueByEmployee[emp.id] || 0;
         const marketValueDeduction = marketValueDeductionByEmployee[emp.id] || 0;
+        const otherDeduction = otherDeductionByEmployee[emp.id] || 0;
 
         const grossSalary = baseSalary - absentDeductions + sundayBonuses;
-        const netSalary = grossSalary + marketValueBonus - advanceDeduction - marketValueDeduction;
+        const netSalary = grossSalary + marketValueBonus - advanceDeduction - marketValueDeduction - otherDeduction;
 
         return {
             id: emp.id,
@@ -262,6 +293,7 @@ export const getPayrollSummary = async (companyId: string, month: number, year: 
             advanceDeduction: Math.round(advanceDeduction),
             marketValueBonus: Math.round(marketValueBonus),
             marketValueDeduction: Math.round(marketValueDeduction),
+            otherDeduction: Math.round(otherDeduction),
             netSalary: Math.round(netSalary),
         };
     });
@@ -295,6 +327,7 @@ export const savePayrollRecords = async (
                     sundayBonuses: r.sundayBonusAmount || 0,
                     marketValueBonus: r.marketValueBonus,
                     marketValueDeduction: r.marketValueDeduction,
+                    otherDeduction: r.otherDeduction,
                     grossSalary: r.grossSalary,
                     netSalary: r.netSalary,
                 })),
