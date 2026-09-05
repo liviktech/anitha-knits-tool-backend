@@ -12,6 +12,7 @@ export const createOpeningBalanceFabricStockSchema = z
         date: z.coerce.date(),
         colorId: z.string().uuid().optional(),
         sizeId: z.string().uuid().optional(),
+        chemicalId: z.string().uuid().optional(),
         koraBalanceKg: z.coerce.number().nonnegative('must not be negative').default(0),
         fabricStockKg: z.coerce.number().nonnegative('must not be negative').default(0),
     })
@@ -28,6 +29,7 @@ export const updateOpeningBalanceFabricStockSchema = z
         date: z.coerce.date(),
         colorId: z.string().uuid().nullable(),
         sizeId: z.string().uuid().nullable(),
+        chemicalId: z.string().uuid().nullable(),
         koraBalanceKg: z.coerce.number().nonnegative('must not be negative'),
         fabricStockKg: z.coerce.number().nonnegative('must not be negative'),
     })

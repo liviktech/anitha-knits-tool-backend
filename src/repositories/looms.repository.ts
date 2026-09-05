@@ -4,7 +4,7 @@ import { withReadClient } from '../db/transaction.js';
 import { findWastagesByProductionRecordId, findWastagesByProductionRecordIds, type WastageRow } from './wastage.repository.js';
 import type { ProductionListFilters } from '../utils/productionFilters.js';
 import { buildProductionWhere } from '../utils/productionFilters.js';
-import { ProductionStage } from '../types/enums.js';
+import { ProductionStage, ProductionType } from '../types/enums.js';
 import { formatDateOnly } from '../utils/dateOnly.js';
 
 export interface LoomsRecordRow {
@@ -304,15 +304,20 @@ export interface LoomsSummaryRow {
     fabricOutputKg: number | null;
 }
 
-export async function findLoomsRowsForSummary(companyId: string, dateFrom: Date, dateTo: Date): Promise<LoomsSummaryRow[]> {
+export async function findLoomsRowsForSummary(
+    companyId: string,
+    dateFrom: Date,
+    dateTo: Date,
+    type: ProductionType = ProductionType.PRODUCTION,
+): Promise<LoomsSummaryRow[]> {
     const result = await query<LoomsSummaryRow>(
         `SELECT pr.id, c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName", ld.fabric_output_kg AS "fabricOutputKg"
          FROM production_records pr
          LEFT JOIN colors c ON c.id = pr.color_id
          LEFT JOIN sizes s ON s.id = pr.size_id
          LEFT JOIN loom_details ld ON ld.production_record_id = pr.id
-         WHERE pr.company_id = $1 AND pr.stage = $2 AND pr.production_date >= $3 AND pr.production_date <= $4`,
-        [companyId, ProductionStage.LOOMS, dateFrom, dateTo],
+         WHERE pr.company_id = $1 AND pr.stage = $2 AND pr.production_date >= $3 AND pr.production_date <= $4 AND pr.type = $5`,
+        [companyId, ProductionStage.LOOMS, dateFrom, dateTo, type],
     );
     return result.rows;
 }
@@ -323,14 +328,19 @@ export interface LoomsWastageRow {
     wastageTypeCode: string;
 }
 
-export async function findLoomsWastagesForSummary(companyId: string, dateFrom: Date, dateTo: Date): Promise<LoomsWastageRow[]> {
+export async function findLoomsWastagesForSummary(
+    companyId: string,
+    dateFrom: Date,
+    dateTo: Date,
+    type: ProductionType = ProductionType.PRODUCTION,
+): Promise<LoomsWastageRow[]> {
     const result = await query<LoomsWastageRow>(
         `SELECT wr.production_record_id AS "productionRecordId", wr.quantity_kg AS "quantityKg", wt.code AS "wastageTypeCode"
          FROM wastage_records wr
          JOIN wastage_types wt ON wt.id = wr.wastage_type_id
          JOIN production_records pr ON pr.id = wr.production_record_id
-         WHERE wr.company_id = $1 AND pr.production_date >= $2 AND pr.production_date <= $3 AND pr.stage = $4`,
-        [companyId, dateFrom, dateTo, ProductionStage.LOOMS],
+         WHERE wr.company_id = $1 AND pr.production_date >= $2 AND pr.production_date <= $3 AND pr.stage = $4 AND pr.type = $5`,
+        [companyId, dateFrom, dateTo, ProductionStage.LOOMS, type],
     );
     return result.rows;
 }

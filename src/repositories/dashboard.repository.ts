@@ -8,9 +8,11 @@ export interface StageProductionRow {
     outputKg: number | null;
 }
 
-// This dashboard is the real Production Details dashboard only — Sample Production has its own
-// client-side aggregation (see sample-production-page.tsx) — so every query here is hardcoded to
-// type = 'PRODUCTION', not a caller-supplied filter, to keep Sample entries out unconditionally.
+// These specific queries back getMonthlyDashboard's `production` field (simple stage totals),
+// which is intentionally always Production-only regardless of the endpoint's `type` query param
+// — unlike the byColor/byVariant/stockBalance sections (extruderService/loomsService/
+// fabricCheckingService/loadSentService), which do take a type filter so the dashboard's
+// Sample Production tab can reuse the same aggregation with type = 'SAMPLE'.
 
 export async function findExtruderRowsForDashboard(companyId: string, dateFrom: Date, dateTo: Date): Promise<StageProductionRow[]> {
     const result = await query<StageProductionRow>(

@@ -1,7 +1,7 @@
 import { withTransaction } from '../db/transaction.js';
 import { NotFoundError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
-import { assertColorExists, assertSizeExists } from './masterDataService.js';
+import { assertChemicalExists, assertColorExists, assertSizeExists } from './masterDataService.js';
 import { applyOpeningBalanceKoraEffect, reverseOpeningBalanceKoraEffect } from './koraBalanceService.js';
 import {
     createFabricStock as createFabricStockRepo,
@@ -20,8 +20,12 @@ import type {
     UpdateOpeningBalanceFabricStockInput,
 } from '../validations/openingBalanceFabricStockValidation.js';
 
-async function assertVariantExists(colorId: string | undefined, sizeId: string | undefined, companyId: string) {
-    await Promise.all([colorId ? assertColorExists(colorId, companyId) : undefined, sizeId ? assertSizeExists(sizeId, companyId) : undefined]);
+async function assertVariantExists(colorId: string | undefined, sizeId: string | undefined, chemicalId: string | undefined, companyId: string) {
+    await Promise.all([
+        colorId ? assertColorExists(colorId, companyId) : undefined,
+        sizeId ? assertSizeExists(sizeId, companyId) : undefined,
+        chemicalId ? assertChemicalExists(chemicalId, companyId) : undefined,
+    ]);
 }
 
 function toInsertInput(input: CreateOpeningBalanceFabricStockInput, companyId: string, actor: string): InsertFabricStockInput {
@@ -30,6 +34,7 @@ function toInsertInput(input: CreateOpeningBalanceFabricStockInput, companyId: s
         date: input.date,
         colorId: input.colorId,
         sizeId: input.sizeId,
+        chemicalId: input.chemicalId,
         koraBalanceKg: input.koraBalanceKg,
         fabricStockKg: input.fabricStockKg,
         actor,
@@ -44,7 +49,7 @@ function toInsertInput(input: CreateOpeningBalanceFabricStockInput, companyId: s
  * set — kora_balances has no concept of a variant-less balance.
  */
 export async function createOpeningBalanceFabricStock(input: CreateOpeningBalanceFabricStockInput, companyId: string, actor: string) {
-    await assertVariantExists(input.colorId, input.sizeId, companyId);
+    await assertVariantExists(input.colorId, input.sizeId, input.chemicalId, companyId);
 
     return withTransaction(async (client) => {
         const record = await createFabricStockRepo(toInsertInput(input, companyId, actor), client);
@@ -57,9 +62,9 @@ export async function createOpeningBalanceFabricStock(input: CreateOpeningBalanc
     });
 }
 
-/** Creates every row from the "Add Row" modal in one call — each row may reference a different colour/size, all atomic with their kora_balances effects (see createOpeningBalanceFabricStock). */
+/** Creates every row from the "Add Row" modal in one call — each row may reference a different colour/size/chemical, all atomic with their kora_balances effects (see createOpeningBalanceFabricStock). */
 export async function createOpeningBalanceFabricStockBatch(input: BatchCreateOpeningBalanceFabricStockInput, companyId: string, actor: string) {
-    await Promise.all(input.items.map((item) => assertVariantExists(item.colorId, item.sizeId, companyId)));
+    await Promise.all(input.items.map((item) => assertVariantExists(item.colorId, item.sizeId, item.chemicalId, companyId)));
 
     return withTransaction(async (client) => {
         const records = await createFabricStockBatchRepo(
@@ -99,7 +104,7 @@ export async function updateOpeningBalanceFabricStock(id: string, input: UpdateO
     const existing = await findFabricStockById(id, companyId);
     if (!existing) throw new NotFoundError('Opening balance fabric stock record not found', 'OPENING_BALANCE_FABRIC_STOCK_NOT_FOUND', { id });
 
-    await assertVariantExists(input.colorId ?? undefined, input.sizeId ?? undefined, companyId);
+    await assertVariantExists(input.colorId ?? undefined, input.sizeId ?? undefined, input.chemicalId ?? undefined, companyId);
 
     // `in` (not `??`) so an explicit `null` — clearing the colour/size — is distinguished from
     // the key being absent (leave as-is), matching updateFabricStockRepo's own patch semantics.

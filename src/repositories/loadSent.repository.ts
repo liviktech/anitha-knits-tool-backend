@@ -1,7 +1,7 @@
 import { query, queryOne } from '../db/query.js';
 import { withReadClient } from '../db/transaction.js';
 import { buildProductionWhere, type ProductionListFilters } from '../utils/productionFilters.js';
-import { ProductionStage } from '../types/enums.js';
+import { ProductionStage, ProductionType } from '../types/enums.js';
 import { formatDateOnly } from '../utils/dateOnly.js';
 
 export interface LoadSentRecordRow {
@@ -283,7 +283,12 @@ export interface LoadSentSummaryRow {
     totalWastageWeight: number;
 }
 
-export async function findLoadSentRowsForSummary(companyId: string, dateFrom: Date, dateTo: Date): Promise<LoadSentSummaryRow[]> {
+export async function findLoadSentRowsForSummary(
+    companyId: string,
+    dateFrom: Date,
+    dateTo: Date,
+    type: ProductionType = ProductionType.PRODUCTION,
+): Promise<LoadSentSummaryRow[]> {
     const result = await query<LoadSentSummaryRow>(
         `SELECT pr.id, c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName", pr.production_date AS "productionDate",
                 ls.fabric_weight AS "fabricWeight", ls.fw_weight AS "fwWeight", ls.bw_weight AS "bwWeight", ls.total_wastage_weight AS "totalWastageWeight"
@@ -291,9 +296,9 @@ export async function findLoadSentRowsForSummary(companyId: string, dateFrom: Da
          JOIN colors c ON c.id = pr.color_id
          JOIN sizes s ON s.id = pr.size_id
          JOIN load_sent ls ON ls.production_record_id = pr.id
-         WHERE pr.company_id = $1 AND pr.stage = $2 AND pr.production_date >= $3 AND pr.production_date <= $4
+         WHERE pr.company_id = $1 AND pr.stage = $2 AND pr.production_date >= $3 AND pr.production_date <= $4 AND pr.type = $5
          ORDER BY pr.production_date DESC, pr.created_at DESC`,
-        [companyId, ProductionStage.DELIVERY, dateFrom, dateTo],
+        [companyId, ProductionStage.DELIVERY, dateFrom, dateTo, type],
     );
     return result.rows;
 }
@@ -306,15 +311,18 @@ export interface StockFabricCheckingRow {
     outputKg: number | null;
 }
 
-export async function findFabricCheckingRowsForStock(companyId: string): Promise<StockFabricCheckingRow[]> {
+export async function findFabricCheckingRowsForStock(
+    companyId: string,
+    type: ProductionType = ProductionType.PRODUCTION,
+): Promise<StockFabricCheckingRow[]> {
     const result = await query<StockFabricCheckingRow>(
         `SELECT c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName", fcd.output_kg AS "outputKg"
          FROM production_records pr
          JOIN colors c ON c.id = pr.color_id
          JOIN sizes s ON s.id = pr.size_id
          LEFT JOIN fabric_check_details fcd ON fcd.production_record_id = pr.id
-         WHERE pr.company_id = $1 AND pr.stage = $2`,
-        [companyId, ProductionStage.FABRIC_CHECKING],
+         WHERE pr.company_id = $1 AND pr.stage = $2 AND pr.type = $3`,
+        [companyId, ProductionStage.FABRIC_CHECKING, type],
     );
     return result.rows;
 }
@@ -328,7 +336,10 @@ export interface StockWastageRow {
     wastageTypeCode: string;
 }
 
-export async function findWastageRowsForStock(companyId: string): Promise<StockWastageRow[]> {
+export async function findWastageRowsForStock(
+    companyId: string,
+    type: ProductionType = ProductionType.PRODUCTION,
+): Promise<StockWastageRow[]> {
     const result = await query<StockWastageRow>(
         `SELECT c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName",
                 wr.quantity_kg AS "quantityKg", wt.code AS "wastageTypeCode"
@@ -337,8 +348,8 @@ export async function findWastageRowsForStock(companyId: string): Promise<StockW
          JOIN production_records pr ON pr.id = wr.production_record_id
          JOIN colors c ON c.id = pr.color_id
          JOIN sizes s ON s.id = pr.size_id
-         WHERE wr.company_id = $1 AND pr.stage = $2`,
-        [companyId, ProductionStage.FABRIC_CHECKING],
+         WHERE wr.company_id = $1 AND pr.stage = $2 AND pr.type = $3`,
+        [companyId, ProductionStage.FABRIC_CHECKING, type],
     );
     return result.rows;
 }
@@ -353,15 +364,19 @@ export interface StockLoadSentRow {
     bwWeight: number;
 }
 
-export async function findLoadSentRowsForStock(companyId: string): Promise<StockLoadSentRow[]> {
+export async function findLoadSentRowsForStock(
+    companyId: string,
+    type: ProductionType = ProductionType.PRODUCTION,
+): Promise<StockLoadSentRow[]> {
     const result = await query<StockLoadSentRow>(
         `SELECT c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName",
                 ls.fabric_weight AS "fabricWeight", ls.fw_weight AS "fwWeight", ls.bw_weight AS "bwWeight"
          FROM load_sent ls
+         JOIN production_records pr ON pr.id = ls.production_record_id
          JOIN colors c ON c.id = ls.color_id
          JOIN sizes s ON s.id = ls.size_id
-         WHERE ls.company_id = $1`,
-        [companyId],
+         WHERE ls.company_id = $1 AND pr.type = $2`,
+        [companyId, type],
     );
     return result.rows;
 }

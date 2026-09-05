@@ -2,7 +2,7 @@ import type pg from 'pg';
 import { NotFoundError } from '../utils/errors.js';
 import { roundKg } from '../utils/decimal.js';
 import { WASTAGE_CODES } from '../constants/wastageCodes.js';
-import type { ProductionStage } from '../types/enums.js';
+import { ProductionType, type ProductionStage } from '../types/enums.js';
 import {
     deleteWastageRecordById,
     findWastageRecordByTypeForProduction,
@@ -148,12 +148,13 @@ export async function getWastageSummaryByDateRange(
     companyId: string,
     dateFrom: Date,
     dateTo: Date,
+    type: ProductionType = ProductionType.PRODUCTION,
 ): Promise<{ byType: WastageCategorySummary[]; totalKg: number }> {
     const codes: string[] = Object.values(WASTAGE_CODES);
 
     const [types, rows] = await Promise.all([
         findWastageTypesByCodes(companyId, codes),
-        findWastageRecordsForDateRange(companyId, dateFrom, dateTo),
+        findWastageRecordsForDateRange(companyId, dateFrom, dateTo, type),
     ]);
 
     const quantityByCode = new Map<string, number>();

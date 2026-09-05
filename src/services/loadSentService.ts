@@ -1,4 +1,5 @@
 import { NotFoundError } from '../utils/errors.js';
+import { ProductionType } from '../types/enums.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import { roundKg } from '../utils/decimal.js';
 import { formatDateOnly } from '../utils/dateOnly.js';
@@ -121,8 +122,13 @@ export type LoadSentSummary = {
  *
  * Time: O(n) — n = Load Sent records in the range (one query, one pass).
  */
-export async function getLoadSentSummaryByDateRange(companyId: string, dateFrom: Date, dateTo: Date): Promise<LoadSentSummary> {
-    const rows = await findLoadSentRowsForSummary(companyId, dateFrom, dateTo);
+export async function getLoadSentSummaryByDateRange(
+    companyId: string,
+    dateFrom: Date,
+    dateTo: Date,
+    type: ProductionType = ProductionType.PRODUCTION,
+): Promise<LoadSentSummary> {
+    const rows = await findLoadSentRowsForSummary(companyId, dateFrom, dateTo, type);
 
     const items = rows.map((row) => ({
         id: row.id,
@@ -183,11 +189,11 @@ export async function getLoadSentSummaryByDateRange(companyId: string, dateFrom:
     };
 }
 
-export async function getStockBalance(companyId: string) {
+export async function getStockBalance(companyId: string, type: ProductionType = ProductionType.PRODUCTION) {
     const [fabricCheckingRows, wastageRows, loadSentRows] = await Promise.all([
-        findFabricCheckingRowsForStock(companyId),
-        findWastageRowsForStock(companyId),
-        findLoadSentRowsForStock(companyId),
+        findFabricCheckingRowsForStock(companyId, type),
+        findWastageRowsForStock(companyId, type),
+        findLoadSentRowsForStock(companyId, type),
     ]);
 
     const stockMap = new Map<

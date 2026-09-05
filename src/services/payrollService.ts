@@ -2,8 +2,10 @@ import { withTransaction } from '../db/transaction.js';
 import { ApiError } from '../utils/ApiError.js';
 import {
     deletePayrollRecords,
+    deleteSinglePayrollRecord,
     findActiveEmployeesWithSalary,
     findAllMarketValueDeductions,
+    findAllOtherDeductions,
     findAllSalaryAdvances,
     findAttendancesForRange,
     findMarketValueAllocationsForRange,
@@ -12,8 +14,10 @@ import {
     insertMarketValueAllocations,
     insertMarketValueDeduction,
     insertMarketValueDistribution,
+    insertOtherDeduction,
     insertPayrollRecords,
     insertSalaryAdvance,
+    syncPayrollRecordOtherDeduction,
     upsertPayrollRecord,
 } from '../repositories/payroll.repository.js';
 
@@ -57,6 +61,36 @@ export const grantMarketValueDeduction = async (
         effectiveDate: new Date(data.effectiveDate),
         actor: userId,
     });
+};
+
+/** Ad-hoc deduction with a free-text reason/label — same single-payment shape as grantMarketValueDeduction. */
+export const grantOtherDeduction = async (
+    companyId: string,
+    userId: string,
+    data: { employeeId: string; amount: number; name: string; effectiveDate: string }
+) => {
+    const effectiveDate = new Date(data.effectiveDate);
+    const result = await insertOtherDeduction({
+        companyId,
+        employeeId: data.employeeId,
+        amount: data.amount,
+        name: data.name,
+        effectiveDate,
+        actor: userId,
+    });
+
+    // If payroll for this employee's effective month was already generated, sync the
+    // frozen record immediately so it shows up in the Payroll list without a full
+    // month regeneration.
+    const month = effectiveDate.getMonth() + 1;
+    const year = effectiveDate.getFullYear();
+    const allOtherDeductions = await findAllOtherDeductions(companyId);
+    const totalForMonth = allOtherDeductions
+        .filter((d) => d.employeeId === data.employeeId && monthOffset(d.effectiveDate, month, year) === 0)
+        .reduce((sum, d) => sum + Number(d.amount), 0);
+    await syncPayrollRecordOtherDeduction(companyId, data.employeeId, month, year, totalForMonth);
+
+    return result;
 };
 
 function roundMoney(value: number): number {
@@ -168,6 +202,10 @@ export const getPayrollSummary = async (companyId: string, month: number, year: 
     // own effective month; needs the full history to resolve against the query month.
     const allMarketValueDeductions = await findAllMarketValueDeductions(companyId);
 
+    // 4c. Ad-hoc "other" deductions — same single-payment-in-effective-month shape as
+    // market value deductions, just with a free-text reason instead of a fixed category.
+    const allOtherDeductions = await findAllOtherDeductions(companyId);
+
     // Grouping Helpers
     const attendanceByEmployee = attendances.reduce((acc: any, curr: any) => {
         if (!acc[curr.employeeId]) acc[curr.employeeId] = [];
@@ -202,6 +240,23 @@ export const getPayrollSummary = async (companyId: string, month: number, year: 
         }
         return acc;
     }, {} as Record<string, number>);
+
+    // Tracks both the summed amount and a representative name per employee — an employee can
+    // have several differently-named other-deductions in one month, so `name` is best-effort
+    // (the most recently created one), just enough to pre-fill the grant modal's edit form.
+    const otherDeductionByEmployee = allOtherDeductions.reduce((acc: any, ded: any) => {
+        const offset = monthOffset(ded.effectiveDate, month, year);
+        if (offset === 0) {
+            const existing = acc[ded.employeeId] ?? { amount: 0, name: null, createdAt: null };
+            const isNewer = !existing.createdAt || new Date(ded.createdAt) >= new Date(existing.createdAt);
+            acc[ded.employeeId] = {
+                amount: existing.amount + Number(ded.amount),
+                name: isNewer ? ded.name : existing.name,
+                createdAt: isNewer ? ded.createdAt : existing.createdAt,
+            };
+        }
+        return acc;
+    }, {} as Record<string, { amount: number; name: string | null; createdAt: Date | null }>);
 
     // 5. Calculate Final Summary
     return employees.map((emp: any) => {
@@ -243,9 +298,11 @@ export const getPayrollSummary = async (companyId: string, month: number, year: 
         const advanceDeduction = advanceByEmployee[emp.id] || 0;
         const marketValueBonus = marketValueByEmployee[emp.id] || 0;
         const marketValueDeduction = marketValueDeductionByEmployee[emp.id] || 0;
+        const otherDeduction = otherDeductionByEmployee[emp.id]?.amount || 0;
+        const otherDeductionName = otherDeductionByEmployee[emp.id]?.name ?? null;
 
         const grossSalary = baseSalary - absentDeductions + sundayBonuses;
-        const netSalary = grossSalary + marketValueBonus - advanceDeduction - marketValueDeduction;
+        const netSalary = grossSalary + marketValueBonus - advanceDeduction - marketValueDeduction - otherDeduction;
 
         return {
             id: emp.id,
@@ -261,6 +318,8 @@ export const getPayrollSummary = async (companyId: string, month: number, year: 
             advanceDeduction: Math.round(advanceDeduction),
             marketValueBonus: Math.round(marketValueBonus),
             marketValueDeduction: Math.round(marketValueDeduction),
+            otherDeduction: Math.round(otherDeduction),
+            otherDeductionName,
             netSalary: Math.round(netSalary),
         };
     });
@@ -294,6 +353,7 @@ export const savePayrollRecords = async (
                     sundayBonuses: r.sundayBonusAmount || 0,
                     marketValueBonus: r.marketValueBonus,
                     marketValueDeduction: r.marketValueDeduction,
+                    otherDeduction: r.otherDeduction,
                     grossSalary: r.grossSalary,
                     netSalary: r.netSalary,
                 })),
@@ -314,17 +374,28 @@ export const getSavedPayrollRecords = async (
 
 /**
  * Manual single-employee edit from the Payroll tab's Actions > Edit button.
- * Trusts only the four editable inputs from the client — base salary, days
- * worked, advance deduction, machine value — and recomputes gross/net itself
- * rather than accepting client-sent totals (same principle as savePayrollRecords).
+ * Trusts only the six editable inputs from the client — base salary, days
+ * worked, advance deduction, machine value, market value, other deduction —
+ * and recomputes gross/net itself rather than accepting client-sent totals
+ * (same principle as savePayrollRecords).
  */
 export const updatePayrollRecord = async (
     companyId: string,
-    data: { employeeId: string; month: number; year: number; baseSalary: number; daysWorked: number; advanceDeduction: number; marketValueBonus: number }
+    data: {
+        employeeId: string;
+        month: number;
+        year: number;
+        baseSalary: number;
+        daysWorked: number;
+        advanceDeduction: number;
+        marketValueBonus: number;
+        marketValueDeduction: number;
+        otherDeduction: number;
+    }
 ) => {
     const totalDaysInMonth = new Date(data.year, data.month, 0).getDate();
     const grossSalary = roundMoney((data.baseSalary * data.daysWorked) / totalDaysInMonth);
-    const netSalary = roundMoney(grossSalary - data.advanceDeduction + data.marketValueBonus);
+    const netSalary = roundMoney(grossSalary - data.advanceDeduction + data.marketValueBonus - data.marketValueDeduction - data.otherDeduction);
 
     return upsertPayrollRecord({
         companyId,
@@ -336,9 +407,17 @@ export const updatePayrollRecord = async (
         daysWorked: data.daysWorked,
         advanceDeduction: data.advanceDeduction,
         marketValueBonus: data.marketValueBonus,
+        marketValueDeduction: data.marketValueDeduction,
+        otherDeduction: data.otherDeduction,
         grossSalary,
         netSalary,
     });
+};
+
+/** Clears one employee's payroll record for one month — backs the Payroll tab's Actions > Delete. */
+export const deletePayrollRecord = async (companyId: string, employeeId: string, month: number, year: number) => {
+    await deleteSinglePayrollRecord(companyId, employeeId, month, year);
+    return { message: 'Payroll record deleted successfully' };
 };
 
 export const getMarketValueAllocations = async (companyId: string, month: number, year: number) => {

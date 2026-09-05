@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import { query, queryOne, type Queryable } from '../db/query.js';
-import type { ProductionStage } from '../types/enums.js';
+import { ProductionType, type ProductionStage } from '../types/enums.js';
 
 export interface WastageRow {
     id: string;
@@ -151,14 +151,19 @@ export interface WastageRecordForSummaryRow {
     code: string;
 }
 
-export async function findWastageRecordsForDateRange(companyId: string, dateFrom: Date, dateTo: Date): Promise<WastageRecordForSummaryRow[]> {
+export async function findWastageRecordsForDateRange(
+    companyId: string,
+    dateFrom: Date,
+    dateTo: Date,
+    type: ProductionType = ProductionType.PRODUCTION,
+): Promise<WastageRecordForSummaryRow[]> {
     const result = await query<WastageRecordForSummaryRow>(
         `SELECT wr.quantity_kg AS "quantityKg", wt.code
          FROM wastage_records wr
          JOIN wastage_types wt ON wt.id = wr.wastage_type_id
          JOIN production_records pr ON pr.id = wr.production_record_id
-         WHERE wr.company_id = $1 AND pr.production_date >= $2 AND pr.production_date <= $3`,
-        [companyId, dateFrom, dateTo],
+         WHERE wr.company_id = $1 AND pr.production_date >= $2 AND pr.production_date <= $3 AND pr.type = $4`,
+        [companyId, dateFrom, dateTo, type],
     );
     return result.rows;
 }
