@@ -17,6 +17,7 @@ import {
     insertOtherDeduction,
     insertPayrollRecords,
     insertSalaryAdvance,
+    syncPayrollRecordOtherDeduction,
     upsertPayrollRecord,
 } from '../repositories/payroll.repository.js';
 
@@ -68,14 +69,28 @@ export const grantOtherDeduction = async (
     userId: string,
     data: { employeeId: string; amount: number; name: string; effectiveDate: string }
 ) => {
-    return insertOtherDeduction({
+    const effectiveDate = new Date(data.effectiveDate);
+    const result = await insertOtherDeduction({
         companyId,
         employeeId: data.employeeId,
         amount: data.amount,
         name: data.name,
-        effectiveDate: new Date(data.effectiveDate),
+        effectiveDate,
         actor: userId,
     });
+
+    // If payroll for this employee's effective month was already generated, sync the
+    // frozen record immediately so it shows up in the Payroll list without a full
+    // month regeneration.
+    const month = effectiveDate.getMonth() + 1;
+    const year = effectiveDate.getFullYear();
+    const allOtherDeductions = await findAllOtherDeductions(companyId);
+    const totalForMonth = allOtherDeductions
+        .filter((d) => d.employeeId === data.employeeId && monthOffset(d.effectiveDate, month, year) === 0)
+        .reduce((sum, d) => sum + Number(d.amount), 0);
+    await syncPayrollRecordOtherDeduction(companyId, data.employeeId, month, year, totalForMonth);
+
+    return result;
 };
 
 function roundMoney(value: number): number {
@@ -226,13 +241,22 @@ export const getPayrollSummary = async (companyId: string, month: number, year: 
         return acc;
     }, {} as Record<string, number>);
 
+    // Tracks both the summed amount and a representative name per employee — an employee can
+    // have several differently-named other-deductions in one month, so `name` is best-effort
+    // (the most recently created one), just enough to pre-fill the grant modal's edit form.
     const otherDeductionByEmployee = allOtherDeductions.reduce((acc: any, ded: any) => {
         const offset = monthOffset(ded.effectiveDate, month, year);
         if (offset === 0) {
-            acc[ded.employeeId] = (acc[ded.employeeId] || 0) + Number(ded.amount);
+            const existing = acc[ded.employeeId] ?? { amount: 0, name: null, createdAt: null };
+            const isNewer = !existing.createdAt || new Date(ded.createdAt) >= new Date(existing.createdAt);
+            acc[ded.employeeId] = {
+                amount: existing.amount + Number(ded.amount),
+                name: isNewer ? ded.name : existing.name,
+                createdAt: isNewer ? ded.createdAt : existing.createdAt,
+            };
         }
         return acc;
-    }, {} as Record<string, number>);
+    }, {} as Record<string, { amount: number; name: string | null; createdAt: Date | null }>);
 
     // 5. Calculate Final Summary
     return employees.map((emp: any) => {
@@ -274,7 +298,8 @@ export const getPayrollSummary = async (companyId: string, month: number, year: 
         const advanceDeduction = advanceByEmployee[emp.id] || 0;
         const marketValueBonus = marketValueByEmployee[emp.id] || 0;
         const marketValueDeduction = marketValueDeductionByEmployee[emp.id] || 0;
-        const otherDeduction = otherDeductionByEmployee[emp.id] || 0;
+        const otherDeduction = otherDeductionByEmployee[emp.id]?.amount || 0;
+        const otherDeductionName = otherDeductionByEmployee[emp.id]?.name ?? null;
 
         const grossSalary = baseSalary - absentDeductions + sundayBonuses;
         const netSalary = grossSalary + marketValueBonus - advanceDeduction - marketValueDeduction - otherDeduction;
@@ -294,6 +319,7 @@ export const getPayrollSummary = async (companyId: string, month: number, year: 
             marketValueBonus: Math.round(marketValueBonus),
             marketValueDeduction: Math.round(marketValueDeduction),
             otherDeduction: Math.round(otherDeduction),
+            otherDeductionName,
             netSalary: Math.round(netSalary),
         };
     });
@@ -348,10 +374,10 @@ export const getSavedPayrollRecords = async (
 
 /**
  * Manual single-employee edit from the Payroll tab's Actions > Edit button.
- * Trusts only the five editable inputs from the client — base salary, days
- * worked, advance deduction, machine value, market value — and recomputes
- * gross/net itself rather than accepting client-sent totals (same principle
- * as savePayrollRecords).
+ * Trusts only the six editable inputs from the client — base salary, days
+ * worked, advance deduction, machine value, market value, other deduction —
+ * and recomputes gross/net itself rather than accepting client-sent totals
+ * (same principle as savePayrollRecords).
  */
 export const updatePayrollRecord = async (
     companyId: string,
@@ -364,11 +390,12 @@ export const updatePayrollRecord = async (
         advanceDeduction: number;
         marketValueBonus: number;
         marketValueDeduction: number;
+        otherDeduction: number;
     }
 ) => {
     const totalDaysInMonth = new Date(data.year, data.month, 0).getDate();
     const grossSalary = roundMoney((data.baseSalary * data.daysWorked) / totalDaysInMonth);
-    const netSalary = roundMoney(grossSalary - data.advanceDeduction + data.marketValueBonus - data.marketValueDeduction);
+    const netSalary = roundMoney(grossSalary - data.advanceDeduction + data.marketValueBonus - data.marketValueDeduction - data.otherDeduction);
 
     return upsertPayrollRecord({
         companyId,
@@ -381,6 +408,7 @@ export const updatePayrollRecord = async (
         advanceDeduction: data.advanceDeduction,
         marketValueBonus: data.marketValueBonus,
         marketValueDeduction: data.marketValueDeduction,
+        otherDeduction: data.otherDeduction,
         grossSalary,
         netSalary,
     });

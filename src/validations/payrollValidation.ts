@@ -52,6 +52,7 @@ export const updatePayrollRecordSchema = z.object({
   advanceDeduction: z.number().nonnegative(),
   marketValueBonus: z.number().nonnegative(),
   marketValueDeduction: z.number().nonnegative(),
+  otherDeduction: z.number().nonnegative(),
 });
 
 export const deletePayrollRecordQuerySchema = z.object({

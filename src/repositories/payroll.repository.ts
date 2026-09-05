@@ -199,6 +199,30 @@ export async function findAllOtherDeductions(companyId: string): Promise<OtherDe
     return result.rows;
 }
 
+/**
+ * Re-syncs other_deduction (and the net_salary it feeds into) on an already-frozen
+ * payroll_records row, if one exists for this employee/month. Payroll records are a
+ * point-in-time snapshot taken at "Generate Payroll" time — granting a deduction
+ * afterwards wouldn't otherwise show up in the Payroll list until the whole month is
+ * regenerated. No-ops if payroll hasn't been generated yet for this month.
+ */
+export async function syncPayrollRecordOtherDeduction(
+    companyId: string,
+    employeeId: string,
+    month: number,
+    year: number,
+    otherDeduction: number,
+): Promise<void> {
+    await query(
+        `UPDATE payroll_records
+         SET other_deduction = $1,
+             net_salary = gross_salary - advance_deduction + market_value_bonus - market_value_deduction - $1,
+             updated_at = now()
+         WHERE company_id = $2 AND employee_id = $3 AND month = $4 AND year = $5`,
+        [otherDeduction, companyId, employeeId, month, year],
+    );
+}
+
 export interface ActiveEmployeeWithSalaryRow {
     id: string;
     name: string | null;
@@ -316,6 +340,7 @@ export interface UpsertPayrollRecordInput {
     advanceDeduction: number;
     marketValueBonus: number;
     marketValueDeduction: number;
+    otherDeduction: number;
     grossSalary: number;
     netSalary: number;
 }
@@ -323,10 +348,10 @@ export interface UpsertPayrollRecordInput {
 /**
  * Manual single-employee edit from the Payroll tab's Actions > Edit. Upserts on
  * (employee_id, month, year) — if no row exists yet for this month (payroll not
- * generated), inserts one with lop_deduction/sunday_bonuses/other_deduction defaulted
- * to 0 (this quick edit only knows base salary, days worked, advance, machine value
- * and market value); if a generated row already exists, those three untouched
- * columns keep whatever savePayrollRecords/grantOtherDeduction last computed for them.
+ * generated), inserts one with lop_deduction/sunday_bonuses defaulted to 0 (this
+ * quick edit only knows base salary, days worked, advance, machine value, market
+ * value and other deduction); if a generated row already exists, those two
+ * untouched columns keep whatever savePayrollRecords last computed for them.
  */
 export async function upsertPayrollRecord(input: UpsertPayrollRecordInput): Promise<PayrollRecordRow> {
     const result = await query<PayrollRecordRow>(
@@ -334,13 +359,14 @@ export async function upsertPayrollRecord(input: UpsertPayrollRecordInput): Prom
             id, company_id, employee_id, month, year, base_salary, total_days_in_month, days_worked,
             lop_deduction, advance_deduction, sunday_bonuses, market_value_bonus, market_value_deduction,
             other_deduction, gross_salary, net_salary, status, updated_at
-         ) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, 0, $8, 0, $9, $10, 0, $11, $12, 'PENDING', now())
+         ) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, 0, $8, 0, $9, $10, $11, $12, $13, 'PENDING', now())
          ON CONFLICT (employee_id, month, year) DO UPDATE SET
             base_salary = EXCLUDED.base_salary,
             days_worked = EXCLUDED.days_worked,
             advance_deduction = EXCLUDED.advance_deduction,
             market_value_bonus = EXCLUDED.market_value_bonus,
             market_value_deduction = EXCLUDED.market_value_deduction,
+            other_deduction = EXCLUDED.other_deduction,
             gross_salary = EXCLUDED.gross_salary,
             net_salary = EXCLUDED.net_salary,
             updated_at = now()
@@ -360,6 +386,7 @@ export async function upsertPayrollRecord(input: UpsertPayrollRecordInput): Prom
             input.advanceDeduction,
             input.marketValueBonus,
             input.marketValueDeduction,
+            input.otherDeduction,
             input.grossSalary,
             input.netSalary,
         ],
