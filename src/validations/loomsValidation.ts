@@ -34,6 +34,7 @@ export const updateLoomsSchema = z
         chemicalId: z.string().uuid(),
         yarnInputKg: kg,
         fabricOutputKg: kg,
+        type: z.enum(['PRODUCTION', 'SAMPLE']),
         loomsWasteKg: wastageKg,
         remarks: z.string().trim().max(500).optional(),
     })
