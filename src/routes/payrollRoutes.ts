@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { distributeMarketValueHandler, getPayrollSummaryHandler, grantSalaryAdvanceHandler, grantMarketValueDeductionHandler, grantOtherDeductionHandler, savePayrollRecordsHandler, updatePayrollRecordHandler, deletePayrollRecordHandler, getSavedPayrollRecordsHandler, getMarketValueAllocationsHandler, getSalaryAdvancesHandler } from '../controllers/payrollController.js';
+import { distributeMarketValueHandler, getPayrollSummaryHandler, grantSalaryAdvanceHandler, updateSalaryAdvanceHandler, deleteSalaryAdvanceHandler, grantMarketValueDeductionHandler, grantOtherDeductionHandler, savePayrollRecordsHandler, updatePayrollRecordHandler, deletePayrollRecordHandler, getSavedPayrollRecordsHandler, getMarketValueAllocationsHandler, getSalaryAdvancesHandler } from '../controllers/payrollController.js';
 
 const router = Router();
 
@@ -10,6 +10,8 @@ router.post('/market-value-deduction', grantMarketValueDeductionHandler);
 router.post('/other-deduction', grantOtherDeductionHandler);
 router.post('/advance', grantSalaryAdvanceHandler);
 router.get('/advance', getSalaryAdvancesHandler);
+router.patch('/advance/:id', updateSalaryAdvanceHandler);
+router.delete('/advance/:id', deleteSalaryAdvanceHandler);
 router.post('/records', savePayrollRecordsHandler);
 router.get('/records', getSavedPayrollRecordsHandler);
 router.patch('/records/:employeeId', updatePayrollRecordHandler);

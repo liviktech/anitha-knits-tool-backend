@@ -1,5 +1,6 @@
 import type pg from 'pg';
 import { query } from '../db/query.js';
+import { ApiError } from '../utils/ApiError.js';
 
 export interface MarketValueDistributionRow {
     id: string;
@@ -112,6 +113,36 @@ export async function findAllSalaryAdvances(companyId: string): Promise<SalaryAd
         [companyId],
     );
     return result.rows;
+}
+
+export async function updateSalaryAdvance(input: {
+    id: string;
+    companyId: string;
+    amount: number;
+    effectiveDate: Date;
+    repaymentMethod: string;
+    totalMonths: number | null;
+    emiAmount: number | null;
+    actor: string;
+}): Promise<SalaryAdvanceRow> {
+    const result = await query<SalaryAdvanceRow>(
+        `UPDATE salary_advances
+         SET amount = $1, effective_date = $2, repayment_method = $3, total_months = $4, emi_amount = $5,
+             updated_at = now(), updated_by = $6
+         WHERE id = $7 AND company_id = $8
+         RETURNING id, company_id AS "companyId", employee_id AS "employeeId", amount, effective_date AS "effectiveDate",
+                   repayment_method AS "repaymentMethod", total_months AS "totalMonths", emi_amount AS "emiAmount",
+                   created_at AS "createdAt", created_by AS "createdBy", updated_at AS "updatedAt", updated_by AS "updatedBy"`,
+        [input.amount, input.effectiveDate, input.repaymentMethod, input.totalMonths, input.emiAmount, input.actor, input.id, input.companyId],
+    );
+    const row = result.rows[0];
+    if (!row) throw new ApiError(404, 'Salary advance not found');
+    return row;
+}
+
+export async function deleteSalaryAdvance(companyId: string, id: string): Promise<void> {
+    const result = await query('DELETE FROM salary_advances WHERE id = $1 AND company_id = $2', [id, companyId]);
+    if (result.rowCount === 0) throw new ApiError(404, 'Salary advance not found');
 }
 
 export interface MarketValueDeductionRow {

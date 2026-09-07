@@ -17,6 +17,20 @@ export const grantSalaryAdvanceSchema = z.object({
   { message: 'totalMonths is required when repaymentMethod is emi', path: ['totalMonths'] }
 );
 
+export const updateSalaryAdvanceSchema = z.object({
+  amount: z.number().positive(),
+  effectiveDate: z.string(),
+  repaymentMethod: z.enum(['single', 'emi']),
+  totalMonths: z.number().int().min(2).max(36).optional(),
+}).refine(
+  (data) => data.repaymentMethod !== 'emi' || data.totalMonths !== undefined,
+  { message: 'totalMonths is required when repaymentMethod is emi', path: ['totalMonths'] }
+);
+
+export const salaryAdvanceIdParamsSchema = z.object({
+  id: z.string().uuid(),
+});
+
 export const grantMarketValueDeductionSchema = z.object({
   employeeId: z.string().uuid(),
   amount: z.number().positive(),
