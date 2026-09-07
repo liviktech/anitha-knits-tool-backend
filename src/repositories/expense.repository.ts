@@ -1,17 +1,26 @@
 import type pg from 'pg';
 import { query, queryOne } from '../db/query.js';
 import { withReadClient } from '../db/transaction.js';
+import { formatDateOnly } from '../utils/dateOnly.js';
 
 export interface ExpenseRow {
     id: string;
     expenseId: string;
-    date: Date;
+    date: string; // 'YYYY-MM-DD' — see formatDateOnly for why this isn't a raw Date
     expenseName: string;
     amount: number;
     createdAt: Date;
     createdBy: string;
     updatedAt: Date;
     updatedBy: string | null;
+}
+
+interface RawExpenseRow extends Omit<ExpenseRow, 'date'> {
+    date: Date;
+}
+
+function mapExpenseRow(row: RawExpenseRow): ExpenseRow {
+    return { ...row, date: formatDateOnly(row.date) };
 }
 
 const EXPENSE_COLUMNS_SQL = `
@@ -29,7 +38,7 @@ export async function insertExpense(
     client: pg.PoolClient,
     input: { companyId: string; expenseId: string; date: Date; expenseName: string; amount: number; actor: string },
 ): Promise<ExpenseRow> {
-    const result = await client.query<ExpenseRow>(
+    const result = await client.query<RawExpenseRow>(
         `INSERT INTO expenses (id, company_id, expense_id, date, expense_name, amount, created_by, updated_at)
          VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, now())
          RETURNING ${EXPENSE_COLUMNS_SQL}`,
@@ -37,7 +46,7 @@ export async function insertExpense(
     );
     const row = result.rows[0];
     if (!row) throw new Error('Insert into expenses returned no row');
-    return row;
+    return mapExpenseRow(row);
 }
 
 export interface ListExpensesFilter {
@@ -69,19 +78,20 @@ export async function listExpenses(
     const whereSql = `WHERE ${conditions.join(' AND ')}`;
 
     return withReadClient(async (client) => {
-        const rowsResult = await client.query<ExpenseRow>(
+        const rowsResult = await client.query<RawExpenseRow>(
             `SELECT ${EXPENSE_COLUMNS_SQL} FROM expenses ${whereSql}
              ORDER BY date DESC, created_at DESC
              LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
             [...values, take, skip],
         );
         const countResult = await client.query<{ count: string }>(`SELECT COUNT(*)::text AS count FROM expenses ${whereSql}`, values);
-        return { rows: rowsResult.rows, total: Number(countResult.rows[0]?.count ?? 0) };
+        return { rows: rowsResult.rows.map(mapExpenseRow), total: Number(countResult.rows[0]?.count ?? 0) };
     });
 }
 
 export async function findExpenseById(id: string, companyId: string): Promise<ExpenseRow | null> {
-    return queryOne<ExpenseRow>(`SELECT ${EXPENSE_COLUMNS_SQL} FROM expenses WHERE id = $1 AND company_id = $2`, [id, companyId]);
+    const row = await queryOne<RawExpenseRow>(`SELECT ${EXPENSE_COLUMNS_SQL} FROM expenses WHERE id = $1 AND company_id = $2`, [id, companyId]);
+    return row ? mapExpenseRow(row) : null;
 }
 
 export async function existsExpenseInCompany(id: string, companyId: string): Promise<boolean> {
@@ -110,12 +120,12 @@ export async function updateExpense(id: string, patch: UpdateExpensePatch, actor
     values.push(actor);
     sets.push(`updated_by = $${values.length}`);
     values.push(id);
-    const row = await queryOne<ExpenseRow>(
+    const row = await queryOne<RawExpenseRow>(
         `UPDATE expenses SET ${sets.join(', ')}, updated_at = now() WHERE id = $${values.length} RETURNING ${EXPENSE_COLUMNS_SQL}`,
         values,
     );
     if (!row) throw new Error(`Update on expenses returned no row for id ${id}`);
-    return row;
+    return mapExpenseRow(row);
 }
 
 export async function deleteExpense(id: string): Promise<void> {
