@@ -3,7 +3,7 @@ import { ProductionType } from '../types/enums.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
 import { roundKg } from '../utils/decimal.js';
 import { formatDateOnly } from '../utils/dateOnly.js';
-import { assertColorExists, assertSizeExists } from './masterDataService.js';
+import { assertColorExists, assertSizeExists, assertChemicalExists } from './masterDataService.js';
 import type { CreateLoadSentInput, UpdateLoadSentInput, ListLoadSentQuery } from '../validations/loadSentValidation.js';
 import {
     createLoadSent as createLoadSentRepo,
@@ -24,13 +24,18 @@ function mapLoadSentRecord(record: LoadSentRecordRow) {
 }
 
 export async function createLoadSent(input: CreateLoadSentInput, companyId: string, actor: string) {
-    await Promise.all([assertColorExists(input.colorId, companyId), assertSizeExists(input.sizeId, companyId)]);
+    await Promise.all([
+        assertColorExists(input.colorId, companyId),
+        assertSizeExists(input.sizeId, companyId),
+        assertChemicalExists(input.chemicalId, companyId),
+    ]);
 
     const record = await createLoadSentRepo({
         companyId,
         productionDate: input.date ?? new Date(),
         colorId: input.colorId,
         sizeId: input.sizeId,
+        chemicalId: input.chemicalId,
         type: input.type,
         actor,
         fabricWeight: input.fabricWeight,
@@ -67,6 +72,7 @@ export async function updateLoadSent(id: string, input: UpdateLoadSentInput, com
     await Promise.all([
         input.colorId ? assertColorExists(input.colorId, companyId) : undefined,
         input.sizeId ? assertSizeExists(input.sizeId, companyId) : undefined,
+        input.chemicalId ? assertChemicalExists(input.chemicalId, companyId) : undefined,
     ]);
 
     const fabricWeight = input.fabricWeight !== undefined ? input.fabricWeight : existing.fabricWeight;
@@ -75,11 +81,13 @@ export async function updateLoadSent(id: string, input: UpdateLoadSentInput, com
     const totalWastageWeight = fwWeight + bwWeight;
     const driverName = input.driverName !== undefined ? input.driverName : existing.driverName;
     const vehicleNo = input.vehicleNo !== undefined ? input.vehicleNo : existing.vehicleNo;
+    const chemicalId = input.chemicalId !== undefined ? input.chemicalId : existing.chemicalId;
 
     const record = await updateLoadSentRepo(id, {
         productionDate: input.date,
         colorId: input.colorId,
         sizeId: input.sizeId,
+        chemicalId,
         actor,
         fabricWeight,
         fwWeight,
@@ -134,6 +142,7 @@ export async function getLoadSentSummaryByDateRange(
         id: row.id,
         color: { id: row.colorId, name: row.colorName },
         size: { id: row.sizeId, name: row.sizeName },
+        chemical: row.chemicalId ? { id: row.chemicalId, name: row.chemicalName! } : null,
         productionDate: formatDateOnly(row.productionDate),
         loadSent: {
             fabricWeight: row.fabricWeight,
@@ -201,6 +210,7 @@ export async function getStockBalance(companyId: string, type: ProductionType = 
         {
             color: { id: string; name: string };
             size: { id: string; name: string };
+            chemical: { id: string; name: string } | null;
             fabricCheckingOutputKg: number;
             loadSentFabricWeightKg: number;
             availableFabricStockKg: number;
@@ -213,12 +223,25 @@ export async function getStockBalance(companyId: string, type: ProductionType = 
         }
     >();
 
-    function getOrCreate(colorId: string, sizeId: string, color: { id: string; name: string }, size: { id: string; name: string }) {
-        const key = `${colorId}_${sizeId}`;
+    // Keyed by color+size+chemical (not just color+size) so a color used with more than one
+    // chemical in the period shows as separate stock rows instead of a single blended total.
+    // Load Sent's own chemical (via load_sent.chemical_id) is independent of Fabric Checking's
+    // (via fabric_check_details.chemical_id) — there's no FK tying a delivery back to the batch
+    // it came from, so a mismatch between the two just produces its own (color,size,chemical) row.
+    function getOrCreate(
+        colorId: string,
+        sizeId: string,
+        chemicalId: string | null,
+        color: { id: string; name: string },
+        size: { id: string; name: string },
+        chemical: { id: string; name: string } | null,
+    ) {
+        const key = `${colorId}_${sizeId}_${chemicalId ?? 'null'}`;
         if (!stockMap.has(key)) {
             stockMap.set(key, {
                 color,
                 size,
+                chemical,
                 fabricCheckingOutputKg: 0,
                 loadSentFabricWeightKg: 0,
                 availableFabricStockKg: 0,
@@ -234,12 +257,14 @@ export async function getStockBalance(companyId: string, type: ProductionType = 
     }
 
     for (const row of fabricCheckingRows) {
-        const entry = getOrCreate(row.colorId, row.sizeId, { id: row.colorId, name: row.colorName }, { id: row.sizeId, name: row.sizeName });
+        const chemical = row.chemicalId ? { id: row.chemicalId, name: row.chemicalName! } : null;
+        const entry = getOrCreate(row.colorId, row.sizeId, row.chemicalId, { id: row.colorId, name: row.colorName }, { id: row.sizeId, name: row.sizeName }, chemical);
         entry.fabricCheckingOutputKg += row.outputKg ?? 0;
     }
 
     for (const row of wastageRows) {
-        const entry = getOrCreate(row.colorId, row.sizeId, { id: row.colorId, name: row.colorName }, { id: row.sizeId, name: row.sizeName });
+        const chemical = row.chemicalId ? { id: row.chemicalId, name: row.chemicalName! } : null;
+        const entry = getOrCreate(row.colorId, row.sizeId, row.chemicalId, { id: row.colorId, name: row.colorName }, { id: row.sizeId, name: row.sizeName }, chemical);
         if (row.wastageTypeCode === 'FW') {
             entry.wastageFwGeneratedKg += row.quantityKg;
         } else if (row.wastageTypeCode === 'BW') {
@@ -248,7 +273,8 @@ export async function getStockBalance(companyId: string, type: ProductionType = 
     }
 
     for (const row of loadSentRows) {
-        const entry = getOrCreate(row.colorId, row.sizeId, { id: row.colorId, name: row.colorName }, { id: row.sizeId, name: row.sizeName });
+        const chemical = row.chemicalId ? { id: row.chemicalId, name: row.chemicalName! } : null;
+        const entry = getOrCreate(row.colorId, row.sizeId, row.chemicalId, { id: row.colorId, name: row.colorName }, { id: row.sizeId, name: row.sizeName }, chemical);
         entry.loadSentFabricWeightKg += row.fabricWeight;
         entry.loadSentFwWeightKg += row.fwWeight;
         entry.loadSentBwWeightKg += row.bwWeight;
