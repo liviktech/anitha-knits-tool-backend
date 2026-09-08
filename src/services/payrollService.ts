@@ -2,6 +2,7 @@ import { withTransaction } from '../db/transaction.js';
 import { ApiError } from '../utils/ApiError.js';
 import {
     deletePayrollRecords,
+    deleteSalaryAdvance as deleteSalaryAdvanceRepo,
     deleteSinglePayrollRecord,
     findActiveEmployeesWithSalary,
     findAllMarketValueDeductions,
@@ -18,6 +19,7 @@ import {
     insertPayrollRecords,
     insertSalaryAdvance,
     syncPayrollRecordOtherDeduction,
+    updateSalaryAdvance as updateSalaryAdvanceRepo,
     upsertPayrollRecord,
 } from '../repositories/payroll.repository.js';
 
@@ -130,6 +132,32 @@ export const grantSalaryAdvance = async (
         emiAmount,
         actor: userId,
     });
+};
+
+export const updateSalaryAdvance = async (
+    companyId: string,
+    userId: string,
+    id: string,
+    data: { amount: number; effectiveDate: string; repaymentMethod: 'single' | 'emi'; totalMonths?: number }
+) => {
+    const isEmi = data.repaymentMethod === 'emi';
+    const emiAmount = isEmi ? roundMoney(data.amount / data.totalMonths!) : null;
+
+    return updateSalaryAdvanceRepo({
+        id,
+        companyId,
+        amount: data.amount,
+        effectiveDate: new Date(data.effectiveDate),
+        repaymentMethod: data.repaymentMethod,
+        totalMonths: isEmi ? data.totalMonths! : null,
+        emiAmount,
+        actor: userId,
+    });
+};
+
+export const deleteSalaryAdvance = async (companyId: string, id: string) => {
+    await deleteSalaryAdvanceRepo(companyId, id);
+    return { message: 'Salary advance deleted successfully' };
 };
 
 /**

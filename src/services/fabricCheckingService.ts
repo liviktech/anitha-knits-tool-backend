@@ -282,9 +282,27 @@ export type FabricProductionColorSummary = {
     total: number;
 };
 
+export type FabricProductionSizeSummary = {
+    size: { id: string; name: string };
+    production: number;
+    fwWasteKg: number;
+    bwWasteKg: number;
+    total: number;
+};
+
+export type FabricProductionChemicalSummary = {
+    chemical: { id: string; name: string };
+    production: number;
+    fwWasteKg: number;
+    bwWasteKg: number;
+    total: number;
+};
+
 export type FabricProductionSummary = {
     byVariant: FabricProductionVariantSummary[];
     byColor: FabricProductionColorSummary[];
+    bySize: FabricProductionSizeSummary[];
+    byChemical: FabricProductionChemicalSummary[];
     overall: { fabricInputKg: number; outputKg: number };
 };
 
@@ -319,6 +337,8 @@ export async function getFabricProductionSummaryByDateRange(
 
     const byVariantMap = new Map<string, FabricProductionVariantSummary>();
     const byColorMap = new Map<string, FabricProductionColorSummary>();
+    const bySizeMap = new Map<string, FabricProductionSizeSummary>();
+    const byChemicalMap = new Map<string, FabricProductionChemicalSummary>();
     const overall = { fabricInputKg: 0, outputKg: 0 };
 
     for (const row of rows) {
@@ -355,6 +375,27 @@ export async function getFabricProductionSummaryByDateRange(
         colorEntry.production += outputKg;
         colorEntry.fwWasteKg += fw;
         colorEntry.bwWasteKg += bw;
+
+        let sizeEntry = bySizeMap.get(size.id);
+        if (!sizeEntry) {
+            sizeEntry = { size, production: 0, fwWasteKg: 0, bwWasteKg: 0, total: 0 };
+            bySizeMap.set(size.id, sizeEntry);
+        }
+        sizeEntry.production += outputKg;
+        sizeEntry.fwWasteKg += fw;
+        sizeEntry.bwWasteKg += bw;
+
+        if (row.chemicalId) {
+            const chemical = { id: row.chemicalId, name: row.chemicalName! };
+            let chemicalEntry = byChemicalMap.get(chemical.id);
+            if (!chemicalEntry) {
+                chemicalEntry = { chemical, production: 0, fwWasteKg: 0, bwWasteKg: 0, total: 0 };
+                byChemicalMap.set(chemical.id, chemicalEntry);
+            }
+            chemicalEntry.production += outputKg;
+            chemicalEntry.fwWasteKg += fw;
+            chemicalEntry.bwWasteKg += bw;
+        }
     }
 
     return {
@@ -367,6 +408,20 @@ export async function getFabricProductionSummaryByDateRange(
             total: roundKg(entry.outputKg + entry.fwWasteKg + entry.bwWasteKg),
         })),
         byColor: Array.from(byColorMap.values()).map((entry) => ({
+            ...entry,
+            production: roundKg(entry.production),
+            fwWasteKg: roundKg(entry.fwWasteKg),
+            bwWasteKg: roundKg(entry.bwWasteKg),
+            total: roundKg(entry.production + entry.fwWasteKg + entry.bwWasteKg),
+        })),
+        bySize: Array.from(bySizeMap.values()).map((entry) => ({
+            ...entry,
+            production: roundKg(entry.production),
+            fwWasteKg: roundKg(entry.fwWasteKg),
+            bwWasteKg: roundKg(entry.bwWasteKg),
+            total: roundKg(entry.production + entry.fwWasteKg + entry.bwWasteKg),
+        })),
+        byChemical: Array.from(byChemicalMap.values()).map((entry) => ({
             ...entry,
             production: roundKg(entry.production),
             fwWasteKg: roundKg(entry.fwWasteKg),

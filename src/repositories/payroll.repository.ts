@@ -1,5 +1,6 @@
 import type pg from 'pg';
 import { query } from '../db/query.js';
+import { ApiError } from '../utils/ApiError.js';
 
 export interface MarketValueDistributionRow {
     id: string;
@@ -92,10 +93,9 @@ export async function findSalaryAdvancesWithEmployee(companyId: string): Promise
         `SELECT sa.id, sa.company_id AS "companyId", sa.employee_id AS "employeeId", sa.amount, sa.effective_date AS "effectiveDate",
                 sa.repayment_method AS "repaymentMethod", sa.total_months AS "totalMonths", sa.emi_amount AS "emiAmount",
                 sa.created_at AS "createdAt", sa.created_by AS "createdBy", sa.updated_at AS "updatedAt", sa.updated_by AS "updatedBy",
-                u.name AS "employeeName", ed.custom_user_id AS "customUserId"
+                e.name AS "employeeName", e.custom_user_id AS "customUserId"
          FROM salary_advances sa
-         JOIN users u ON u.id = sa.employee_id
-         LEFT JOIN employee_details ed ON ed.user_id = u.id
+         JOIN employees e ON e.id = sa.employee_id
          WHERE sa.company_id = $1
          ORDER BY sa.effective_date DESC`,
         [companyId],
@@ -112,6 +112,36 @@ export async function findAllSalaryAdvances(companyId: string): Promise<SalaryAd
         [companyId],
     );
     return result.rows;
+}
+
+export async function updateSalaryAdvance(input: {
+    id: string;
+    companyId: string;
+    amount: number;
+    effectiveDate: Date;
+    repaymentMethod: string;
+    totalMonths: number | null;
+    emiAmount: number | null;
+    actor: string;
+}): Promise<SalaryAdvanceRow> {
+    const result = await query<SalaryAdvanceRow>(
+        `UPDATE salary_advances
+         SET amount = $1, effective_date = $2, repayment_method = $3, total_months = $4, emi_amount = $5,
+             updated_at = now(), updated_by = $6
+         WHERE id = $7 AND company_id = $8
+         RETURNING id, company_id AS "companyId", employee_id AS "employeeId", amount, effective_date AS "effectiveDate",
+                   repayment_method AS "repaymentMethod", total_months AS "totalMonths", emi_amount AS "emiAmount",
+                   created_at AS "createdAt", created_by AS "createdBy", updated_at AS "updatedAt", updated_by AS "updatedBy"`,
+        [input.amount, input.effectiveDate, input.repaymentMethod, input.totalMonths, input.emiAmount, input.actor, input.id, input.companyId],
+    );
+    const row = result.rows[0];
+    if (!row) throw new ApiError(404, 'Salary advance not found');
+    return row;
+}
+
+export async function deleteSalaryAdvance(companyId: string, id: string): Promise<void> {
+    const result = await query('DELETE FROM salary_advances WHERE id = $1 AND company_id = $2', [id, companyId]);
+    if (result.rowCount === 0) throw new ApiError(404, 'Salary advance not found');
 }
 
 export interface MarketValueDeductionRow {
@@ -232,10 +262,9 @@ export interface ActiveEmployeeWithSalaryRow {
 
 export async function findActiveEmployeesWithSalary(companyId: string): Promise<ActiveEmployeeWithSalaryRow[]> {
     const result = await query<ActiveEmployeeWithSalaryRow>(
-        `SELECT u.id, u.name, ed.salary, ed.custom_user_id AS "customUserId"
-         FROM users u
-         LEFT JOIN employee_details ed ON ed.user_id = u.id
-         WHERE u.company_id = $1 AND u.is_active = true`,
+        `SELECT e.id, e.name, e.salary, e.custom_user_id AS "customUserId"
+         FROM employees e
+         WHERE e.company_id = $1 AND e.is_active = true`,
         [companyId],
     );
     return result.rows;

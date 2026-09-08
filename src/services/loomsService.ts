@@ -214,9 +214,25 @@ export type LoomsProductionColorSummary = {
     total: number;
 };
 
+export type LoomsProductionSizeSummary = {
+    size: { id: string; name: string };
+    production: number;
+    waste: number;
+    total: number;
+};
+
+export type LoomsProductionChemicalSummary = {
+    chemical: { id: string; name: string };
+    production: number;
+    waste: number;
+    total: number;
+};
+
 export type LoomsProductionSummary = {
     byVariant: LoomsProductionVariantSummary[];
     byColor: LoomsProductionColorSummary[];
+    bySize: LoomsProductionSizeSummary[];
+    byChemical: LoomsProductionChemicalSummary[];
     overall: { production: number };
 };
 
@@ -241,6 +257,8 @@ export async function getLoomsProductionSummaryByDateRange(
 
     const byVariantMap = new Map<string, LoomsProductionVariantSummary>();
     const byColorMap = new Map<string, LoomsProductionColorSummary>();
+    const bySizeMap = new Map<string, LoomsProductionSizeSummary>();
+    const byChemicalMap = new Map<string, LoomsProductionChemicalSummary>();
     const overall = { production: 0 };
 
     for (const row of rows) {
@@ -268,6 +286,25 @@ export async function getLoomsProductionSummaryByDateRange(
         }
         colorEntry.production += production;
         colorEntry.waste += waste;
+
+        let sizeEntry = bySizeMap.get(size.id);
+        if (!sizeEntry) {
+            sizeEntry = { size, production: 0, waste: 0, total: 0 };
+            bySizeMap.set(size.id, sizeEntry);
+        }
+        sizeEntry.production += production;
+        sizeEntry.waste += waste;
+
+        if (row.chemicalId) {
+            const chemical = { id: row.chemicalId, name: row.chemicalName! };
+            let chemicalEntry = byChemicalMap.get(chemical.id);
+            if (!chemicalEntry) {
+                chemicalEntry = { chemical, production: 0, waste: 0, total: 0 };
+                byChemicalMap.set(chemical.id, chemicalEntry);
+            }
+            chemicalEntry.production += production;
+            chemicalEntry.waste += waste;
+        }
     }
 
     return {
@@ -278,6 +315,18 @@ export async function getLoomsProductionSummaryByDateRange(
             total: roundKg(entry.production + entry.waste),
         })),
         byColor: Array.from(byColorMap.values()).map((entry) => ({
+            ...entry,
+            production: roundKg(entry.production),
+            waste: roundKg(entry.waste),
+            total: roundKg(entry.production + entry.waste),
+        })),
+        bySize: Array.from(bySizeMap.values()).map((entry) => ({
+            ...entry,
+            production: roundKg(entry.production),
+            waste: roundKg(entry.waste),
+            total: roundKg(entry.production + entry.waste),
+        })),
+        byChemical: Array.from(byChemicalMap.values()).map((entry) => ({
             ...entry,
             production: roundKg(entry.production),
             waste: roundKg(entry.waste),

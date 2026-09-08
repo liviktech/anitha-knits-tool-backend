@@ -351,6 +351,8 @@ export interface ExtruderSummaryRow {
     colorName: string | null;
     sizeId: string | null;
     sizeName: string | null;
+    chemicalId: string | null;
+    chemicalName: string | null;
     yarnOutputKg: number | null;
 }
 
@@ -361,11 +363,13 @@ export async function findExtruderRowsForSummary(
     type: ProductionType = ProductionType.PRODUCTION,
 ): Promise<ExtruderSummaryRow[]> {
     const result = await query<ExtruderSummaryRow>(
-        `SELECT pr.id, c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName", ed.yarn_output_kg AS "yarnOutputKg"
+        `SELECT pr.id, c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName",
+                ch.id AS "chemicalId", ch.name AS "chemicalName", ed.yarn_output_kg AS "yarnOutputKg"
          FROM production_records pr
          LEFT JOIN colors c ON c.id = pr.color_id
          LEFT JOIN sizes s ON s.id = pr.size_id
          LEFT JOIN extruder_details ed ON ed.production_record_id = pr.id
+         LEFT JOIN chemicals ch ON ch.id = ed.chemical_id
          WHERE pr.company_id = $1 AND pr.stage = $2 AND pr.production_date >= $3 AND pr.production_date <= $4 AND pr.type = $5`,
         [companyId, ProductionStage.EXTRUDER, dateFrom, dateTo, type],
     );

@@ -40,10 +40,9 @@ export async function findAttendanceRecords(companyId: string, dateFrom: Date, d
     const result = await query<AttendanceQueryRow>(
         `SELECT a.id, a.company_id AS "companyId", a.employee_id AS "employeeId", a.date, a.status, a.remarks,
                 a.created_at AS "createdAt", a.created_by AS "createdBy", a.updated_at AS "updatedAt", a.updated_by AS "updatedBy",
-                u.name AS "employeeName", ed.custom_user_id AS "customUserId", ed.designation
+                e.name AS "employeeName", e.custom_user_id AS "customUserId", e.designation
          FROM attendances a
-         JOIN users u ON u.id = a.employee_id
-         LEFT JOIN employee_details ed ON ed.user_id = u.id
+         JOIN employees e ON e.id = a.employee_id
          WHERE a.company_id = $1 AND a.date >= $2 AND a.date <= $3
          ORDER BY a.date DESC`,
         [companyId, dateFrom, dateTo],

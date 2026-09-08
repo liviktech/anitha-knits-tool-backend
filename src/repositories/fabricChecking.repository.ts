@@ -324,6 +324,8 @@ export interface FabricCheckingSummaryRow {
     colorName: string | null;
     sizeId: string | null;
     sizeName: string | null;
+    chemicalId: string | null;
+    chemicalName: string | null;
     fabricInputKg: number | null;
     outputKg: number | null;
 }
@@ -336,11 +338,13 @@ export async function findFabricCheckingRowsForSummary(
 ): Promise<FabricCheckingSummaryRow[]> {
     const result = await query<FabricCheckingSummaryRow>(
         `SELECT pr.id, c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName",
+                ch.id AS "chemicalId", ch.name AS "chemicalName",
                 fcd.fabric_input_kg AS "fabricInputKg", fcd.output_kg AS "outputKg"
          FROM production_records pr
          LEFT JOIN colors c ON c.id = pr.color_id
          LEFT JOIN sizes s ON s.id = pr.size_id
          LEFT JOIN fabric_check_details fcd ON fcd.production_record_id = pr.id
+         LEFT JOIN chemicals ch ON ch.id = fcd.chemical_id
          WHERE pr.company_id = $1 AND pr.stage = $2 AND pr.production_date >= $3 AND pr.production_date <= $4 AND pr.type = $5`,
         [companyId, ProductionStage.FABRIC_CHECKING, dateFrom, dateTo, type],
     );

@@ -3,6 +3,8 @@ import { withTransaction } from '../db/transaction.js';
 import { RightAction, UserRole } from '../types/enums.js';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../utils/errors.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
+import { hashPassword } from '../utils/password.js';
+import { syncPromotedUser, demotePromotedUser, findUserForMe } from '../repositories/user.repository.js';
 import {
     bulkAssignRoleAccessToUsers,
     countRightsMatching,
@@ -11,6 +13,7 @@ import {
     deleteRoleAccessRow,
     existsRoleAccessInCompany,
     existsRoleAccessRightMatch,
+    findDefaultRoleAccessIdForRole,
     findRoleAccessById,
     findRoleAccessByIdTx,
     findUserRoleAccessId,
@@ -26,6 +29,7 @@ import type {
     AssignRoleAccessInput,
     CreateRoleAccessInput,
     ListRoleAccessQuery,
+    UnassignRoleAccessInput,
     UpdateRoleAccessInput,
 } from '../validations/roleAccessValidation.js';
 
@@ -164,12 +168,28 @@ async function resolveRoleAccessRightNames(roleAccessId: string, companyId: stri
 export async function resolveUserAccess(role: UserRole, roleAccessId: string | null, companyId: string): Promise<UserAccess | null> {
     if (role === UserRole.ADMIN) return null;
 
+    let effectiveRoleAccessId = roleAccessId;
+    if (!effectiveRoleAccessId) {
+        effectiveRoleAccessId = await findDefaultRoleAccessIdForRole(companyId, role);
+    }
+
     const [grants, rights] = await Promise.all([
-        roleAccessId ? resolveRoleAccessGrants(roleAccessId, companyId) : Promise.resolve([]),
-        roleAccessId ? resolveRoleAccessRightNames(roleAccessId, companyId) : Promise.resolve([]),
+        effectiveRoleAccessId ? resolveRoleAccessGrants(effectiveRoleAccessId, companyId) : Promise.resolve([]),
+        effectiveRoleAccessId ? resolveRoleAccessRightNames(effectiveRoleAccessId, companyId) : Promise.resolve([]),
     ]);
 
-    if (role === UserRole.MANAGER && !grants.some((g) => g.moduleCode === 'productiondetails')) {
+    if (grants.length === 0 && (role === UserRole.MANAGER || role === UserRole.SUPERVISOR)) {
+        const defaultModules = [
+            'dashboard',
+            'productiondetails',
+            'inventory',
+            'employees',
+            'expenses',
+        ];
+        for (const mCode of defaultModules) {
+            grants.push({ moduleCode: mCode, tabCode: null });
+        }
+    } else if (role === UserRole.MANAGER && !grants.some((g) => g.moduleCode === 'productiondetails')) {
         grants.push({ moduleCode: 'productiondetails', tabCode: null });
     }
 
@@ -196,8 +216,16 @@ export async function userHasModuleAction(
     action: RightAction,
     tabCode?: string,
 ): Promise<boolean> {
-    const roleAccessId = await findUserRoleAccessId(userId, companyId);
-    if (!roleAccessId) return false;
+    let roleAccessId = await findUserRoleAccessId(userId, companyId);
+    if (!roleAccessId) {
+        const user = await findUserForMe(userId, companyId);
+        if (user) {
+            roleAccessId = await findDefaultRoleAccessIdForRole(companyId, user.role);
+        }
+    }
+    if (!roleAccessId) {
+        return action !== RightAction.DELETE;
+    }
 
     return existsRoleAccessRightMatch(roleAccessId, companyId, moduleCode, action, tabCode);
 }
@@ -225,8 +253,8 @@ export async function assertModuleActionAllowed(
 }
 
 export async function assignRoleAccessToEmployees(id: string, input: AssignRoleAccessInput, companyId: string) {
-    const roleAccess = await existsRoleAccessInCompany(id, companyId);
-    if (!roleAccess) throw new NotFoundError('Role not found', 'ROLE_ACCESS_NOT_FOUND', { id });
+    const roleAccessRecord = await findRoleAccessById(id, companyId);
+    if (!roleAccessRecord) throw new NotFoundError('Role not found', 'ROLE_ACCESS_NOT_FOUND', { id });
 
     const employeeIds = Array.from(new Set(input.employeeIds));
     const employeeCount = await countUsersMatching(employeeIds, companyId);
@@ -234,5 +262,59 @@ export async function assignRoleAccessToEmployees(id: string, input: AssignRoleA
         throw new ValidationError('One or more employeeIds do not reference an existing employee for this company', 'INVALID_EMPLOYEE_ID');
     }
 
-    await bulkAssignRoleAccessToUsers(employeeIds, companyId, id);
+    const nameUpper = roleAccessRecord.roleName.toUpperCase();
+    let targetRole: UserRole | null = null;
+    if (nameUpper.includes('MANAGER')) {
+        targetRole = UserRole.MANAGER;
+    } else if (nameUpper.includes('SUPERVISOR')) {
+        targetRole = UserRole.SUPERVISOR;
+    }
+
+    await withTransaction(async (client) => {
+        for (const empId of employeeIds) {
+            if (targetRole === UserRole.MANAGER || targetRole === UserRole.SUPERVISOR) {
+                const defaultPassword = targetRole === UserRole.MANAGER ? 'manager' : 'supervisor';
+                const passwordHash = await hashPassword(defaultPassword);
+                await syncPromotedUser(client, {
+                    companyId,
+                    passwordHash,
+                    role: targetRole,
+                    employeeId: empId,
+                });
+                await client.query('UPDATE users SET role_access_id = $1 WHERE id = $2', [id, empId]);
+            } else {
+                await demotePromotedUser(client, empId);
+                await client.query('UPDATE employees SET role_access_id = $1 WHERE id = $2', [id, empId]);
+            }
+        }
+    });
+}
+
+export async function unassignRoleAccessFromEmployee(id: string, input: UnassignRoleAccessInput, companyId: string) {
+    const roleAccessRecord = await findRoleAccessById(id, companyId);
+    if (!roleAccessRecord) throw new NotFoundError('Role not found', 'ROLE_ACCESS_NOT_FOUND', { id });
+
+    const employeeCount = await countUsersMatching([input.employeeId], companyId);
+    if (employeeCount !== 1) {
+        throw new ValidationError('employeeId does not reference an existing employee for this company', 'INVALID_EMPLOYEE_ID');
+    }
+
+    const nameUpper = roleAccessRecord.roleName.toUpperCase();
+    const isPromotedRole =
+        nameUpper.includes('MANAGER') || nameUpper.includes('SUPERVISOR');
+
+    await withTransaction(async (client) => {
+        if (isPromotedRole) {
+            // Demote the manager/supervisor back to a regular employee:
+            // moves their record from users → employees with role = 'EMPLOYEE'
+            // and clears role_access_id in the process.
+            await demotePromotedUser(client, input.employeeId);
+        } else {
+            // Regular employee — just clear role_access_id
+            await client.query(
+                'UPDATE employees SET role_access_id = NULL WHERE id = $1',
+                [input.employeeId],
+            );
+        }
+    });
 }

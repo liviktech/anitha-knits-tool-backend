@@ -301,6 +301,8 @@ export interface LoomsSummaryRow {
     colorName: string | null;
     sizeId: string | null;
     sizeName: string | null;
+    chemicalId: string | null;
+    chemicalName: string | null;
     fabricOutputKg: number | null;
 }
 
@@ -311,11 +313,13 @@ export async function findLoomsRowsForSummary(
     type: ProductionType = ProductionType.PRODUCTION,
 ): Promise<LoomsSummaryRow[]> {
     const result = await query<LoomsSummaryRow>(
-        `SELECT pr.id, c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName", ld.fabric_output_kg AS "fabricOutputKg"
+        `SELECT pr.id, c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName",
+                ch.id AS "chemicalId", ch.name AS "chemicalName", ld.fabric_output_kg AS "fabricOutputKg"
          FROM production_records pr
          LEFT JOIN colors c ON c.id = pr.color_id
          LEFT JOIN sizes s ON s.id = pr.size_id
          LEFT JOIN loom_details ld ON ld.production_record_id = pr.id
+         LEFT JOIN chemicals ch ON ch.id = ld.chemical_id
          WHERE pr.company_id = $1 AND pr.stage = $2 AND pr.production_date >= $3 AND pr.production_date <= $4 AND pr.type = $5`,
         [companyId, ProductionStage.LOOMS, dateFrom, dateTo, type],
     );

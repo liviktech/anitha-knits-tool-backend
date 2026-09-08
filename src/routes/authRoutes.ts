@@ -9,6 +9,7 @@ import {
     verifyOtpLogin,
     verifyPasswordResetOtp,
     resetPassword,
+    directResetPassword,
 } from '../controllers/authController.js';
 import { requireAuth } from '../middlewares/auth.js';
 import { otpRequestLimiter } from '../middlewares/rateLimit.js';
@@ -279,5 +280,36 @@ router.post('/password/otp/verify', verifyPasswordResetOtp);
  *         description: This mobile matches more than one account across companies (AMBIGUOUS_LOGIN).
  */
 router.post('/password/reset', resetPassword);
+
+/**
+ * @openapi
+ * /api/v1/company/auth/password/reset-direct:
+ *   post:
+ *     tags: [Auth]
+ *     summary: Reset password directly without OTP verification
+ *     description: Resets the password for the account matching the given mobile number. No OTP or reset token required.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [mobile, newPassword]
+ *             properties:
+ *               mobile: { type: string }
+ *               newPassword: { type: string, minLength: 8 }
+ *     responses:
+ *       200:
+ *         description: OK. Password reset successfully.
+ *       400:
+ *         $ref: '#/components/responses/ValidationError'
+ *       401:
+ *         description: No account found for this mobile (INVALID_CREDENTIALS).
+ *       403:
+ *         description: The matched account or its company is inactive (ACCOUNT_INACTIVE).
+ *       409:
+ *         description: This mobile matches more than one account across companies (AMBIGUOUS_LOGIN).
+ */
+router.post('/password/reset-direct', directResetPassword);
 
 export default router;

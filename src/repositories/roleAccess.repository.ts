@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import { query, queryOne } from '../db/query.js';
-import { withReadClient } from '../db/transaction.js';
+import { withReadClient, withTransaction } from '../db/transaction.js';
 import type { RightAction } from '../types/enums.js';
 
 export interface RoleAccessRow {
@@ -173,6 +173,16 @@ export async function findUserRoleAccessId(userId: string, companyId: string): P
     return row ? row.roleAccessId : null;
 }
 
+export async function findDefaultRoleAccessIdForRole(companyId: string, role: string): Promise<string | null> {
+    const roleKeyword = role === 'MANAGER' ? 'Manager' : role === 'SUPERVISOR' ? 'Supervisor' : null;
+    if (!roleKeyword) return null;
+    const row = await queryOne<{ id: string }>(
+        `SELECT id FROM role_access WHERE company_id = $1 AND role_name ILIKE $2 ORDER BY created_at ASC LIMIT 1`,
+        [companyId, `%${roleKeyword}%`],
+    );
+    return row ? row.id : null;
+}
+
 /**
  * Whether `roleAccessId` includes a right granting `action` on `moduleCode` — optionally scoped to
  * `tabCode` (matches a right scoped to that exact tab OR one scoped to the whole module, tab_id null).
@@ -207,13 +217,20 @@ export async function existsRoleAccessRightMatch(
 
 export async function countUsersMatching(ids: string[], companyId: string): Promise<number> {
     if (ids.length === 0) return 0;
-    const row = await queryOne<{ count: string }>('SELECT COUNT(*)::text AS count FROM users WHERE id = ANY($1::uuid[]) AND company_id = $2', [
-        ids,
-        companyId,
-    ]);
+    const row = await queryOne<{ count: string }>(
+        `SELECT COUNT(*)::text AS count FROM (
+            SELECT id FROM employees WHERE id = ANY($1::uuid[]) AND company_id = $2
+            UNION ALL
+            SELECT id FROM users WHERE id = ANY($1::uuid[]) AND company_id = $2 AND role != 'ADMIN'
+        ) w`,
+        [ids, companyId],
+    );
     return Number(row?.count ?? 0);
 }
 
 export async function bulkAssignRoleAccessToUsers(ids: string[], companyId: string, roleAccessId: string): Promise<void> {
-    await query('UPDATE users SET role_access_id = $1 WHERE id = ANY($2::uuid[]) AND company_id = $3', [roleAccessId, ids, companyId]);
+    await withTransaction(async (client) => {
+        await client.query('UPDATE employees SET role_access_id = $1 WHERE id = ANY($2::uuid[]) AND company_id = $3', [roleAccessId, ids, companyId]);
+        await client.query('UPDATE users SET role_access_id = $1 WHERE id = ANY($2::uuid[]) AND company_id = $3', [roleAccessId, ids, companyId]);
+    });
 }

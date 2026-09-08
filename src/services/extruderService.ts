@@ -288,9 +288,29 @@ export type ExtruderProductionColorSummary = {
     total: number;
 };
 
+export type ExtruderProductionSizeSummary = {
+    size: { id: string; name: string };
+    production: number;
+    lumsKg: number;
+    yarnWasteKg: number;
+    waste: number;
+    total: number;
+};
+
+export type ExtruderProductionChemicalSummary = {
+    chemical: { id: string; name: string };
+    production: number;
+    lumsKg: number;
+    yarnWasteKg: number;
+    waste: number;
+    total: number;
+};
+
 export type ExtruderProductionSummary = {
     byVariant: ExtruderProductionVariantSummary[];
     byColor: ExtruderProductionColorSummary[];
+    bySize: ExtruderProductionSizeSummary[];
+    byChemical: ExtruderProductionChemicalSummary[];
     overall: { production: number };
 };
 
@@ -318,6 +338,8 @@ export async function getExtruderProductionSummaryByDateRange(
 
     const byVariantMap = new Map<string, ExtruderProductionVariantSummary>();
     const byColorMap = new Map<string, ExtruderProductionColorSummary>();
+    const bySizeMap = new Map<string, ExtruderProductionSizeSummary>();
+    const byChemicalMap = new Map<string, ExtruderProductionChemicalSummary>();
     const overall = { production: 0 };
 
     for (const row of rows) {
@@ -349,6 +371,27 @@ export async function getExtruderProductionSummaryByDateRange(
         colorEntry.production += production;
         colorEntry.lumsKg += lumsKg;
         colorEntry.yarnWasteKg += yarnWasteKg;
+
+        let sizeEntry = bySizeMap.get(size.id);
+        if (!sizeEntry) {
+            sizeEntry = { size, production: 0, lumsKg: 0, yarnWasteKg: 0, waste: 0, total: 0 };
+            bySizeMap.set(size.id, sizeEntry);
+        }
+        sizeEntry.production += production;
+        sizeEntry.lumsKg += lumsKg;
+        sizeEntry.yarnWasteKg += yarnWasteKg;
+
+        if (row.chemicalId) {
+            const chemical = { id: row.chemicalId, name: row.chemicalName! };
+            let chemicalEntry = byChemicalMap.get(chemical.id);
+            if (!chemicalEntry) {
+                chemicalEntry = { chemical, production: 0, lumsKg: 0, yarnWasteKg: 0, waste: 0, total: 0 };
+                byChemicalMap.set(chemical.id, chemicalEntry);
+            }
+            chemicalEntry.production += production;
+            chemicalEntry.lumsKg += lumsKg;
+            chemicalEntry.yarnWasteKg += yarnWasteKg;
+        }
     }
 
     return {
@@ -360,6 +403,22 @@ export async function getExtruderProductionSummaryByDateRange(
             total: roundKg(entry.production + entry.lumsKg + entry.yarnWasteKg),
         })),
         byColor: Array.from(byColorMap.values()).map((entry) => ({
+            ...entry,
+            production: roundKg(entry.production),
+            lumsKg: roundKg(entry.lumsKg),
+            yarnWasteKg: roundKg(entry.yarnWasteKg),
+            waste: roundKg(entry.lumsKg + entry.yarnWasteKg),
+            total: roundKg(entry.production + entry.lumsKg + entry.yarnWasteKg),
+        })),
+        bySize: Array.from(bySizeMap.values()).map((entry) => ({
+            ...entry,
+            production: roundKg(entry.production),
+            lumsKg: roundKg(entry.lumsKg),
+            yarnWasteKg: roundKg(entry.yarnWasteKg),
+            waste: roundKg(entry.lumsKg + entry.yarnWasteKg),
+            total: roundKg(entry.production + entry.lumsKg + entry.yarnWasteKg),
+        })),
+        byChemical: Array.from(byChemicalMap.values()).map((entry) => ({
             ...entry,
             production: roundKg(entry.production),
             lumsKg: roundKg(entry.lumsKg),

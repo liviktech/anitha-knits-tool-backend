@@ -39,7 +39,14 @@ export const assignRoleAccessSchema = z
     })
     .strict();
 
+export const unassignRoleAccessSchema = z
+    .object({
+        employeeId: z.string().uuid('employeeId must be a valid UUID'),
+    })
+    .strict();
+
 export type CreateRoleAccessInput = z.infer<typeof createRoleAccessSchema>;
 export type UpdateRoleAccessInput = z.infer<typeof updateRoleAccessSchema>;
 export type ListRoleAccessQuery = z.infer<typeof listRoleAccessQuerySchema>;
 export type AssignRoleAccessInput = z.infer<typeof assignRoleAccessSchema>;
+export type UnassignRoleAccessInput = z.infer<typeof unassignRoleAccessSchema>;

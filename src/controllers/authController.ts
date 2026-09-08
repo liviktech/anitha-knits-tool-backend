@@ -8,9 +8,11 @@ import {
     loginUser,
     loginUserWithOtp,
     resetUserPassword,
+    resetUserPasswordDirect,
 } from '../services/authService.js';
 import { issueResetToken, requestOtp, verifyOtp } from '../services/otpService.js';
 import {
+    directResetPasswordSchema,
     loginSchema,
     requestOtpSchema,
     resetPasswordSchema,
@@ -65,6 +67,13 @@ export const verifyPasswordResetOtp = asyncHandler(async (req: Request, res: Res
 export const resetPassword = asyncHandler(async (req: Request, res: Response) => {
     const { mobile, resetToken, newPassword } = parseOrThrow(resetPasswordSchema, req.body);
     await resetUserPassword(mobile, resetToken, newPassword);
+    sendSuccess(res, { passwordReset: true });
+});
+
+/** Direct password reset — no OTP required. Accepts mobile + newPassword and resets immediately. */
+export const directResetPassword = asyncHandler(async (req: Request, res: Response) => {
+    const { mobile, newPassword } = parseOrThrow(directResetPasswordSchema, req.body);
+    await resetUserPasswordDirect(mobile, newPassword);
     sendSuccess(res, { passwordReset: true });
 });
 

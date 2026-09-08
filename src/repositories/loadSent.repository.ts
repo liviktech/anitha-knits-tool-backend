@@ -12,6 +12,7 @@ export interface LoadSentRecordRow {
     remarks: string | null;
     color: { id: string; name: string };
     size: { id: string; name: string };
+    chemical: { id: string; name: string } | null;
     loadSent: {
         fabricWeight: number;
         fwWeight: number;
@@ -36,6 +37,8 @@ interface LoadSentQueryRow {
     colorName: string;
     sizeId: string;
     sizeName: string;
+    chemicalId: string | null;
+    chemicalName: string | null;
     fabricWeight: number | null;
     fwWeight: number | null;
     bwWeight: number | null;
@@ -51,6 +54,7 @@ interface LoadSentQueryRow {
 const LOAD_SENT_SELECT_SQL = `
     SELECT pr.id, pr.stage, pr.type, pr.production_date AS "productionDate", pr.remarks,
            c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName",
+           ch.id AS "chemicalId", ch.name AS "chemicalName",
            ls.fabric_weight AS "fabricWeight", ls.fw_weight AS "fwWeight", ls.bw_weight AS "bwWeight",
            ls.total_wastage_weight AS "totalWastageWeight", ls.driver_name AS "driverName", ls.vehicle_no AS "vehicleNo",
            pr.created_at AS "createdAt", pr.created_by AS "createdBy", pr.updated_at AS "updatedAt", pr.updated_by AS "updatedBy"
@@ -58,6 +62,7 @@ const LOAD_SENT_SELECT_SQL = `
     JOIN colors c ON c.id = pr.color_id
     JOIN sizes s ON s.id = pr.size_id
     JOIN load_sent ls ON ls.production_record_id = pr.id
+    LEFT JOIN chemicals ch ON ch.id = ls.chemical_id
 `;
 
 function toLoadSentRow(row: LoadSentQueryRow): LoadSentRecordRow {
@@ -69,6 +74,7 @@ function toLoadSentRow(row: LoadSentQueryRow): LoadSentRecordRow {
         remarks: row.remarks,
         color: { id: row.colorId, name: row.colorName },
         size: { id: row.sizeId, name: row.sizeName },
+        chemical: row.chemicalId ? { id: row.chemicalId, name: row.chemicalName! } : null,
         loadSent:
             row.fabricWeight !== null
                 ? {
@@ -92,6 +98,7 @@ export interface CreateLoadSentInputRow {
     productionDate: Date;
     colorId: string;
     sizeId: string;
+    chemicalId: string | null;
     type: string;
     actor: string;
     fabricWeight?: number;
@@ -106,19 +113,21 @@ export async function createLoadSent(input: CreateLoadSentInputRow): Promise<Loa
             VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $10, $6, now())
             RETURNING id, company_id, stage, type, production_date, color_id, size_id, remarks, created_at, created_by, updated_at, updated_by
          ), ls AS (
-            INSERT INTO load_sent (id, company_id, production_record_id, color_id, size_id, fabric_weight, driver_name, vehicle_no, created_by, updated_at)
-            SELECT gen_random_uuid(), $1, pr.id, $4, $5, $7, $8, $9, $6, now() FROM pr
-            RETURNING production_record_id, fabric_weight, fw_weight, bw_weight, total_wastage_weight, driver_name, vehicle_no
+            INSERT INTO load_sent (id, company_id, production_record_id, color_id, size_id, chemical_id, fabric_weight, driver_name, vehicle_no, created_by, updated_at)
+            SELECT gen_random_uuid(), $1, pr.id, $4, $5, $11, $7, $8, $9, $6, now() FROM pr
+            RETURNING production_record_id, chemical_id, fabric_weight, fw_weight, bw_weight, total_wastage_weight, driver_name, vehicle_no
          )
          SELECT pr.id, pr.stage, pr.type, pr.production_date AS "productionDate", pr.remarks,
                 c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName",
+                ch.id AS "chemicalId", ch.name AS "chemicalName",
                 ls.fabric_weight AS "fabricWeight", ls.fw_weight AS "fwWeight", ls.bw_weight AS "bwWeight",
                 ls.total_wastage_weight AS "totalWastageWeight", ls.driver_name AS "driverName", ls.vehicle_no AS "vehicleNo",
                 pr.created_at AS "createdAt", pr.created_by AS "createdBy", pr.updated_at AS "updatedAt", pr.updated_by AS "updatedBy"
          FROM pr
          JOIN ls ON ls.production_record_id = pr.id
          JOIN colors c ON c.id = pr.color_id
-         JOIN sizes s ON s.id = pr.size_id`,
+         JOIN sizes s ON s.id = pr.size_id
+         LEFT JOIN chemicals ch ON ch.id = ls.chemical_id`,
         [
             input.companyId,
             ProductionStage.DELIVERY,
@@ -130,6 +139,7 @@ export async function createLoadSent(input: CreateLoadSentInputRow): Promise<Loa
             input.driverName ?? null,
             input.vehicleNo ?? null,
             input.type,
+            input.chemicalId,
         ],
     );
     if (!row) throw new Error('Insert into production_records/load_sent returned no row');
@@ -175,6 +185,7 @@ export interface LoadSentExistingRow {
     productionDate: Date;
     colorId: string;
     sizeId: string;
+    chemicalId: string | null;
     fabricWeight: number;
     fwWeight: number;
     bwWeight: number;
@@ -185,6 +196,7 @@ export interface LoadSentExistingRow {
 export async function findLoadSentExisting(id: string, companyId: string): Promise<LoadSentExistingRow | null> {
     return queryOne<LoadSentExistingRow>(
         `SELECT pr.id, pr.production_date AS "productionDate", pr.color_id AS "colorId", pr.size_id AS "sizeId",
+                ls.chemical_id AS "chemicalId",
                 ls.fabric_weight AS "fabricWeight", ls.fw_weight AS "fwWeight", ls.bw_weight AS "bwWeight",
                 ls.driver_name AS "driverName", ls.vehicle_no AS "vehicleNo"
          FROM production_records pr
@@ -198,6 +210,7 @@ export interface UpdateLoadSentInputRow {
     productionDate?: Date;
     colorId?: string;
     sizeId?: string;
+    chemicalId?: string | null;
     actor: string;
     fabricWeight: number;
     fwWeight: number;
@@ -208,7 +221,7 @@ export interface UpdateLoadSentInputRow {
 }
 
 export async function updateLoadSent(id: string, input: UpdateLoadSentInputRow): Promise<LoadSentRecordRow> {
-    // ls params occupy $1-$7 (fixed, always set); pr params are appended after, so their
+    // ls params occupy $1-$8 (fixed, always set); pr params are appended after, so their
     // placeholders are computed from the running `values.length`, not a separate local count.
     const values: unknown[] = [
         input.fabricWeight,
@@ -218,6 +231,7 @@ export async function updateLoadSent(id: string, input: UpdateLoadSentInputRow):
         input.driverName,
         input.vehicleNo,
         input.actor,
+        input.chemicalId ?? null,
     ];
 
     const prSets: string[] = [];
@@ -245,12 +259,13 @@ export async function updateLoadSent(id: string, input: UpdateLoadSentInputRow):
             RETURNING id, color_id, size_id
          ), ls AS (
             UPDATE load_sent SET fabric_weight = $1, fw_weight = $2, bw_weight = $3, total_wastage_weight = $4,
-                   driver_name = $5, vehicle_no = $6, updated_by = $7, updated_at = now()
+                   driver_name = $5, vehicle_no = $6, updated_by = $7, chemical_id = $8, updated_at = now()
             WHERE production_record_id = (SELECT id FROM pr)
-            RETURNING production_record_id, fabric_weight, fw_weight, bw_weight, total_wastage_weight, driver_name, vehicle_no
+            RETURNING production_record_id, chemical_id, fabric_weight, fw_weight, bw_weight, total_wastage_weight, driver_name, vehicle_no
          )
          SELECT p.id, p.stage, p.production_date AS "productionDate", p.remarks,
                 c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName",
+                ch.id AS "chemicalId", ch.name AS "chemicalName",
                 ls.fabric_weight AS "fabricWeight", ls.fw_weight AS "fwWeight", ls.bw_weight AS "bwWeight",
                 ls.total_wastage_weight AS "totalWastageWeight", ls.driver_name AS "driverName", ls.vehicle_no AS "vehicleNo",
                 p.created_at AS "createdAt", p.created_by AS "createdBy", p.updated_at AS "updatedAt", p.updated_by AS "updatedBy"
@@ -258,6 +273,7 @@ export async function updateLoadSent(id: string, input: UpdateLoadSentInputRow):
          JOIN ls ON ls.production_record_id = p.id
          JOIN colors c ON c.id = p.color_id
          JOIN sizes s ON s.id = p.size_id
+         LEFT JOIN chemicals ch ON ch.id = ls.chemical_id
          WHERE p.id = ${idPlaceholder}`,
         values,
     );
@@ -276,6 +292,8 @@ export interface LoadSentSummaryRow {
     colorName: string;
     sizeId: string;
     sizeName: string;
+    chemicalId: string | null;
+    chemicalName: string | null;
     productionDate: Date;
     fabricWeight: number;
     fwWeight: number;
@@ -290,12 +308,14 @@ export async function findLoadSentRowsForSummary(
     type: ProductionType = ProductionType.PRODUCTION,
 ): Promise<LoadSentSummaryRow[]> {
     const result = await query<LoadSentSummaryRow>(
-        `SELECT pr.id, c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName", pr.production_date AS "productionDate",
+        `SELECT pr.id, c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName",
+                ch.id AS "chemicalId", ch.name AS "chemicalName", pr.production_date AS "productionDate",
                 ls.fabric_weight AS "fabricWeight", ls.fw_weight AS "fwWeight", ls.bw_weight AS "bwWeight", ls.total_wastage_weight AS "totalWastageWeight"
          FROM production_records pr
          JOIN colors c ON c.id = pr.color_id
          JOIN sizes s ON s.id = pr.size_id
          JOIN load_sent ls ON ls.production_record_id = pr.id
+         LEFT JOIN chemicals ch ON ch.id = ls.chemical_id
          WHERE pr.company_id = $1 AND pr.stage = $2 AND pr.production_date >= $3 AND pr.production_date <= $4 AND pr.type = $5
          ORDER BY pr.production_date DESC, pr.created_at DESC`,
         [companyId, ProductionStage.DELIVERY, dateFrom, dateTo, type],
@@ -308,6 +328,8 @@ export interface StockFabricCheckingRow {
     colorName: string;
     sizeId: string;
     sizeName: string;
+    chemicalId: string | null;
+    chemicalName: string | null;
     outputKg: number | null;
 }
 
@@ -316,11 +338,13 @@ export async function findFabricCheckingRowsForStock(
     type: ProductionType = ProductionType.PRODUCTION,
 ): Promise<StockFabricCheckingRow[]> {
     const result = await query<StockFabricCheckingRow>(
-        `SELECT c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName", fcd.output_kg AS "outputKg"
+        `SELECT c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName",
+                ch.id AS "chemicalId", ch.name AS "chemicalName", fcd.output_kg AS "outputKg"
          FROM production_records pr
          JOIN colors c ON c.id = pr.color_id
          JOIN sizes s ON s.id = pr.size_id
          LEFT JOIN fabric_check_details fcd ON fcd.production_record_id = pr.id
+         LEFT JOIN chemicals ch ON ch.id = fcd.chemical_id
          WHERE pr.company_id = $1 AND pr.stage = $2 AND pr.type = $3`,
         [companyId, ProductionStage.FABRIC_CHECKING, type],
     );
@@ -332,6 +356,8 @@ export interface StockWastageRow {
     colorName: string;
     sizeId: string;
     sizeName: string;
+    chemicalId: string | null;
+    chemicalName: string | null;
     quantityKg: number;
     wastageTypeCode: string;
 }
@@ -342,12 +368,15 @@ export async function findWastageRowsForStock(
 ): Promise<StockWastageRow[]> {
     const result = await query<StockWastageRow>(
         `SELECT c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName",
+                ch.id AS "chemicalId", ch.name AS "chemicalName",
                 wr.quantity_kg AS "quantityKg", wt.code AS "wastageTypeCode"
          FROM wastage_records wr
          JOIN wastage_types wt ON wt.id = wr.wastage_type_id
          JOIN production_records pr ON pr.id = wr.production_record_id
          JOIN colors c ON c.id = pr.color_id
          JOIN sizes s ON s.id = pr.size_id
+         LEFT JOIN fabric_check_details fcd ON fcd.production_record_id = pr.id
+         LEFT JOIN chemicals ch ON ch.id = fcd.chemical_id
          WHERE wr.company_id = $1 AND pr.stage = $2 AND pr.type = $3`,
         [companyId, ProductionStage.FABRIC_CHECKING, type],
     );
@@ -359,6 +388,8 @@ export interface StockLoadSentRow {
     colorName: string;
     sizeId: string;
     sizeName: string;
+    chemicalId: string | null;
+    chemicalName: string | null;
     fabricWeight: number;
     fwWeight: number;
     bwWeight: number;
@@ -370,11 +401,13 @@ export async function findLoadSentRowsForStock(
 ): Promise<StockLoadSentRow[]> {
     const result = await query<StockLoadSentRow>(
         `SELECT c.id AS "colorId", c.name AS "colorName", s.id AS "sizeId", s.name AS "sizeName",
+                ch.id AS "chemicalId", ch.name AS "chemicalName",
                 ls.fabric_weight AS "fabricWeight", ls.fw_weight AS "fwWeight", ls.bw_weight AS "bwWeight"
          FROM load_sent ls
          JOIN production_records pr ON pr.id = ls.production_record_id
          JOIN colors c ON c.id = ls.color_id
          JOIN sizes s ON s.id = ls.size_id
+         LEFT JOIN chemicals ch ON ch.id = ls.chemical_id
          WHERE ls.company_id = $1 AND pr.type = $2`,
         [companyId, type],
     );

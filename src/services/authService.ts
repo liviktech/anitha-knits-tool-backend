@@ -279,6 +279,30 @@ export async function resetUserPassword(mobile: string, resetToken: string, newP
 }
 
 /**
+ * Direct password reset — no OTP or reset token required. Looks up the account by mobile,
+ * validates it is active, and immediately sets the new password. Used by the simplified
+ * forgot-password flow that bypasses OTP verification.
+ */
+export async function resetUserPasswordDirect(mobile: string, newPassword: string): Promise<void> {
+  const candidates = await findLoginCandidatesByMobile(mobile);
+  if (candidates.length === 0) {
+    // Generic error — never reveal whether the mobile is registered.
+    throw new UnauthorizedError('No account found for this mobile number', 'INVALID_CREDENTIALS');
+  }
+  if (candidates.length > 1) {
+    throw new ConflictError('Multiple accounts match this mobile number; contact support to sign in', 'AMBIGUOUS_LOGIN');
+  }
+
+  const user = candidates[0]!;
+  if (!user.isActive || !user.companyIsActive) {
+    throw new ForbiddenError('This account is inactive', 'ACCOUNT_INACTIVE');
+  }
+
+  const passwordHash = await hashPassword(newPassword);
+  await updatePasswordHash(user.id, passwordHash);
+}
+
+/**
  * Re-resolves the current session's profile + access from scratch — used by GET /me so a
  * client can pick up a RoleAccess change (or reassignment) made after the user last logged in,
  * without needing a fresh login. Deliberately not baked into the JWT for this reason.

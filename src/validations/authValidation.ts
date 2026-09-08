@@ -104,6 +104,13 @@ export const resetPasswordSchema = z
     })
     .strict();
 
+export const directResetPasswordSchema = z
+    .object({
+        mobile: mobileSchema,
+        newPassword: z.string().min(8).max(128),
+    })
+    .strict();
+
 export type SignupInput = z.infer<typeof signupSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type ListCompaniesQuery = z.infer<typeof listCompaniesQuerySchema>;
@@ -113,3 +120,4 @@ export type RequestOtpInput = z.infer<typeof requestOtpSchema>;
 export type VerifyOtpLoginInput = z.infer<typeof verifyOtpLoginSchema>;
 export type VerifyOtpResetInput = z.infer<typeof verifyOtpResetSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+export type DirectResetPasswordInput = z.infer<typeof directResetPasswordSchema>;
