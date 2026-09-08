@@ -204,9 +204,9 @@ export async function insertEmployeeDetails(
 }
 
 export async function countActiveUsersByRole(companyId: string, role: UserRole): Promise<number> {
-    const table = role === 'EMPLOYEE' ? 'employees' : 'users';
+    // All roles (EMPLOYEE, MANAGER, SUPERVISOR) now live in the employees table.
     const row = await queryOne<{ count: string }>(
-        `SELECT COUNT(*)::text AS count FROM ${table} WHERE company_id = $1 AND role = $2 AND is_active = true`,
+        `SELECT COUNT(*)::text AS count FROM employees WHERE company_id = $1 AND role = $2 AND is_active = true`,
         [companyId, role],
     );
     return Number(row?.count ?? 0);
@@ -243,19 +243,6 @@ const WORKFORCE_UNION_SQL = `
            e.aadhaar_document_uploaded_at AS "aadhaarDocumentUploadedAt"
     FROM employees e
     LEFT JOIN role_access ra ON ra.id = e.role_access_id
-
-    UNION ALL
-
-    SELECT u.id, u.company_id AS "companyId", u.name, u.mobile, u.role, u.is_active AS "isActive",
-           u.created_at AS "createdAt", u.updated_at AS "updatedAt",
-           u.role_access_id AS "roleAccessId", ra.role_name AS "roleAccessRoleName",
-           NULL AS "customUserId", u.role::text AS "designation", NULL AS "address", NULL AS "gender", NULL AS "salary",
-           NULL AS "aadhaarNumber", NULL AS "joiningDate", NULL AS "photoUrl",
-           NULL AS "aadhaarDocumentUrl", NULL AS "documentName",
-           NULL AS "aadhaarDocumentUploadedAt"
-    FROM users u
-    LEFT JOIN role_access ra ON ra.id = u.role_access_id
-    WHERE u.role IN ('MANAGER', 'SUPERVISOR')
 `;
 
 interface EmployeeQueryRow {
@@ -387,9 +374,9 @@ export async function findEmployeeById(id: string, companyId: string, managedRol
 }
 
 export async function existsUserWithRole(id: string, companyId: string, roles: UserRole[]): Promise<boolean> {
+    // All roles now live in the employees table.
     const row = await queryOne<{ exists: boolean }>(
-        `SELECT (EXISTS(SELECT 1 FROM employees WHERE id = $1 AND company_id = $2 AND role = ANY($3::"UserRole"[]))
-              OR EXISTS(SELECT 1 FROM users WHERE id = $1 AND company_id = $2 AND role = ANY($3::"UserRole"[]))) AS exists`,
+        `SELECT EXISTS(SELECT 1 FROM employees WHERE id = $1 AND company_id = $2 AND role = ANY($3::"UserRole"[])) AS exists`,
         [id, companyId, roles],
     );
     return row?.exists ?? false;
@@ -465,6 +452,9 @@ export async function updateEmployeeRecord(
         return query(sql, params);
     };
 
+    // All employee data (regardless of role) lives in the employees table.
+    // The users table is only for login credentials (MANAGER/SUPERVISOR auth).
+    // Sync name/mobile to users table if a login row exists, then update employees.
     const userRes = await execQuery('SELECT id FROM users WHERE id = $1', [id]);
     if (userRes.rows.length > 0) {
         const uSets: string[] = [];
@@ -489,7 +479,7 @@ export async function updateEmployeeRecord(
             uVals.push(id);
             await execQuery(`UPDATE users SET ${uSets.join(', ')}, updated_at = now() WHERE id = $${uVals.length}`, uVals);
         }
-        return;
+        // Continue below to also update employees table (do NOT return early)
     }
 
     const columns: Record<keyof UpdateEmployeePatch, string> = {
@@ -530,90 +520,48 @@ export async function syncPromotedUser(
     client: pg.PoolClient,
     input: { companyId: string; name?: string | null; mobile?: string; passwordHash: string; role: UserRole; employeeId: string },
 ): Promise<string> {
+    // 1. Update the role (and name/mobile if provided) in the employees table.
+    //    The employee stays in employees — their customUserId never changes.
     const empRes = await client.query<EmployeeQueryRow>(
         `SELECT * FROM employees WHERE id = $1 AND company_id = $2`,
         [input.employeeId, input.companyId],
     );
     const emp = empRes.rows[0];
 
-    const mobile = input.mobile && input.mobile.length >= 10 ? input.mobile : emp?.mobile;
+    const mobile = (input.mobile && input.mobile.length >= 10) ? input.mobile : emp?.mobile;
     const name = input.name ?? emp?.name ?? null;
-
-    if (!mobile) {
-        const userRes = await client.query<{ id: string; mobile: string; name: string | null }>(
-            'SELECT id, mobile, name FROM users WHERE id = $1 AND company_id = $2',
-            [input.employeeId, input.companyId],
-        );
-        const u = userRes.rows[0];
-        if (u) {
-            await client.query(
-                `UPDATE users SET role = $1, password_hash = $2, is_active = true, updated_at = now() WHERE id = $3`,
-                [input.role, input.passwordHash, u.id],
-            );
-            return u.id;
-        }
-        throw new Error(`Mobile number not found for employee ${input.employeeId}`);
-    }
-
-    const existingUser = await client.query<{ id: string }>(
-        'SELECT id FROM users WHERE id = $1 OR (company_id = $2 AND mobile = $3)',
-        [input.employeeId, input.companyId, mobile],
-    );
-
-    let userId: string;
     const roleAccessId = emp?.roleAccessId ?? null;
 
-    if (existingUser.rows.length > 0) {
-        userId = existingUser.rows[0]!.id;
-        await client.query(
-            `UPDATE users SET name = $1, mobile = $2, password_hash = $3, role = $4, is_active = true, role_access_id = COALESCE($5, role_access_id), updated_at = now() WHERE id = $6`,
-            [name, mobile, input.passwordHash, input.role, roleAccessId, userId],
-        );
-    } else {
-        const userRow = await insertUser(client, {
-            id: input.employeeId,
-            companyId: input.companyId,
-            name,
-            mobile,
-            passwordHash: input.passwordHash,
-            role: input.role,
-            roleAccessId,
-        });
-        userId = userRow.id;
-    }
+    if (!mobile) throw new Error(`Mobile number not found for employee ${input.employeeId}`);
 
-    // Remove from employees table so promoted Manager/Supervisor exists only in users table
-    await client.query('DELETE FROM employees WHERE id = $1', [input.employeeId]);
+    await client.query(
+        `UPDATE employees SET name = $1, mobile = $2, role = $3, is_active = true, updated_at = now() WHERE id = $4 AND company_id = $5`,
+        [name, mobile, input.role, input.employeeId, input.companyId],
+    );
 
-    return userId;
+    // 2. Upsert a users login row (same UUID) so MANAGER/SUPERVISOR can authenticate.
+    await client.query(
+        `INSERT INTO users (id, company_id, name, mobile, password_hash, role, role_access_id, is_active, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, true, now())
+         ON CONFLICT (id) DO UPDATE
+           SET name = EXCLUDED.name, mobile = EXCLUDED.mobile, password_hash = EXCLUDED.password_hash,
+               role = EXCLUDED.role, role_access_id = COALESCE($7, users.role_access_id), is_active = true, updated_at = now()`,
+        [input.employeeId, input.companyId, name, mobile, input.passwordHash, input.role, roleAccessId],
+    );
+
+    return input.employeeId;
 }
 
 export async function demotePromotedUser(client: pg.PoolClient, employeeId: string): Promise<void> {
-    const userRes = await client.query<{ companyId: string; name: string | null; mobile: string; roleAccessId: string | null }>(
-        'SELECT company_id AS "companyId", name, mobile, role_access_id AS "roleAccessId" FROM users WHERE id = $1',
+    // Just update the role back to EMPLOYEE in the employees table.
+    // The employee's customUserId is preserved — no need to re-assign.
+    await client.query(
+        `UPDATE employees SET role = 'EMPLOYEE', updated_at = now() WHERE id = $1`,
         [employeeId],
     );
-    const user = userRes.rows[0];
 
-    if (user) {
-        await client.query(
-            `INSERT INTO employees (
-                id, company_id, custom_user_id, name, mobile, role, role_access_id, is_active, created_at, updated_at
-             )
-             VALUES ($1, $2, $3, $4, $5, 'EMPLOYEE', $6, true, now(), now())
-             ON CONFLICT (id) DO UPDATE SET role = 'EMPLOYEE', role_access_id = EXCLUDED.role_access_id, is_active = true, updated_at = now()`,
-            [
-                employeeId,
-                user.companyId,
-                `EMP-${employeeId.slice(0, 6)}`,
-                user.name,
-                user.mobile,
-                user.roleAccessId,
-            ],
-        );
-
-        await client.query('DELETE FROM users WHERE id = $1', [employeeId]);
-    }
+    // Remove the users login row — regular employees cannot log in.
+    await client.query('DELETE FROM users WHERE id = $1', [employeeId]);
 }
 
 export async function deleteEmployeeRecord(id: string): Promise<void> {

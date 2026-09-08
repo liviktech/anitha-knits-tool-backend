@@ -111,24 +111,11 @@ export async function createEmployee(
 
   try {
     const employee = await withTransaction(async (client) => {
+      // All roles (EMPLOYEE, MANAGER, SUPERVISOR) live in the employees table.
+      // MANAGER/SUPERVISOR additionally get a users row (same UUID) for login credentials.
       const customUserId = await nextCustomUserId(client, companyId);
-
-      if (role === UserRole.MANAGER || role === UserRole.SUPERVISOR) {
-        // Default passwords as requested: "manager" for MANAGER, "supervisor" for SUPERVISOR
-        const defaultPassword = role === UserRole.MANAGER ? 'manager' : 'supervisor';
-        const passwordHash = await hashPassword(input.password || defaultPassword);
-        const user = await insertUser(client, {
-          companyId,
-          name: input.name,
-          mobile: input.mobile,
-          passwordHash,
-          role,
-        });
-        const createdUser = await findEmployeeByIdRepo(user.id, companyId, MANAGED_ROLES);
-        return createdUser!;
-      }
-
-      return await insertEmployeeRecord(client, {
+      
+      const employee = await insertEmployeeRecord(client, {
         companyId,
         customUserId,
         userId: null,
@@ -146,6 +133,22 @@ export async function createEmployee(
           ? { aadhaarDocumentUrl, documentName: files!.aadhaarFile!.originalname, aadhaarDocumentUploadedAt: new Date() }
           : {}),
       });
+
+      if (role === UserRole.MANAGER || role === UserRole.SUPERVISOR) {
+        // Create a login account in the users table (same UUID) for Manager/Supervisor.
+        const defaultPassword = role === UserRole.MANAGER ? 'manager' : 'supervisor';
+        const passwordHash = await hashPassword(input.password || defaultPassword);
+        await insertUser(client, {
+          id: employee.id,
+          companyId,
+          name: input.name,
+          mobile: input.mobile,
+          passwordHash,
+          role,
+        });
+      }
+
+      return employee;
     });
     return mapEmployee(employee);
   } catch (err) {

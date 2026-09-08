@@ -206,7 +206,15 @@ export async function getStageProductionSummaryByDateRange(companyId: string, da
 }
 
 /** Resolves a 1-indexed month + a year into that calendar month's UTC date span, defaulting to the current month. */
-function resolveMonthRange(query: DashboardMonthlyQuery): { month: number; year: number; dateFrom: Date; dateTo: Date } {
+function resolveMonthRange(query: DashboardMonthlyQuery) {
+    if (query.date_from && query.date_to) {
+        return {
+            month: query.date_from.getUTCMonth() + 1,
+            year: query.date_from.getUTCFullYear(),
+            dateFrom: query.date_from,
+            dateTo: query.date_to,
+        };
+    }
     const now = new Date();
     const year = query.year ?? now.getUTCFullYear();
     const month = query.month ?? now.getUTCMonth() + 1;

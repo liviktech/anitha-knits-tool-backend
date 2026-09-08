@@ -14,7 +14,6 @@ import {
 } from '../utils/password.js';
 import { signAccessToken, signRefreshToken } from '../utils/jwt.js';
 import { toSkipTake, toPageMeta } from '../utils/pagination.js';
-import { nextCustomUserId, withMappedEmployeeDetails } from './userService.js';
 import { seedCompanyMasterData } from './masterDataSeedService.js';
 import { resolveUserAccess } from './roleAccessService.js';
 import { env } from '../config/env.js';
@@ -28,7 +27,6 @@ import {
 import {
   findLoginCandidatesByMobile,
   findUserForMe,
-  insertEmployeeDetails,
   insertUser,
   listCompanyUsers as listCompanyUsersRepo,
   updateLastLogin,
@@ -96,9 +94,9 @@ export async function signupCompany(input: SignupInput) {
       // Add/Edit ones the hard ceilings in productionCeilings.ts look for) is created
       // manually by the admin via the Roles tab (Module > Tab > Action), not auto-generated.
 
-      // First user of a brand-new company — employeeSeq starts at 1, so this is always "001".
-      const customUserId = await nextCustomUserId(client, company.id);
-
+      // The ADMIN user lives only in the `users` table — they are not in the employee
+      // directory and do not consume the employee_seq counter. The first employee
+      // created via POST /company/employee will correctly receive companyCode + "001".
       const user = await insertUser(client, {
         companyId: company.id,
         name: input.adminName,
@@ -106,11 +104,8 @@ export async function signupCompany(input: SignupInput) {
         passwordHash,
         role: 'ADMIN',
       });
-      const employeeDetails = await insertEmployeeDetails(client, { userId: user.id, customUserId });
 
-      const admin = withMappedEmployeeDetails({ ...user, employeeDetails });
-
-      return { company, admin };
+      return { company, admin: { ...user, employeeDetails: null } };
     });
   } catch (err) {
     mapUniqueConstraintError(err);
