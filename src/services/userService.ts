@@ -53,7 +53,7 @@ export async function nextCustomUserId(client: pg.PoolClient, companyId: string)
     const company = result.rows[0];
     if (!company) throw new Error(`Company ${companyId} not found while assigning customUserId`);
     const seq = company.employeeSeq - 1;
-    return `${company.companyCode}${String(seq).padStart(3, '0')}`;
+    return `EMP-${String(seq).padStart(3, '0')}`;
 }
 
 /** Salary already comes back as a JS number (see the NUMERIC type parser registered in db/pool.ts) — this stays only to preserve the null-safety shape callers rely on. */

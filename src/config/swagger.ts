@@ -244,8 +244,8 @@ const definition: swaggerJsdoc.OAS3Definition = {
           isActive: { type: 'boolean' },
           createdAt: { type: 'string', format: 'date-time' },
           employeeDetails: {
-            allOf: [{ $ref: '#/components/schemas/EmployeeDetails' }],
-            description: 'customUserId is always companyCode + "001" for this first user of a newly created company.',
+            type: 'null',
+            description: 'Always null. Platform admins do not consume an employee ID sequence.',
           },
         },
       },

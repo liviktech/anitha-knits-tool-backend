@@ -164,10 +164,10 @@ router.get('/me', requirePlatformAdmin, me);
  *     summary: Create a company (customer signup)
  *     description: >
  *       Creates a Company and its first ADMIN User in one transaction. That
- *       admin's employeeDetails.customUserId is always companyCode + "001"
- *       (server-generated, not accepted in the request body) — subsequent
- *       users created for this company via POST /api/v1/company/user get
- *       companyCode + "002", "003", etc., auto-incremented per company.
+ *       admin is only added to the users table (no employee ID is consumed).
+ *       The first employee created for this company via POST /api/v1/company/employee
+ *       will get companyCode + "001", and subsequent employees will get "002", etc.,
+ *       auto-incremented per company.
  *       Platform-admin-only — not mounted publicly like the old
  *       /company/auth/signup.
  *     requestBody:
