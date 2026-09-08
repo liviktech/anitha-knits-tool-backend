@@ -9,6 +9,7 @@ import {
     deleteRoleAccess,
     getRoleAccessById,
     listRoleAccesses,
+    unassignRoleAccessFromEmployee,
     updateRoleAccess,
 } from '../services/roleAccessService.js';
 import {
@@ -16,6 +17,7 @@ import {
     createRoleAccessSchema,
     listRoleAccessQuerySchema,
     roleAccessIdParamsSchema,
+    unassignRoleAccessSchema,
     updateRoleAccessSchema,
 } from '../validations/roleAccessValidation.js';
 
@@ -61,4 +63,12 @@ export const assignRoleAccessHandler = asyncHandler(async (req: Request, res: Re
     const { companyId } = getAuthContext(req);
     await assignRoleAccessToEmployees(id, input, companyId);
     sendSuccess(res, { assigned: true });
+});
+
+export const unassignRoleAccessHandler = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = parseOrThrow(roleAccessIdParamsSchema, req.params);
+    const input = parseOrThrow(unassignRoleAccessSchema, req.body);
+    const { companyId } = getAuthContext(req);
+    await unassignRoleAccessFromEmployee(id, input, companyId);
+    sendSuccess(res, { unassigned: true });
 });

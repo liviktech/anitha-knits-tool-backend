@@ -93,10 +93,9 @@ export async function findSalaryAdvancesWithEmployee(companyId: string): Promise
         `SELECT sa.id, sa.company_id AS "companyId", sa.employee_id AS "employeeId", sa.amount, sa.effective_date AS "effectiveDate",
                 sa.repayment_method AS "repaymentMethod", sa.total_months AS "totalMonths", sa.emi_amount AS "emiAmount",
                 sa.created_at AS "createdAt", sa.created_by AS "createdBy", sa.updated_at AS "updatedAt", sa.updated_by AS "updatedBy",
-                u.name AS "employeeName", ed.custom_user_id AS "customUserId"
+                e.name AS "employeeName", e.custom_user_id AS "customUserId"
          FROM salary_advances sa
-         JOIN users u ON u.id = sa.employee_id
-         LEFT JOIN employee_details ed ON ed.user_id = u.id
+         JOIN employees e ON e.id = sa.employee_id
          WHERE sa.company_id = $1
          ORDER BY sa.effective_date DESC`,
         [companyId],
@@ -263,10 +262,9 @@ export interface ActiveEmployeeWithSalaryRow {
 
 export async function findActiveEmployeesWithSalary(companyId: string): Promise<ActiveEmployeeWithSalaryRow[]> {
     const result = await query<ActiveEmployeeWithSalaryRow>(
-        `SELECT u.id, u.name, ed.salary, ed.custom_user_id AS "customUserId"
-         FROM users u
-         LEFT JOIN employee_details ed ON ed.user_id = u.id
-         WHERE u.company_id = $1 AND u.is_active = true`,
+        `SELECT e.id, e.name, e.salary, e.custom_user_id AS "customUserId"
+         FROM employees e
+         WHERE e.company_id = $1 AND e.is_active = true`,
         [companyId],
     );
     return result.rows;
