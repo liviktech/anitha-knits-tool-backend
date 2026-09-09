@@ -18,6 +18,7 @@ import {
     insertOtherDeduction,
     insertPayrollRecords,
     insertSalaryAdvance,
+    syncPayrollRecordMarketValueDeduction,
     syncPayrollRecordOtherDeduction,
     updateSalaryAdvance as updateSalaryAdvanceRepo,
     upsertPayrollRecord,
@@ -56,13 +57,26 @@ export const grantMarketValueDeduction = async (
     userId: string,
     data: { employeeId: string; amount: number; effectiveDate: string }
 ) => {
-    return insertMarketValueDeduction({
+    const effectiveDate = new Date(data.effectiveDate);
+    const result = await insertMarketValueDeduction({
         companyId,
         employeeId: data.employeeId,
         amount: data.amount,
-        effectiveDate: new Date(data.effectiveDate),
+        effectiveDate,
         actor: userId,
     });
+
+    const parts = data.effectiveDate.split('T')[0].split('-');
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10);
+
+    const allMarketValueDeductions = await findAllMarketValueDeductions(companyId);
+    const totalForMonth = allMarketValueDeductions
+        .filter((d) => d.employeeId === data.employeeId && monthOffset(d.effectiveDate, month, year) === 0)
+        .reduce((sum, d) => sum + Number(d.amount), 0);
+
+    await syncPayrollRecordMarketValueDeduction(companyId, data.employeeId, month, year, totalForMonth);
+    return result;
 };
 
 /** Ad-hoc deduction with a free-text reason/label — same single-payment shape as grantMarketValueDeduction. */
@@ -81,11 +95,10 @@ export const grantOtherDeduction = async (
         actor: userId,
     });
 
-    // If payroll for this employee's effective month was already generated, sync the
-    // frozen record immediately so it shows up in the Payroll list without a full
-    // month regeneration.
-    const month = effectiveDate.getMonth() + 1;
-    const year = effectiveDate.getFullYear();
+    const parts = data.effectiveDate.split('T')[0].split('-');
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10);
+
     const allOtherDeductions = await findAllOtherDeductions(companyId);
     const totalForMonth = allOtherDeductions
         .filter((d) => d.employeeId === data.employeeId && monthOffset(d.effectiveDate, month, year) === 0)
@@ -105,9 +118,19 @@ function roundMoney(value: number): number {
  * before `from`. Used to figure out which month of an EMI schedule a given
  * payroll run falls on.
  */
-function monthOffset(from: Date, queryMonth: number, queryYear: number): number {
-    const fromMonth = from.getUTCMonth() + 1;
-    const fromYear = from.getUTCFullYear();
+function monthOffset(from: Date | string, queryMonth: number, queryYear: number): number {
+    let fromMonth: number;
+    let fromYear: number;
+    if (typeof from === 'string') {
+        const parts = from.split('T')[0].split('-');
+        fromYear = parseInt(parts[0], 10);
+        fromMonth = parseInt(parts[1], 10);
+    } else {
+        const iso = from.toISOString().split('T')[0];
+        const parts = iso.split('-');
+        fromYear = parseInt(parts[0], 10);
+        fromMonth = parseInt(parts[1], 10);
+    }
     return (queryYear - fromYear) * 12 + (queryMonth - fromMonth);
 }
 
@@ -311,15 +334,25 @@ export const getPayrollSummary = async (companyId: string, month: number, year: 
             const status = attendanceMap.get(dateStr);
             const isSunday = currentDate.getDay() === 0;
 
-            if (isSunday && (status === 'DAY_SHIFT' || status === 'NIGHT_SHIFT')) {
-                sundayBonuses += (3 * oneDaySalary);
-            } else if (!isSunday && status === 'ABSENT') {
-                absentDeductions += oneDaySalary;
-                absentDays++;
-            }
-
-            if (status === 'DAY_SHIFT' || status === 'NIGHT_SHIFT' || status === 'HALF_DAY') {
-                presentDays += (status === 'HALF_DAY' ? 0.5 : 1);
+            if (isSunday) {
+                if (status === 'DAY_SHIFT' || status === 'NIGHT_SHIFT') {
+                    sundayBonuses += (3 * oneDaySalary);
+                    presentDays += 1;
+                }
+            } else {
+                if (status === 'DAY_SHIFT' || status === 'NIGHT_SHIFT') {
+                    presentDays += 1;
+                } else if (status === 'HALF_DAY') {
+                    presentDays += 0.5;
+                    absentDeductions += (0.5 * oneDaySalary);
+                    absentDays += 0.5;
+                } else if (status === 'COMPANY_HOLIDAY') {
+                    // Paid holiday — no deduction
+                } else {
+                    // Unworked weekday (ABSENT or unmarked)
+                    absentDeductions += oneDaySalary;
+                    absentDays += 1;
+                }
             }
         }
 

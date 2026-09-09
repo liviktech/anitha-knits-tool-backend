@@ -5,7 +5,10 @@ import { getAttendanceRecords, upsertDailyAttendance } from '../services/attenda
 import { parseOrThrow } from '../utils/validate.js';
 
 const bulkAttendanceSchema = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
+  date: z
+    .string()
+    .transform((val) => val.split('T')[0])
+    .pipe(z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD')),
   records: z.array(
     z.object({
       employeeId: z.string().uuid(),
@@ -39,14 +42,12 @@ export const getAttendance = asyncHandler(
 );
 
 export const bulkUpsertAttendance = asyncHandler(
-  async (req: Request, res: Response, next: NextFunction) => {
+  async (req: Request, res: Response, NextFunction) => {
     const { companyId, sub: userId, role } = req.user!;
 
     const payload = parseOrThrow(bulkAttendanceSchema, req.body);
 
-    const date = new Date(payload.date);
-
-    const results = await upsertDailyAttendance(companyId, userId, role, date, payload.records);
+    const results = await upsertDailyAttendance(companyId, userId, role, payload.date, payload.records);
 
     res.status(200).json({
       success: true,

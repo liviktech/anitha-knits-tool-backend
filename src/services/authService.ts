@@ -88,12 +88,10 @@ export async function signupCompany(input: SignupInput) {
 
       // Layer 0 master data (brand/chemical/size/color + colour consumption
       // standard + wastage types) — PRD §12/§4/§5 defaults every new company starts
-      // with — plus the default Module/Tab catalog.
+      // with — plus the default Module/Tab/Rights catalog and Manager/Supervisor
+      // roles (see defaultAccessCatalog.ts), so the Rights tab is already populated
+      // and usable the first time the new admin logs in.
       await seedCompanyMasterData(client, company.id);
-
-      // No Rights are seeded here — every Right (including the Production Details
-      // Add/Edit ones the hard ceilings in productionCeilings.ts look for) is created
-      // manually by the admin via the Roles tab (Module > Tab > Action), not auto-generated.
 
       // The ADMIN user lives only in the `users` table — they are not in the employee
       // directory and do not consume the employee_seq counter. The first employee

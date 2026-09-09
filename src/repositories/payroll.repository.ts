@@ -177,7 +177,7 @@ export async function insertMarketValueDeduction(input: {
 
 export async function findAllMarketValueDeductions(companyId: string): Promise<MarketValueDeductionRow[]> {
     const result = await query<MarketValueDeductionRow>(
-        `SELECT id, company_id AS "companyId", employee_id AS "employeeId", amount, effective_date AS "effectiveDate",
+        `SELECT id, company_id AS "companyId", employee_id AS "employeeId", amount, effective_date::text AS "effectiveDate",
                 created_at AS "createdAt", created_by AS "createdBy", updated_at AS "updatedAt", updated_by AS "updatedBy"
          FROM market_value_deductions WHERE company_id = $1`,
         [companyId],
@@ -221,12 +221,29 @@ export async function insertOtherDeduction(input: {
 
 export async function findAllOtherDeductions(companyId: string): Promise<OtherDeductionRow[]> {
     const result = await query<OtherDeductionRow>(
-        `SELECT id, company_id AS "companyId", employee_id AS "employeeId", amount, name, effective_date AS "effectiveDate",
+        `SELECT id, company_id AS "companyId", employee_id AS "employeeId", amount, name, effective_date::text AS "effectiveDate",
                 created_at AS "createdAt", created_by AS "createdBy", updated_at AS "updatedAt", updated_by AS "updatedBy"
          FROM other_deductions WHERE company_id = $1`,
         [companyId],
     );
     return result.rows;
+}
+
+export async function syncPayrollRecordMarketValueDeduction(
+    companyId: string,
+    employeeId: string,
+    month: number,
+    year: number,
+    marketValueDeduction: number,
+): Promise<void> {
+    await query(
+        `UPDATE payroll_records
+         SET market_value_deduction = $1,
+             net_salary = gross_salary - advance_deduction + market_value_bonus - $1 - other_deduction,
+             updated_at = now()
+         WHERE company_id = $2 AND employee_id = $3 AND month = $4 AND year = $5`,
+        [marketValueDeduction, companyId, employeeId, month, year],
+    );
 }
 
 /**
