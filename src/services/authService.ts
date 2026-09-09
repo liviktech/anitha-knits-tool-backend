@@ -19,6 +19,7 @@ import { resolveUserAccess } from './roleAccessService.js';
 import { env } from '../config/env.js';
 import {
   createCompany,
+  deleteCompany as deleteCompanyRepo,
   existsCompanyById,
   findCompanyById,
   listCompanies as listCompaniesRepo,
@@ -362,6 +363,17 @@ export async function updateCompany(id: string, input: UpdateCompanyInput) {
     mapUniqueConstraintError(err);
     throw err;
   }
+}
+
+/**
+ * Platform-admin: permanently deletes a company. Cascades (via ON DELETE CASCADE
+ * FKs) to every company-scoped row — users, employees, production, HR, inventory,
+ * master data, etc. Irreversible. Time: O(1) query, actual cascade cost is the DB's.
+ */
+export async function deleteCompany(id: string) {
+  const existing = await existsCompanyById(id);
+  if (!existing) throw new NotFoundError('Company not found', 'COMPANY_NOT_FOUND', { id });
+  await deleteCompanyRepo(id);
 }
 
 /**

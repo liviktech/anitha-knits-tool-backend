@@ -19,7 +19,7 @@ import {
     platformAdminVerifyOtpLoginSchema,
     platformAdminVerifyOtpResetSchema,
 } from '../validations/platformAdminValidation.js';
-import { getCompanyById, listCompanies, listCompanyUsers, signupCompany, updateCompany } from '../services/authService.js';
+import { deleteCompany, getCompanyById, listCompanies, listCompanyUsers, signupCompany, updateCompany } from '../services/authService.js';
 import {
     companyIdParamsSchema,
     listCompaniesQuerySchema,
@@ -87,6 +87,12 @@ export const updateCompanyHandler = asyncHandler(async (req: Request, res: Respo
     const input = parseOrThrow(updateCompanySchema, req.body);
     const company = await updateCompany(id, input);
     sendSuccess(res, company);
+});
+
+export const deleteCompanyHandler = asyncHandler(async (req: Request, res: Response) => {
+    const { id } = parseOrThrow(companyIdParamsSchema, req.params);
+    await deleteCompany(id);
+    res.status(204).send();
 });
 
 export const listCompanyUsersHandler = asyncHandler(async (req: Request, res: Response) => {
