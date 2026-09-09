@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { EMPLOYEE_AADHAAR_PREFIX, EMPLOYEE_PHOTO_PREFIX } from '../config/s3.js';
-import { isUniqueViolation } from '../db/errors.js';
+import { getConstraintName, isUniqueViolation } from '../db/errors.js';
 import { withTransaction } from '../db/transaction.js';
 import { RightAction, UserRole } from '../types/enums.js';
 import { ConflictError, NotFoundError } from '../utils/errors.js';
@@ -47,10 +47,22 @@ export function mapEmployee(user: EmployeeRow | null) {
   };
 }
 
-/** Maps a unique-constraint violation on [companyId, mobile] to a stable conflict error. */
+/** Maps a unique-constraint violation during employee create/update to the field that actually caused it. */
 function mapUniqueConstraintError(err: unknown): never | undefined {
   if (!isUniqueViolation(err)) return undefined;
-  throw new ConflictError('A user with this mobile number already exists in this company', 'USER_MOBILE_EXISTS');
+
+  switch (getConstraintName(err)) {
+    case 'employees_company_id_mobile_key':
+    case 'users_company_id_mobile_key':
+      throw new ConflictError('A user with this mobile number already exists in this company', 'USER_MOBILE_EXISTS');
+    case 'employees_custom_user_id_key':
+      // customUserId is server-generated (companyCode + sequence); a collision here means two
+      // inserts raced on the same sequence value, not a data problem the caller can fix by
+      // changing their input — safe to just retry.
+      throw new ConflictError('Failed to assign a unique employee ID — please try again', 'EMPLOYEE_ID_COLLISION');
+    default:
+      throw new ConflictError('This employee could not be saved due to a conflicting record', 'EMPLOYEE_CONFLICT');
+  }
 }
 
 /** Uploads whichever of photo/aadhaarFile were provided, in parallel. */
