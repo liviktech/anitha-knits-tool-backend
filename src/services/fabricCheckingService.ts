@@ -274,6 +274,17 @@ export type FabricProductionVariantSummary = {
     total: number;
 };
 
+export type FabricProductionVariantChemicalSummary = {
+    color: { id: string; name: string };
+    size: { id: string; name: string };
+    chemical: { id: string; name: string };
+    fabricInputKg: number;
+    outputKg: number;
+    fwWasteKg: number;
+    bwWasteKg: number;
+    total: number;
+};
+
 export type FabricProductionColorSummary = {
     color: { id: string; name: string };
     production: number;
@@ -285,6 +296,7 @@ export type FabricProductionColorSummary = {
 export type FabricProductionSizeSummary = {
     size: { id: string; name: string };
     production: number;
+    fabricInputKg: number;
     fwWasteKg: number;
     bwWasteKg: number;
     total: number;
@@ -293,6 +305,7 @@ export type FabricProductionSizeSummary = {
 export type FabricProductionChemicalSummary = {
     chemical: { id: string; name: string };
     production: number;
+    fabricInputKg: number;
     fwWasteKg: number;
     bwWasteKg: number;
     total: number;
@@ -300,6 +313,7 @@ export type FabricProductionChemicalSummary = {
 
 export type FabricProductionSummary = {
     byVariant: FabricProductionVariantSummary[];
+    byVariantChemical: FabricProductionVariantChemicalSummary[];
     byColor: FabricProductionColorSummary[];
     bySize: FabricProductionSizeSummary[];
     byChemical: FabricProductionChemicalSummary[];
@@ -336,6 +350,7 @@ export async function getFabricProductionSummaryByDateRange(
     }
 
     const byVariantMap = new Map<string, FabricProductionVariantSummary>();
+    const byVariantChemicalMap = new Map<string, FabricProductionVariantChemicalSummary>();
     const byColorMap = new Map<string, FabricProductionColorSummary>();
     const bySizeMap = new Map<string, FabricProductionSizeSummary>();
     const byChemicalMap = new Map<string, FabricProductionChemicalSummary>();
@@ -378,10 +393,11 @@ export async function getFabricProductionSummaryByDateRange(
 
         let sizeEntry = bySizeMap.get(size.id);
         if (!sizeEntry) {
-            sizeEntry = { size, production: 0, fwWasteKg: 0, bwWasteKg: 0, total: 0 };
+            sizeEntry = { size, production: 0, fabricInputKg: 0, fwWasteKg: 0, bwWasteKg: 0, total: 0 };
             bySizeMap.set(size.id, sizeEntry);
         }
         sizeEntry.production += outputKg;
+        sizeEntry.fabricInputKg += inputKg;
         sizeEntry.fwWasteKg += fw;
         sizeEntry.bwWasteKg += bw;
 
@@ -389,17 +405,37 @@ export async function getFabricProductionSummaryByDateRange(
             const chemical = { id: row.chemicalId, name: row.chemicalName! };
             let chemicalEntry = byChemicalMap.get(chemical.id);
             if (!chemicalEntry) {
-                chemicalEntry = { chemical, production: 0, fwWasteKg: 0, bwWasteKg: 0, total: 0 };
+                chemicalEntry = { chemical, production: 0, fabricInputKg: 0, fwWasteKg: 0, bwWasteKg: 0, total: 0 };
                 byChemicalMap.set(chemical.id, chemicalEntry);
             }
             chemicalEntry.production += outputKg;
+            chemicalEntry.fabricInputKg += inputKg;
             chemicalEntry.fwWasteKg += fw;
             chemicalEntry.bwWasteKg += bw;
+
+            const variantChemicalKey = `${color.id}_${size.id}_${chemical.id}`;
+            let variantChemicalEntry = byVariantChemicalMap.get(variantChemicalKey);
+            if (!variantChemicalEntry) {
+                variantChemicalEntry = { color, size, chemical, fabricInputKg: 0, outputKg: 0, fwWasteKg: 0, bwWasteKg: 0, total: 0 };
+                byVariantChemicalMap.set(variantChemicalKey, variantChemicalEntry);
+            }
+            variantChemicalEntry.fabricInputKg += inputKg;
+            variantChemicalEntry.outputKg += outputKg;
+            variantChemicalEntry.fwWasteKg += fw;
+            variantChemicalEntry.bwWasteKg += bw;
         }
     }
 
     return {
         byVariant: Array.from(byVariantMap.values()).map((entry) => ({
+            ...entry,
+            fabricInputKg: roundKg(entry.fabricInputKg),
+            outputKg: roundKg(entry.outputKg),
+            fwWasteKg: roundKg(entry.fwWasteKg),
+            bwWasteKg: roundKg(entry.bwWasteKg),
+            total: roundKg(entry.outputKg + entry.fwWasteKg + entry.bwWasteKg),
+        })),
+        byVariantChemical: Array.from(byVariantChemicalMap.values()).map((entry) => ({
             ...entry,
             fabricInputKg: roundKg(entry.fabricInputKg),
             outputKg: roundKg(entry.outputKg),
@@ -417,6 +453,7 @@ export async function getFabricProductionSummaryByDateRange(
         bySize: Array.from(bySizeMap.values()).map((entry) => ({
             ...entry,
             production: roundKg(entry.production),
+            fabricInputKg: roundKg(entry.fabricInputKg),
             fwWasteKg: roundKg(entry.fwWasteKg),
             bwWasteKg: roundKg(entry.bwWasteKg),
             total: roundKg(entry.production + entry.fwWasteKg + entry.bwWasteKg),
@@ -424,6 +461,7 @@ export async function getFabricProductionSummaryByDateRange(
         byChemical: Array.from(byChemicalMap.values()).map((entry) => ({
             ...entry,
             production: roundKg(entry.production),
+            fabricInputKg: roundKg(entry.fabricInputKg),
             fwWasteKg: roundKg(entry.fwWasteKg),
             bwWasteKg: roundKg(entry.bwWasteKg),
             total: roundKg(entry.production + entry.fwWasteKg + entry.bwWasteKg),

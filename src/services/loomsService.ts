@@ -207,6 +207,15 @@ export type LoomsProductionVariantSummary = {
     total: number;
 };
 
+export type LoomsProductionVariantChemicalSummary = {
+    color: { id: string; name: string };
+    size: { id: string; name: string };
+    chemical: { id: string; name: string };
+    production: number;
+    waste: number;
+    total: number;
+};
+
 export type LoomsProductionColorSummary = {
     color: { id: string; name: string };
     production: number;
@@ -230,6 +239,7 @@ export type LoomsProductionChemicalSummary = {
 
 export type LoomsProductionSummary = {
     byVariant: LoomsProductionVariantSummary[];
+    byVariantChemical: LoomsProductionVariantChemicalSummary[];
     byColor: LoomsProductionColorSummary[];
     bySize: LoomsProductionSizeSummary[];
     byChemical: LoomsProductionChemicalSummary[];
@@ -256,6 +266,7 @@ export async function getLoomsProductionSummaryByDateRange(
     }
 
     const byVariantMap = new Map<string, LoomsProductionVariantSummary>();
+    const byVariantChemicalMap = new Map<string, LoomsProductionVariantChemicalSummary>();
     const byColorMap = new Map<string, LoomsProductionColorSummary>();
     const bySizeMap = new Map<string, LoomsProductionSizeSummary>();
     const byChemicalMap = new Map<string, LoomsProductionChemicalSummary>();
@@ -304,11 +315,26 @@ export async function getLoomsProductionSummaryByDateRange(
             }
             chemicalEntry.production += production;
             chemicalEntry.waste += waste;
+
+            const variantChemicalKey = `${color.id}_${size.id}_${chemical.id}`;
+            let variantChemicalEntry = byVariantChemicalMap.get(variantChemicalKey);
+            if (!variantChemicalEntry) {
+                variantChemicalEntry = { color, size, chemical, production: 0, waste: 0, total: 0 };
+                byVariantChemicalMap.set(variantChemicalKey, variantChemicalEntry);
+            }
+            variantChemicalEntry.production += production;
+            variantChemicalEntry.waste += waste;
         }
     }
 
     return {
         byVariant: Array.from(byVariantMap.values()).map((entry) => ({
+            ...entry,
+            production: roundKg(entry.production),
+            waste: roundKg(entry.waste),
+            total: roundKg(entry.production + entry.waste),
+        })),
+        byVariantChemical: Array.from(byVariantChemicalMap.values()).map((entry) => ({
             ...entry,
             production: roundKg(entry.production),
             waste: roundKg(entry.waste),
