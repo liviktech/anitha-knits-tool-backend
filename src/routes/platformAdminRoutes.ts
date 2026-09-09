@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import {
     createCompany,
+    deleteCompanyHandler,
     getCompanyHandler,
     listCompaniesHandler,
     listCompanyUsersHandler,
@@ -306,6 +307,7 @@ router.get('/companies', requirePlatformAdmin, requirePlatformModuleAccess('comp
  */
 router.get('/companies/:id', requirePlatformAdmin, requirePlatformModuleAccess('companies'), getCompanyHandler);
 router.patch('/companies/:id', requirePlatformAdmin, requirePlatformModuleAccess('companies'), updateCompanyHandler);
+router.delete('/companies/:id', requirePlatformAdmin, requirePlatformModuleAccess('companies'), deleteCompanyHandler);
 
 /**
  * @openapi

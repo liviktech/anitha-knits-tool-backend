@@ -92,6 +92,11 @@ export async function updateCompany(id: string, patch: UpdateCompanyPatch): Prom
     return row;
 }
 
+/** Cascades to every company-scoped table via ON DELETE CASCADE on their company_id FK. */
+export async function deleteCompany(id: string, executor: Queryable = pool): Promise<void> {
+    await queryOne(`DELETE FROM companies WHERE id = $1 RETURNING id`, [id], executor);
+}
+
 export interface ListCompaniesFilter {
     isActive?: boolean;
     name?: string;

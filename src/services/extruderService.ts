@@ -279,6 +279,16 @@ export type ExtruderProductionVariantSummary = {
     total: number;
 };
 
+export type ExtruderProductionVariantChemicalSummary = {
+    color: { id: string; name: string };
+    size: { id: string; name: string };
+    chemical: { id: string; name: string };
+    production: number;
+    lumsKg: number;
+    yarnWasteKg: number;
+    total: number;
+};
+
 export type ExtruderProductionColorSummary = {
     color: { id: string; name: string };
     production: number;
@@ -308,6 +318,7 @@ export type ExtruderProductionChemicalSummary = {
 
 export type ExtruderProductionSummary = {
     byVariant: ExtruderProductionVariantSummary[];
+    byVariantChemical: ExtruderProductionVariantChemicalSummary[];
     byColor: ExtruderProductionColorSummary[];
     bySize: ExtruderProductionSizeSummary[];
     byChemical: ExtruderProductionChemicalSummary[];
@@ -337,6 +348,7 @@ export async function getExtruderProductionSummaryByDateRange(
     }
 
     const byVariantMap = new Map<string, ExtruderProductionVariantSummary>();
+    const byVariantChemicalMap = new Map<string, ExtruderProductionVariantChemicalSummary>();
     const byColorMap = new Map<string, ExtruderProductionColorSummary>();
     const bySizeMap = new Map<string, ExtruderProductionSizeSummary>();
     const byChemicalMap = new Map<string, ExtruderProductionChemicalSummary>();
@@ -391,11 +403,28 @@ export async function getExtruderProductionSummaryByDateRange(
             chemicalEntry.production += production;
             chemicalEntry.lumsKg += lumsKg;
             chemicalEntry.yarnWasteKg += yarnWasteKg;
+
+            const variantChemicalKey = `${color.id}_${size.id}_${chemical.id}`;
+            let variantChemicalEntry = byVariantChemicalMap.get(variantChemicalKey);
+            if (!variantChemicalEntry) {
+                variantChemicalEntry = { color, size, chemical, production: 0, lumsKg: 0, yarnWasteKg: 0, total: 0 };
+                byVariantChemicalMap.set(variantChemicalKey, variantChemicalEntry);
+            }
+            variantChemicalEntry.production += production;
+            variantChemicalEntry.lumsKg += lumsKg;
+            variantChemicalEntry.yarnWasteKg += yarnWasteKg;
         }
     }
 
     return {
         byVariant: Array.from(byVariantMap.values()).map((entry) => ({
+            ...entry,
+            production: roundKg(entry.production),
+            lumsKg: roundKg(entry.lumsKg),
+            yarnWasteKg: roundKg(entry.yarnWasteKg),
+            total: roundKg(entry.production + entry.lumsKg + entry.yarnWasteKg),
+        })),
+        byVariantChemical: Array.from(byVariantChemicalMap.values()).map((entry) => ({
             ...entry,
             production: roundKg(entry.production),
             lumsKg: roundKg(entry.lumsKg),
