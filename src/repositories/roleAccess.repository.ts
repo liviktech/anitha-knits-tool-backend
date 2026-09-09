@@ -218,9 +218,11 @@ export async function existsRoleAccessRightMatch(
 export async function countUsersMatching(ids: string[], companyId: string): Promise<number> {
     if (ids.length === 0) return 0;
     const row = await queryOne<{ count: string }>(
+        // UNION (not UNION ALL) — a promoted MANAGER/SUPERVISOR exists in both employees and
+        // users under the same id, so UNION ALL would double-count them against ids.length.
         `SELECT COUNT(*)::text AS count FROM (
             SELECT id FROM employees WHERE id = ANY($1::uuid[]) AND company_id = $2
-            UNION ALL
+            UNION
             SELECT id FROM users WHERE id = ANY($1::uuid[]) AND company_id = $2 AND role != 'ADMIN'
         ) w`,
         [ids, companyId],

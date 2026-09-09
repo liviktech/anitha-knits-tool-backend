@@ -3,17 +3,16 @@ import { ForbiddenError } from '../utils/errors.js';
 import { userHasModuleAction } from './roleAccessService.js';
 
 /**
- * Hard role ceilings for Production Details (Extruder/Looms/Fabric Checking), layered on top
- * of (not replacing) the generic Right/RoleAccess grant system — these can never be exceeded
- * even if an admin mistakenly assigns a broader Right, because they're checked here in the
- * service layer regardless of what the caller's RoleAccess otherwise grants.
+ * Role ceilings for Production Details (Extruder/Looms/Fabric Checking), layered on top of the
+ * generic Right/RoleAccess grant system — checked here in the service layer regardless of what
+ * the caller's RoleAccess otherwise grants.
  *
  *   ADMIN      unrestricted — create, edit (any), delete, approve.
- *   MANAGER    view always (see roleAccessService.resolveUserAccess); edit only an unapproved
- *              record, and only with an EDIT right on the productiondetails module; never
- *              create, never delete.
- *   SUPERVISOR create only, and only with an ADD right on the productiondetails module; never
- *              edit, never delete, regardless of any right assigned.
+ *   MANAGER    view always (see roleAccessService.resolveUserAccess); create with an ADD right,
+ *              edit an unapproved record with an EDIT right (matches the PRD: "Manager — create,
+ *              manage, review, approve, or reject production entries"); never delete.
+ *   SUPERVISOR create with an ADD right, edit an unapproved record with an EDIT right (PRD:
+ *              "Supervisor — create and edit production entries"); never delete.
  *
  * The ADD/EDIT rights checked here are plain, admin-created Rights (Module=Production Details,
  * Action=Add/Edit) like any other — nothing is auto-seeded; an admin must explicitly create and
@@ -28,13 +27,9 @@ const PRODUCTION_DETAILS_MODULE_CODE = 'productiondetails';
 export async function assertCanCreateProductionRecord(role: UserRole, callerId: string, companyId: string): Promise<void> {
     if (role === UserRole.ADMIN) return;
 
-    if (role === UserRole.MANAGER) {
-        throw new ForbiddenError('Managers cannot create production records', 'MANAGER_CANNOT_CREATE');
-    }
-
     const canCreate = await userHasModuleAction(callerId, companyId, PRODUCTION_DETAILS_MODULE_CODE, RightAction.ADD);
     if (!canCreate) {
-        throw new ForbiddenError('You do not have permission to create production records', 'SUPERVISOR_ENTRY_NOT_GRANTED');
+        throw new ForbiddenError('You do not have permission to create production records', 'PRODUCTION_ENTRY_NOT_GRANTED');
     }
 }
 
@@ -46,17 +41,13 @@ export async function assertCanUpdateProductionRecord(
 ): Promise<void> {
     if (role === UserRole.ADMIN) return;
 
-    if (role === UserRole.SUPERVISOR) {
-        throw new ForbiddenError('Supervisors cannot edit production records', 'SUPERVISOR_CANNOT_EDIT');
-    }
-
     if (isApproved) {
         throw new ForbiddenError('Cannot edit an approved production record', 'RECORD_ALREADY_APPROVED');
     }
 
     const canEdit = await userHasModuleAction(callerId, companyId, PRODUCTION_DETAILS_MODULE_CODE, RightAction.EDIT);
     if (!canEdit) {
-        throw new ForbiddenError('You do not have permission to edit production records', 'MANAGER_EDIT_NOT_GRANTED');
+        throw new ForbiddenError('You do not have permission to edit production records', 'PRODUCTION_EDIT_NOT_GRANTED');
     }
 }
 

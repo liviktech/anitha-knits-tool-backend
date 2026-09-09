@@ -236,13 +236,15 @@ export interface EmployeeDetailsFullRow {
 const WORKFORCE_UNION_SQL = `
     SELECT e.id, e.company_id AS "companyId", e.name, e.mobile, e.role, e.is_active AS "isActive",
            e.created_at AS "createdAt", e.updated_at AS "updatedAt",
-           e.role_access_id AS "roleAccessId", ra.role_name AS "roleAccessRoleName",
+           COALESCE(e.role_access_id, u.role_access_id) AS "roleAccessId",
+           ra.role_name AS "roleAccessRoleName",
            e.custom_user_id AS "customUserId", e.designation, e.address, e.gender, e.salary,
            e.aadhaar_number AS "aadhaarNumber", e.joining_date AS "joiningDate", e.photo_url AS "photoUrl",
            e.aadhaar_document_url AS "aadhaarDocumentUrl", e.document_name AS "documentName",
            e.aadhaar_document_uploaded_at AS "aadhaarDocumentUploadedAt"
     FROM employees e
-    LEFT JOIN role_access ra ON ra.id = e.role_access_id
+    LEFT JOIN users u ON u.id = e.id
+    LEFT JOIN role_access ra ON ra.id = COALESCE(e.role_access_id, u.role_access_id)
 `;
 
 interface EmployeeQueryRow {

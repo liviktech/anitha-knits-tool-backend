@@ -282,9 +282,11 @@ export async function assignRoleAccessToEmployees(id: string, input: AssignRoleA
                     employeeId: empId,
                 });
                 await client.query('UPDATE users SET role_access_id = $1 WHERE id = $2', [id, empId]);
+                await client.query('UPDATE employees SET role_access_id = $1 WHERE id = $2', [id, empId]);
             } else {
                 await demotePromotedUser(client, empId);
                 await client.query('UPDATE employees SET role_access_id = $1 WHERE id = $2', [id, empId]);
+                await client.query('UPDATE users SET role_access_id = $1 WHERE id = $2', [id, empId]);
             }
         }
     });
@@ -305,16 +307,13 @@ export async function unassignRoleAccessFromEmployee(id: string, input: Unassign
 
     await withTransaction(async (client) => {
         if (isPromotedRole) {
-            // Demote the manager/supervisor back to a regular employee:
-            // moves their record from users → employees with role = 'EMPLOYEE'
-            // and clears role_access_id in the process.
+            // Demote the manager/supervisor back to a regular employee
             await demotePromotedUser(client, input.employeeId);
+            await client.query('UPDATE employees SET role_access_id = NULL WHERE id = $1', [input.employeeId]);
         } else {
-            // Regular employee — just clear role_access_id
-            await client.query(
-                'UPDATE employees SET role_access_id = NULL WHERE id = $1',
-                [input.employeeId],
-            );
+            // Regular employee — clear role_access_id from both tables
+            await client.query('UPDATE employees SET role_access_id = NULL WHERE id = $1', [input.employeeId]);
+            await client.query('UPDATE users SET role_access_id = NULL WHERE id = $1', [input.employeeId]);
         }
     });
 }
