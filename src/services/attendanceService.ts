@@ -12,7 +12,7 @@ export interface BulkAttendancePayload {
   remarks?: string;
 }
 
-export const getAttendanceRecords = async (companyId: string, dateFrom: Date, dateTo: Date) => {
+export const getAttendanceRecords = async (companyId: string, dateFrom: Date | string, dateTo: Date | string) => {
   return findAttendanceRecords(companyId, dateFrom, dateTo);
 };
 
@@ -20,7 +20,7 @@ export const upsertDailyAttendance = async (
   companyId: string,
   userId: string,
   callerRole: UserRole,
-  date: Date,
+  date: Date | string,
   records: BulkAttendancePayload[]
 ) => {
   // Marking/editing a day's attendance is gated as EDIT, not ADD — the bulk call always
