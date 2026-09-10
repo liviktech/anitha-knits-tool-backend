@@ -17,7 +17,6 @@ import {
   updateExpenseName,
   updateSize,
 } from '../controllers/lookup.js';
-import { requireAuth } from '../middlewares/auth.js';
 
 const router = Router();
 
@@ -72,7 +71,7 @@ router.get('/', getLookups);
  *       409:
  *         description: A color with this name already exists (COLOR_NAME_EXISTS).
  */
-router.post('/colors', requireAuth('ADMIN'), createColor);
+router.post('/colors', createColor);
 
 /**
  * @openapi
@@ -121,8 +120,8 @@ router.post('/colors', requireAuth('ADMIN'), createColor);
  *       404:
  *         description: No color exists with this id (COLOR_NOT_FOUND).
  */
-router.patch('/colors/:id', requireAuth('ADMIN'), updateColor);
-router.delete('/colors/:id', requireAuth('ADMIN'), deleteColor);
+router.patch('/colors/:id', updateColor);
+router.delete('/colors/:id', deleteColor);
 
 /**
  * @openapi
@@ -154,7 +153,7 @@ router.delete('/colors/:id', requireAuth('ADMIN'), deleteColor);
  *       409:
  *         description: A size with this name already exists (SIZE_NAME_EXISTS).
  */
-router.post('/sizes', requireAuth('ADMIN'), createSize);
+router.post('/sizes', createSize);
 
 /**
  * @openapi
@@ -203,8 +202,8 @@ router.post('/sizes', requireAuth('ADMIN'), createSize);
  *       404:
  *         description: No size exists with this id (SIZE_NOT_FOUND).
  */
-router.patch('/sizes/:id', requireAuth('ADMIN'), updateSize);
-router.delete('/sizes/:id', requireAuth('ADMIN'), deleteSize);
+router.patch('/sizes/:id', updateSize);
+router.delete('/sizes/:id', deleteSize);
 
 /**
  * @openapi
@@ -236,7 +235,7 @@ router.delete('/sizes/:id', requireAuth('ADMIN'), deleteSize);
  *       409:
  *         description: A chemical with this name already exists (CHEMICAL_NAME_EXISTS).
  */
-router.post('/chemicals', requireAuth('ADMIN'), createChemical);
+router.post('/chemicals', createChemical);
 
 /**
  * @openapi
@@ -285,8 +284,8 @@ router.post('/chemicals', requireAuth('ADMIN'), createChemical);
  *       404:
  *         description: No chemical exists with this id (CHEMICAL_NOT_FOUND).
  */
-router.patch('/chemicals/:id', requireAuth('ADMIN'), updateChemical);
-router.delete('/chemicals/:id', requireAuth('ADMIN'), deleteChemical);
+router.patch('/chemicals/:id', updateChemical);
+router.delete('/chemicals/:id', deleteChemical);
 
 /**
  * @openapi
@@ -318,7 +317,7 @@ router.delete('/chemicals/:id', requireAuth('ADMIN'), deleteChemical);
  *       409:
  *         description: A brand with this name already exists (BRAND_NAME_EXISTS).
  */
-router.post('/brands', requireAuth('ADMIN'), createBrand);
+router.post('/brands', createBrand);
 
 /**
  * @openapi
@@ -367,8 +366,8 @@ router.post('/brands', requireAuth('ADMIN'), createBrand);
  *       404:
  *         description: No brand exists with this id (BRAND_NOT_FOUND).
  */
-router.patch('/brands/:id', requireAuth('ADMIN'), updateBrand);
-router.delete('/brands/:id', requireAuth('ADMIN'), deleteBrand);
+router.patch('/brands/:id', updateBrand);
+router.delete('/brands/:id', deleteBrand);
 
 /**
  * @openapi
@@ -400,7 +399,7 @@ router.delete('/brands/:id', requireAuth('ADMIN'), deleteBrand);
  *       409:
  *         description: An expense name with this name already exists (EXPENSE_NAME_EXISTS).
  */
-router.post('/expense-names', requireAuth('ADMIN'), createExpenseName);
+router.post('/expense-names', createExpenseName);
 
 /**
  * @openapi
@@ -449,7 +448,7 @@ router.post('/expense-names', requireAuth('ADMIN'), createExpenseName);
  *       404:
  *         description: No expense name exists with this id (EXPENSE_NAME_NOT_FOUND).
  */
-router.patch('/expense-names/:id', requireAuth('ADMIN'), updateExpenseName);
-router.delete('/expense-names/:id', requireAuth('ADMIN'), deleteExpenseName);
+router.patch('/expense-names/:id', updateExpenseName);
+router.delete('/expense-names/:id', deleteExpenseName);
 
 export default router;
