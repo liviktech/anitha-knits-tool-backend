@@ -46,7 +46,10 @@ router.use(
   requireModuleAccess('productiondetails'),
   loadSentRoutes,
 );
-router.use('/color-consumption-standard', adminConfigRoutes);
+// GET here is also used by the Extruder production entry form (recipe lookup), so it must
+// stay open to every company role, not just admin_panel holders. ADD/EDIT/DELETE (the
+// Production Config tab's own mutations) are gated per-route via assertModuleActionAllowed.
+router.use('/color-consumption-standard', requireAuth(...COMPANY_ROLES), adminConfigRoutes);
 router.use('/platform/admin', platformAdminRoutes);
 router.use(
   '/production/extruder',
@@ -84,9 +87,12 @@ router.use('/modules', requireAuth('ADMIN'), moduleRoutes);
 router.use('/tabs', requireAuth('ADMIN'), tabRoutes);
 router.use('/rights', requireAuth('ADMIN'), rightRoutes);
 router.use('/role-access', requireAuth('ADMIN'), roleAccessRoutes);
-router.use('/opening-balance/raw-materials', requireAuth('ADMIN'), openingBalanceRawMaterialRoutes);
-router.use('/opening-balance/wastage', requireAuth('ADMIN'), openingBalanceWastageRoutes);
-router.use('/opening-balance/fabric-stock', requireAuth('ADMIN'), openingBalanceFabricStockRoutes);
+// ADMIN-only enforcement for mutations lives per-route inside these routers now —
+// reads must stay open to every company role since Dashboard/Reports (Manager/Supervisor
+// included) depend on this data for their totals.
+router.use('/opening-balance/raw-materials', requireAuth(...COMPANY_ROLES), openingBalanceRawMaterialRoutes);
+router.use('/opening-balance/wastage', requireAuth(...COMPANY_ROLES), openingBalanceWastageRoutes);
+router.use('/opening-balance/fabric-stock', requireAuth(...COMPANY_ROLES), openingBalanceFabricStockRoutes);
 
 import employeeRoutes from './employeeRoutes.js';
 import attendanceRoutes from './attendanceRoutes.js';

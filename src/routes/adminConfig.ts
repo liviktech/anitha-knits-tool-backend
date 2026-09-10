@@ -6,7 +6,6 @@ import {
   listColorConsumption,
   updateColorConsumption,
 } from '../controllers/adminConfig.js';
-import { requireAuth } from '../middlewares/auth.js';
 
 const router = Router();
 
@@ -48,7 +47,7 @@ const router = Router();
  *       400:
  *         $ref: '#/components/responses/ValidationError'
  */
-router.post('/', requireAuth('ADMIN'), createColorConsumption);
+router.post('/', createColorConsumption);
 
 /**
  * @openapi
@@ -76,11 +75,7 @@ router.post('/', requireAuth('ADMIN'), createColorConsumption);
  *       400:
  *         $ref: '#/components/responses/ValidationError'
  */
-router.get(
-  '/',
-  requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
-  listColorConsumption,
-);
+router.get('/', listColorConsumption);
 
 /**
  * @openapi
@@ -101,11 +96,7 @@ router.get(
  *             schema:
  *               $ref: '#/components/schemas/ColorConsumptionStandard'
  */
-router.get(
-  '/latest',
-  requireAuth('ADMIN', 'MANAGER', 'SUPERVISOR'),
-  getLatestColorConsumption,
-);
+router.get('/latest', getLatestColorConsumption);
 
 /**
  * @openapi
@@ -168,7 +159,7 @@ router.get(
  *             schema:
  *               $ref: '#/components/schemas/ErrorResponse'
  */
-router.patch('/:id', requireAuth('ADMIN'), updateColorConsumption);
-router.delete('/:id', requireAuth('ADMIN'), deleteColorConsumption);
+router.patch('/:id', updateColorConsumption);
+router.delete('/:id', deleteColorConsumption);
 
 export default router;

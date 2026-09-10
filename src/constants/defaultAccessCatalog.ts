@@ -17,7 +17,15 @@ export const DEFAULT_MODULES = [
     },
     { code: 'expenses', name: 'Expenses', tabs: [] },
     { code: 'reports', name: 'Reports', tabs: [] },
-    { code: 'admin_panel', name: 'Admin Panel', tabs: [] },
+    {
+        code: 'admin_panel',
+        name: 'Admin Panel',
+        tabs: [
+            { code: 'production-config', name: 'Production Config' },
+            { code: 'opening-balance', name: 'Opening Balance' },
+            { code: 'raw-materials', name: 'Drop Down' },
+        ],
+    },
 ] as const;
 
 /** One (module [+ tab]) x action grant. `tabCode` omitted = the whole module (mirrors Right.tabId being NULL). */
@@ -35,10 +43,18 @@ export interface DefaultRightSpec {
  * (View/Add/Edit/Delete) except Dashboard, which only has Edit/Delete there.
  */
 export const DEFAULT_RIGHTS: DefaultRightSpec[] = [
-    { moduleCode: 'admin_panel', action: 'VIEW' },
-    { moduleCode: 'admin_panel', action: 'ADD' },
-    { moduleCode: 'admin_panel', action: 'EDIT' },
-    { moduleCode: 'admin_panel', action: 'DELETE' },
+    { moduleCode: 'admin_panel', tabCode: 'production-config', action: 'VIEW' },
+    { moduleCode: 'admin_panel', tabCode: 'production-config', action: 'ADD' },
+    { moduleCode: 'admin_panel', tabCode: 'production-config', action: 'EDIT' },
+    { moduleCode: 'admin_panel', tabCode: 'production-config', action: 'DELETE' },
+    { moduleCode: 'admin_panel', tabCode: 'opening-balance', action: 'VIEW' },
+    { moduleCode: 'admin_panel', tabCode: 'opening-balance', action: 'ADD' },
+    { moduleCode: 'admin_panel', tabCode: 'opening-balance', action: 'EDIT' },
+    { moduleCode: 'admin_panel', tabCode: 'opening-balance', action: 'DELETE' },
+    { moduleCode: 'admin_panel', tabCode: 'raw-materials', action: 'VIEW' },
+    { moduleCode: 'admin_panel', tabCode: 'raw-materials', action: 'ADD' },
+    { moduleCode: 'admin_panel', tabCode: 'raw-materials', action: 'EDIT' },
+    { moduleCode: 'admin_panel', tabCode: 'raw-materials', action: 'DELETE' },
     { moduleCode: 'dashboard', action: 'EDIT' },
     { moduleCode: 'dashboard', action: 'DELETE' },
     { moduleCode: 'employees', tabCode: 'attendance', action: 'VIEW' },
